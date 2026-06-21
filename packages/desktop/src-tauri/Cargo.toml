@@ -1,0 +1,13 @@
+[package]
+name = "agent-hotline-desktop"
+version = "0.1.0"
+description = "Tauri v2 desktop shell for Agent Hotline"
+authors = ["Agent Hotline contributors"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = ["tray-icon"] }

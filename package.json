@@ -1,0 +1,29 @@
+{
+  "name": "agent-hotline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local human-in-the-loop question channel for AI coding agents.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "npm --prefix packages/backend start",
+    "dev:backend": "npm --prefix packages/backend start",
+    "dev:desktop": "npm --workspace @agent-hotline/desktop run dev",
+    "test": "npm --prefix packages/backend test && npm --workspace @agent-hotline/desktop run test",
+    "lint": "eslint . && npm run rust:clippy",
+    "format": "prettier . --write && npm run rust:fmt",
+    "format:check": "prettier . --check && npm run rust:fmt:check",
+    "rust:fmt": "cargo fmt --manifest-path packages/desktop/src-tauri/Cargo.toml",
+    "rust:fmt:check": "cargo fmt --manifest-path packages/desktop/src-tauri/Cargo.toml --check",
+    "rust:clippy": "cargo clippy --manifest-path packages/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "check": "npm test && npm run format:check && npm run lint && npm --prefix packages/backend run check && npm --workspace @agent-hotline/desktop run check",
+    "ci": "npm ci && npm run check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.5.0",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.4"
+  }
+}

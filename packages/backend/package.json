@@ -1,0 +1,18 @@
+{
+  "name": "@agent-hotline/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local web backend for Agent Hotline.",
+  "type": "commonjs",
+  "bin": {
+    "agent-hotline-hook": "bin/agent-hotline-hook.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/server.js && node --check src/settings-store.js && node --check src/speech-queue-store.js && node --check src/hook-input-parser.js && node --check src/hook-command.js && node --check src/speakable-filter.js && node --check bin/agent-hotline-hook.js && node --check test/settings-store.test.js && node --check test/speech-queue-store.test.js && node --check test/speakable-filter.test.js && node --check test/hook-input-parser.test.js && node --check test/hook-command.test.js && node --check test/server-endpoints.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

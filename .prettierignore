@@ -1,0 +1,10 @@
+node_modules/
+package-lock.json
+
+packages/desktop/dist/
+packages/desktop/public/config.json
+packages/desktop/src-tauri/gen/
+packages/desktop/src-tauri/target/
+packages/desktop/src-tauri/Cargo.lock
+
+*.ico

@@ -1,0 +1,262 @@
+[
+  {
+    "id": "short-conversational-answer",
+    "title": "Short conversational answer",
+    "rawText": "Yep, that looks right. The backend should keep the queue local, and the tray can ask for the next speakable item when it is ready.",
+    "expected": {
+      "category": "speakable",
+      "shouldSpeak": true
+    },
+    "codexLike": {
+      "source": "codex",
+      "event": "agent_response_completed",
+      "schemaNote": "Representative Codex-like completed assistant response.",
+      "response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Yep, that looks right. The backend should keep the queue local, and the tray can ask for the next speakable item when it is ready."
+          }
+        ]
+      }
+    },
+    "claudeLike": {
+      "source": "claude",
+      "hook_event_name": "Stop",
+      "schemaNote": "Representative Claude Code-like stop hook payload with assistant text.",
+      "assistant_response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Yep, that looks right. The backend should keep the queue local, and the tray can ask for the next speakable item when it is ready."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "answer-with-code-block",
+    "title": "Answer with code block",
+    "rawText": "Add this helper near the queue code:\n\n```js\nfunction nextPending(items) {\n  return items.find((item) => item.status === 'pending') || null;\n}\n```\n\nThat keeps playback selection deterministic without changing the stored order.",
+    "expected": {
+      "category": "code-block",
+      "shouldSpeak": true
+    },
+    "codexLike": {
+      "source": "codex",
+      "event": "agent_response_completed",
+      "schemaNote": "Representative Codex-like completed assistant response.",
+      "response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Add this helper near the queue code:\n\n```js\nfunction nextPending(items) {\n  return items.find((item) => item.status === 'pending') || null;\n}\n```\n\nThat keeps playback selection deterministic without changing the stored order."
+          }
+        ]
+      }
+    },
+    "claudeLike": {
+      "source": "claude",
+      "hook_event_name": "Stop",
+      "schemaNote": "Representative Claude Code-like stop hook payload with assistant text.",
+      "assistant_response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Add this helper near the queue code:\n\n```js\nfunction nextPending(items) {\n  return items.find((item) => item.status === 'pending') || null;\n}\n```\n\nThat keeps playback selection deterministic without changing the stored order."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "answer-with-diff",
+    "title": "Answer with diff",
+    "rawText": "The settings default needs one small change:\n\n```diff\n-  readBehavior: 'auto',\n+  readBehavior: 'manual',\n```\n\nManual is the safer initial behavior because it waits for user intent.",
+    "expected": {
+      "category": "diff",
+      "shouldSpeak": true
+    },
+    "codexLike": {
+      "source": "codex",
+      "event": "agent_response_completed",
+      "schemaNote": "Representative Codex-like completed assistant response.",
+      "response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "The settings default needs one small change:\n\n```diff\n-  readBehavior: 'auto',\n+  readBehavior: 'manual',\n```\n\nManual is the safer initial behavior because it waits for user intent."
+          }
+        ]
+      }
+    },
+    "claudeLike": {
+      "source": "claude",
+      "hook_event_name": "Stop",
+      "schemaNote": "Representative Claude Code-like stop hook payload with assistant text.",
+      "assistant_response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "The settings default needs one small change:\n\n```diff\n-  readBehavior: 'auto',\n+  readBehavior: 'manual',\n```\n\nManual is the safer initial behavior because it waits for user intent."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "answer-with-logs",
+    "title": "Answer with logs",
+    "rawText": "The backend started, but the health check failed after the port bind:\n\n```text\n[2026-06-20T20:41:12.011Z] INFO server listening on 127.0.0.1:4777\n[2026-06-20T20:41:12.215Z] ERROR health check failed: ECONNREFUSED\n    at connect (node:net:1090:16)\n```\n\nI would check whether the probe is using the same host and port as the server.",
+    "expected": {
+      "category": "logs",
+      "shouldSpeak": true
+    },
+    "codexLike": {
+      "source": "codex",
+      "event": "agent_response_completed",
+      "schemaNote": "Representative Codex-like completed assistant response.",
+      "response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "The backend started, but the health check failed after the port bind:\n\n```text\n[2026-06-20T20:41:12.011Z] INFO server listening on 127.0.0.1:4777\n[2026-06-20T20:41:12.215Z] ERROR health check failed: ECONNREFUSED\n    at connect (node:net:1090:16)\n```\n\nI would check whether the probe is using the same host and port as the server."
+          }
+        ]
+      }
+    },
+    "claudeLike": {
+      "source": "claude",
+      "hook_event_name": "Stop",
+      "schemaNote": "Representative Claude Code-like stop hook payload with assistant text.",
+      "assistant_response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "The backend started, but the health check failed after the port bind:\n\n```text\n[2026-06-20T20:41:12.011Z] INFO server listening on 127.0.0.1:4777\n[2026-06-20T20:41:12.215Z] ERROR health check failed: ECONNREFUSED\n    at connect (node:net:1090:16)\n```\n\nI would check whether the probe is using the same host and port as the server."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "answer-with-table",
+    "title": "Answer with table",
+    "rawText": "Here is the current queue state:\n\n| Status | Count |\n| --- | ---: |\n| pending | 2 |\n| playing | 1 |\n| played | 4 |\n\nThe important part is that only one item should be marked playing at a time.",
+    "expected": {
+      "category": "table",
+      "shouldSpeak": true
+    },
+    "codexLike": {
+      "source": "codex",
+      "event": "agent_response_completed",
+      "schemaNote": "Representative Codex-like completed assistant response.",
+      "response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Here is the current queue state:\n\n| Status | Count |\n| --- | ---: |\n| pending | 2 |\n| playing | 1 |\n| played | 4 |\n\nThe important part is that only one item should be marked playing at a time."
+          }
+        ]
+      }
+    },
+    "claudeLike": {
+      "source": "claude",
+      "hook_event_name": "Stop",
+      "schemaNote": "Representative Claude Code-like stop hook payload with assistant text.",
+      "assistant_response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Here is the current queue state:\n\n| Status | Count |\n| --- | ---: |\n| pending | 2 |\n| playing | 1 |\n| played | 4 |\n\nThe important part is that only one item should be marked playing at a time."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "answer-with-json",
+    "title": "Answer with JSON",
+    "rawText": "The settings payload should look like this:\n\n```json\n{\n  \"readBehavior\": \"manual\",\n  \"muted\": false,\n  \"rate\": 1,\n  \"volume\": 0.8\n}\n```\n\nThose defaults keep playback predictable for a first run.",
+    "expected": {
+      "category": "json",
+      "shouldSpeak": true
+    },
+    "codexLike": {
+      "source": "codex",
+      "event": "agent_response_completed",
+      "schemaNote": "Representative Codex-like completed assistant response.",
+      "response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "The settings payload should look like this:\n\n```json\n{\n  \"readBehavior\": \"manual\",\n  \"muted\": false,\n  \"rate\": 1,\n  \"volume\": 0.8\n}\n```\n\nThose defaults keep playback predictable for a first run."
+          }
+        ]
+      }
+    },
+    "claudeLike": {
+      "source": "claude",
+      "hook_event_name": "Stop",
+      "schemaNote": "Representative Claude Code-like stop hook payload with assistant text.",
+      "assistant_response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "The settings payload should look like this:\n\n```json\n{\n  \"readBehavior\": \"manual\",\n  \"muted\": false,\n  \"rate\": 1,\n  \"volume\": 0.8\n}\n```\n\nThose defaults keep playback predictable for a first run."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "answer-with-spoken-and-displayed",
+    "title": "Answer with Spoken and Displayed sections",
+    "rawText": "Spoken:\nThe backend queue is ready, and the next step is to connect it to the local hook command.\n\nDisplayed:\n- Queue shape: id, raw source, speakable text, source app, status, timestamps.\n- Playback states: pending, playing, played, skipped.\n- Persistence target: %APPDATA%\\Agent Hotline\\speech-queue.json.",
+    "expected": {
+      "category": "spoken-displayed",
+      "shouldSpeak": true,
+      "preferredSection": "Spoken"
+    },
+    "codexLike": {
+      "source": "codex",
+      "event": "agent_response_completed",
+      "schemaNote": "Representative Codex-like completed assistant response.",
+      "response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Spoken:\nThe backend queue is ready, and the next step is to connect it to the local hook command.\n\nDisplayed:\n- Queue shape: id, raw source, speakable text, source app, status, timestamps.\n- Playback states: pending, playing, played, skipped.\n- Persistence target: %APPDATA%\\Agent Hotline\\speech-queue.json."
+          }
+        ]
+      }
+    },
+    "claudeLike": {
+      "source": "claude",
+      "hook_event_name": "Stop",
+      "schemaNote": "Representative Claude Code-like stop hook payload with assistant text.",
+      "assistant_response": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Spoken:\nThe backend queue is ready, and the next step is to connect it to the local hook command.\n\nDisplayed:\n- Queue shape: id, raw source, speakable text, source app, status, timestamps.\n- Playback states: pending, playing, played, skipped.\n- Persistence target: %APPDATA%\\Agent Hotline\\speech-queue.json."
+          }
+        ]
+      }
+    }
+  }
+]

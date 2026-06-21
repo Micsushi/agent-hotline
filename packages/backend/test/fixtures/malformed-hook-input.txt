@@ -1,0 +1,1 @@
+{"source":"codex","response":{"content":[{"type":"output_text","text":"This hook payload is missing closing brackets."}
