@@ -152,6 +152,52 @@ test("playback marks an item playing, applies voice settings, then marks it play
   assert.equal(updates.at(-1), "Read aloud finished.");
 });
 
+test("playback chooses a natural installed voice when no manual voice is selected", async () => {
+  const naturalVoice = {
+    name: "Microsoft Aria Natural",
+    voiceURI: "Microsoft Aria Natural Online",
+    lang: "en-US"
+  };
+  const desktopVoice = {
+    name: "Microsoft David Desktop",
+    voiceURI: "Microsoft David Desktop",
+    lang: "en-US"
+  };
+  const { spoken } = installWindow({ voices: [desktopVoice, naturalVoice] });
+  installFetch(async (url) => {
+    if (url.endsWith("/api/queue/item-natural/playing")) {
+      return {
+        status: 200,
+        body: {
+          item: {
+            id: "item-natural",
+            sourceApp: "Codex",
+            speakableText: "This should use the more natural voice."
+          }
+        }
+      };
+    }
+    return { status: 200, body: { item: { id: "item-natural", status: "played" } } };
+  });
+  const controller = createPlaybackController({ backendUrl: "http://127.0.0.1:4777" });
+
+  await controller.readNextPending({
+    settings: { mute: false, voice: "", rate: undefined, volume: 1 },
+    queue: {
+      pending: [
+        {
+          id: "item-natural",
+          sourceApp: "Codex",
+          speakableText: "This should use the more natural voice."
+        }
+      ]
+    }
+  });
+
+  assert.equal(spoken[0].voice, naturalVoice);
+  assert.equal(spoken[0].rate, 0.92);
+});
+
 test("pause resume stop and mute control active browser speech", async () => {
   const { synth, spoken } = installWindow();
   const calls = installFetch(async (url, options) => {

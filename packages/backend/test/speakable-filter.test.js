@@ -2,7 +2,7 @@ const assert = require("assert/strict");
 const fs = require("fs");
 const path = require("path");
 
-const { filterSpeakableText } = require("../src/speakable-filter");
+const { filterSpeakableText, styleSpokenText } = require("../src/speakable-filter");
 
 const fixtures = JSON.parse(
   fs.readFileSync(path.join(__dirname, "fixtures", "response-fixtures.json"), "utf8")
@@ -107,13 +107,35 @@ function testLongBulletListIsSkipped() {
   assert.equal(result.source, "filtered");
 }
 
+function testSpeakableTextGetsConversationStyle() {
+  const result = filterSpeakableText(
+    "I have identified the issue. It is caused by the backend status check. Therefore, I will use the local queue endpoint. This extra implementation detail should stay out of the spoken version."
+  );
+
+  assert.equal(result.shouldSpeak, true);
+  assert.equal(
+    result.text,
+    "I've identified the issue. It's caused by the backend status check. So, I'll use the local queue endpoint."
+  );
+  assert.equal(result.text.includes("extra implementation detail"), false);
+}
+
+function testStyleSpokenTextHandlesFormalPhrasing() {
+  assert.equal(
+    styleSpokenText("To summarize, I will utilize the local endpoint. It is working."),
+    "I'll use the local endpoint. It's working."
+  );
+}
+
 const tests = [
   testShortExplanationBecomesSpeakable,
   testSpokenSectionWinsOverDisplayedDetails,
   testCodeBlockIsRemovedButSurroundingSummaryRemains,
   testDiffJsonLogsAndTablesAreReducedToProse,
   testCodeHeavyOutputIsSkipped,
-  testLongBulletListIsSkipped
+  testLongBulletListIsSkipped,
+  testSpeakableTextGetsConversationStyle,
+  testStyleSpokenTextHandlesFormalPhrasing
 ];
 
 for (const test of tests) {

@@ -5,7 +5,7 @@ const DEFAULT_SETTINGS = {
   readBehavior: "manual",
   mute: false,
   voice: "",
-  rate: 1,
+  rate: 0.92,
   volume: 1,
   skipRules: {
     codeBlocks: true,

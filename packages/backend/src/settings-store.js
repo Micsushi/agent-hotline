@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   readBehavior: "manual",
   mute: false,
   voice: "",
-  rate: 1,
+  rate: 0.92,
   volume: 1,
   skipRules: Object.freeze({
     codeBlocks: true,

@@ -59,10 +59,32 @@ async function loadVoices(synth) {
   return synth.getVoices();
 }
 
+function scoreVoice(voice) {
+  const haystack = `${voice.name || ""} ${voice.voiceURI || ""} ${voice.lang || ""}`.toLowerCase();
+  let score = 0;
+
+  if (haystack.includes("natural")) score += 80;
+  if (haystack.includes("online")) score += 70;
+  if (haystack.includes("neural")) score += 70;
+  if (haystack.includes("aria")) score += 50;
+  if (haystack.includes("jenny")) score += 45;
+  if (haystack.includes("guy")) score += 35;
+  if (haystack.includes("zira")) score += 25;
+  if (haystack.includes("david")) score += 15;
+  if (haystack.includes("english")) score += 10;
+  if (haystack.includes("en-us")) score += 10;
+  if (haystack.includes("desktop")) score -= 20;
+
+  return score;
+}
+
 function selectVoice(voices, preferredName) {
   const name = String(preferredName || "").trim();
-  if (!name) return null;
-  return voices.find((voice) => voice.name === name || voice.voiceURI === name) || null;
+  if (name) {
+    return voices.find((voice) => voice.name === name || voice.voiceURI === name) || null;
+  }
+
+  return [...voices].sort((left, right) => scoreVoice(right) - scoreVoice(left))[0] || null;
 }
 
 function normalizeSpeakableText(item) {
@@ -144,7 +166,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     const voice = selectVoice(voices, settings.voice);
 
     if (voice) utterance.voice = voice;
-    utterance.rate = clampNumber(Number(settings.rate), 1, 0.1, 10);
+    utterance.rate = clampNumber(Number(settings.rate), 0.92, 0.1, 10);
     utterance.volume = clampNumber(Number(settings.volume), 1, 0, 1);
 
     activeUtterance = utterance;

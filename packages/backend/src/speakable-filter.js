@@ -17,7 +17,7 @@ function filterSpeakableText(input) {
 
   const spoken = extractSpokenSection(input);
   if (spoken) {
-    const text = normalizeSpeakableText(removeUnsafeBlocks(spoken));
+    const text = styleSpokenText(normalizeSpeakableText(removeUnsafeBlocks(spoken)));
     if (isSpeakable(text)) {
       return {
         shouldSpeak: true,
@@ -28,7 +28,7 @@ function filterSpeakableText(input) {
     }
   }
 
-  const text = normalizeSpeakableText(removeUnsafeBlocks(input));
+  const text = styleSpokenText(normalizeSpeakableText(removeUnsafeBlocks(input)));
   if (!isSpeakable(text)) {
     return skipResult();
   }
@@ -160,6 +160,60 @@ function normalizeSpeakableText(input) {
     .trim();
 }
 
+function styleSpokenText(input) {
+  let text = input
+    .replace(/\bHere is\b/gi, "Here's")
+    .replace(/\bHere are\b/gi, "Here are")
+    .replace(/\bI have\b/g, "I've")
+    .replace(/\bI am\b/g, "I'm")
+    .replace(/\bI will\b/g, "I'll")
+    .replace(/\bI would\b/g, "I'd")
+    .replace(/(^|[.!?]\s+)It is\b/g, "$1It's")
+    .replace(/(^|[.!?]\s+)That is\b/g, "$1That's")
+    .replace(/(^|[.!?]\s+)There is\b/g, "$1There's")
+    .replace(/\bdo not\b/gi, "don't")
+    .replace(/\bdoes not\b/gi, "doesn't")
+    .replace(/\bcannot\b/gi, "can't")
+    .replace(/\bwill not\b/gi, "won't")
+    .replace(/\bshould not\b/gi, "shouldn't")
+    .replace(/\bwould not\b/gi, "wouldn't")
+    .replace(/\bcould not\b/gi, "couldn't")
+    .replace(/\butilize\b/gi, "use")
+    .replace(/\bapproximately\b/gi, "about")
+    .replace(/\btherefore\b/gi, "so")
+    .replace(/\bhowever\b/gi, "but")
+    .replace(/\bcommence\b/gi, "start")
+    .replace(/\bterminate\b/gi, "stop")
+    .replace(/\bThe following\b/gi, "This")
+    .replace(/\bIn conclusion,\s*/gi, "")
+    .replace(/\bTo summarize,\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  text = capitalizeSentenceStarts(keepFirstUsefulSentences(text, 3));
+  return text;
+}
+
+function keepFirstUsefulSentences(input, limit) {
+  const sentences = input.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+  const kept = [];
+
+  for (const sentence of sentences) {
+    const clean = sentence.trim();
+    if (!clean) continue;
+    kept.push(clean);
+    if (kept.length >= limit) break;
+  }
+
+  return kept.join(" ").trim();
+}
+
+function capitalizeSentenceStarts(input) {
+  return input.replace(/(^|[.!?]\s+)([a-z])/g, (_match, prefix, letter) => {
+    return `${prefix}${letter.toUpperCase()}`;
+  });
+}
+
 function isSpeakable(text) {
   if (!text) {
     return false;
@@ -174,5 +228,6 @@ function isSpeakable(text) {
 }
 
 module.exports = {
-  filterSpeakableText
+  filterSpeakableText,
+  styleSpokenText
 };

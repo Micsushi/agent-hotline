@@ -114,7 +114,7 @@ test("hook command filters Claude output before queueing for playback", async ()
     const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "speech-queue.json"), "utf8"));
     assert.equal(persisted.items.length, 1);
     assert.equal(persisted.items[0].sourceApp, "Claude");
-    assert.equal(persisted.items[0].speakableText, "Here is the short answer to read aloud.");
+    assert.equal(persisted.items[0].speakableText, "Here's the short answer to read aloud.");
     assert.equal(persisted.items[0].rawSource.includes("displayedOnly"), true);
   });
 });

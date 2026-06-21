@@ -1,5 +1,4 @@
 import "./styles.css";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createPlaybackController } from "./playback.js";
 import {
@@ -22,6 +21,7 @@ const STATUS_LABELS = {
 };
 const PREVIEW_LIMIT = 420;
 const AUTO_READ_STORAGE_KEY = "agent-hotline.auto-read-attempted";
+const QUEUE_POLL_INTERVAL_MS = 2000;
 
 const statusBadge = document.querySelector("#status-badge");
 const statusLabel = document.querySelector("#status-label");
@@ -46,6 +46,7 @@ const actionHint = document.querySelector("#action-hint");
 let latestPanelState = null;
 let playback = null;
 let settingsUi = null;
+let refreshInFlight = false;
 let autoReadAttemptedItemIds = loadAutoReadAttemptedItemIds();
 
 function loadAutoReadAttemptedItemIds() {
@@ -96,10 +97,6 @@ async function fetchJson(url) {
 }
 
 async function checkBackendPort(url) {
-  if (window.__TAURI_INTERNALS__) {
-    return invoke("backend_status", { url });
-  }
-
   try {
     await fetchJson(`${url}/api/health`);
     return { reachable: true, detail: `Connected to ${url}.` };
@@ -215,20 +212,29 @@ function renderState({ settings, queue }) {
   runReadModeOrchestration(settings, queue);
 }
 
-async function refreshPanel(url) {
-  setStatus("idle", "Checking queue state...");
-  actionHint.textContent = "Refreshing...";
+async function refreshPanel(url, options = {}) {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
 
-  const portStatus = await checkBackendPort(url);
-  if (!portStatus.reachable) {
-    throw new Error(portStatus.detail);
+  if (!options.quiet) {
+    setStatus("idle", "Checking queue state...");
+    actionHint.textContent = "Refreshing...";
   }
 
-  const [{ settings }, { queue }] = await Promise.all([
-    fetchJson(`${url}/api/settings`),
-    fetchJson(`${url}/api/queue`)
-  ]);
-  renderState({ settings, queue });
+  try {
+    const portStatus = await checkBackendPort(url);
+    if (!portStatus.reachable) {
+      throw new Error(portStatus.detail);
+    }
+
+    const [{ settings }, { queue }] = await Promise.all([
+      fetchJson(`${url}/api/settings`),
+      fetchJson(`${url}/api/queue`)
+    ]);
+    renderState({ settings, queue });
+  } finally {
+    refreshInFlight = false;
+  }
 }
 
 function showError(error) {
@@ -359,3 +365,7 @@ if (window.__TAURI_INTERNALS__) {
 }
 
 refreshPanel(targetUrl).catch(showError);
+
+window.setInterval(() => {
+  refreshPanel(targetUrl, { quiet: true }).catch(showError);
+}, QUEUE_POLL_INTERVAL_MS);
