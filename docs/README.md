@@ -6,6 +6,7 @@ These docs are for people installing, running, or reviewing Agent Hotline.
 
 - [Codex read-aloud setup](integrations/codex.md)
 - [Claude Code read-aloud setup](integrations/claude-code.md)
+- [Spoken / Displayed output setup](integrations/spoken-output.md)
 
 ## Review
 

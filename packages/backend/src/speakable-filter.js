@@ -17,7 +17,11 @@ function filterSpeakableText(input) {
 
   const spoken = extractSpokenSection(input);
   if (spoken) {
-    const text = styleSpokenText(normalizeSpeakableText(removeUnsafeBlocks(spoken)));
+    // The author already chose what to say, so read the whole section instead of
+    // trimming to the first few sentences like we do for unstructured prose.
+    const text = styleSpokenText(normalizeSpeakableText(removeUnsafeBlocks(spoken)), {
+      maxSentences: 0
+    });
     if (isSpeakable(text)) {
       return {
         shouldSpeak: true,
@@ -160,7 +164,8 @@ function normalizeSpeakableText(input) {
     .trim();
 }
 
-function styleSpokenText(input) {
+function styleSpokenText(input, options = {}) {
+  const maxSentences = Number.isInteger(options.maxSentences) ? options.maxSentences : 3;
   let text = input
     .replace(/\bHere is\b/gi, "Here's")
     .replace(/\bHere are\b/gi, "Here are")
@@ -190,8 +195,8 @@ function styleSpokenText(input) {
     .replace(/\s+/g, " ")
     .trim();
 
-  text = capitalizeSentenceStarts(keepFirstUsefulSentences(text, 3));
-  return text;
+  const trimmed = maxSentences > 0 ? keepFirstUsefulSentences(text, maxSentences) : text;
+  return capitalizeSentenceStarts(trimmed);
 }
 
 function keepFirstUsefulSentences(input, limit) {

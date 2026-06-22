@@ -1,10 +1,32 @@
+import { warmKokoro, getKokoroVoices } from "./tts-kokoro.js";
+
 const READ_BEHAVIORS = new Set(["manual", "auto", "ask_every_time"]);
+const TTS_ENGINES = new Set(["webview", "kokoro"]);
 const SKIP_RULES = ["codeBlocks", "diffs", "logs", "tables", "json", "longBulletLists"];
+
+// Curated Kokoro-82M v1.0 voices. The full set is read from the model once it
+// loads; this list keeps the dropdown useful before the first warm-up.
+const KOKORO_VOICES = [
+  "af_heart",
+  "af_bella",
+  "af_nicole",
+  "af_sarah",
+  "af_sky",
+  "am_michael",
+  "am_adam",
+  "am_eric",
+  "bf_emma",
+  "bf_isabella",
+  "bm_george",
+  "bm_lewis"
+];
 
 const DEFAULT_SETTINGS = {
   readBehavior: "manual",
   mute: false,
+  engine: "webview",
   voice: "",
+  kokoroVoice: "af_heart",
   rate: 0.92,
   volume: 1,
   skipRules: {
@@ -40,7 +62,10 @@ function normalizeSettings(settings) {
       ? source.readBehavior
       : DEFAULT_SETTINGS.readBehavior,
     mute: typeof source.mute === "boolean" ? source.mute : DEFAULT_SETTINGS.mute,
+    engine: TTS_ENGINES.has(source.engine) ? source.engine : DEFAULT_SETTINGS.engine,
     voice: typeof source.voice === "string" ? source.voice : DEFAULT_SETTINGS.voice,
+    kokoroVoice:
+      typeof source.kokoroVoice === "string" ? source.kokoroVoice : DEFAULT_SETTINGS.kokoroVoice,
     rate: clampNumber(source.rate, DEFAULT_SETTINGS.rate, 0.1, 10),
     volume: clampNumber(source.volume, DEFAULT_SETTINGS.volume, 0, 1),
     skipRules: Object.fromEntries(
@@ -106,22 +131,42 @@ function setSelectOptions(select, settings) {
   select.disabled = !("speechSynthesis" in window);
 }
 
+function setKokoroVoiceOptions(select, settings) {
+  const current = settings.kokoroVoice || "af_heart";
+  const loaded = getKokoroVoices();
+  const values = loaded.length > 0 ? loaded : KOKORO_VOICES;
+  const all = [...new Set([...values, current])];
+
+  select.replaceChildren(
+    ...all.map((value) => {
+      const element = document.createElement("option");
+      element.value = value;
+      element.textContent = value;
+      return element;
+    })
+  );
+  select.value = current;
+}
+
 function formatRate(value) {
-  return `${Number(value).toFixed(1)}x`;
+  return `${parseFloat(Number(value).toFixed(2))}x`;
 }
 
 function formatVolume(value) {
   return `${Math.round(Number(value) * 100)}%`;
 }
 
-export function initSettingsUi({ backendUrl, onSettingsChanged }) {
+export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview }) {
   const state = document.querySelector("#settings-state");
   const error = document.querySelector("#settings-error");
   const readBehaviorInputs = Array.from(document.querySelectorAll("input[name='read-behavior']"));
   const mute = document.querySelector("#setting-mute");
   const codex = document.querySelector("#setting-codex");
   const claude = document.querySelector("#setting-claude");
+  const engine = document.querySelector("#setting-engine");
   const voice = document.querySelector("#setting-voice");
+  const kokoroVoice = document.querySelector("#setting-kokoro-voice");
+  const kokoroVoiceRow = document.querySelector("#kokoro-voice-row");
   const rate = document.querySelector("#setting-rate");
   const rateValue = document.querySelector("#setting-rate-value");
   const volume = document.querySelector("#setting-volume");
@@ -158,7 +203,18 @@ export function initSettingsUi({ backendUrl, onSettingsChanged }) {
     mute.checked = currentSettings.mute;
     codex.checked = currentSettings.codexEnabled;
     claude.checked = currentSettings.claudeEnabled;
+    engine.value = currentSettings.engine;
     setSelectOptions(voice, currentSettings);
+    setKokoroVoiceOptions(kokoroVoice, currentSettings);
+
+    const usingKokoro = currentSettings.engine === "kokoro";
+    voice.closest(".field-row").hidden = usingKokoro;
+    kokoroVoiceRow.hidden = !usingKokoro;
+    if (usingKokoro) {
+      warmKokoro().catch(() => {
+        // Surfaced at playback time; warm-up failure should not block settings.
+      });
+    }
 
     rate.value = String(currentSettings.rate);
     rateValue.value = formatRate(currentSettings.rate);
@@ -208,17 +264,20 @@ export function initSettingsUi({ backendUrl, onSettingsChanged }) {
   mute.addEventListener("change", () => savePatch({ mute: mute.checked }));
   codex.addEventListener("change", () => savePatch({ codexEnabled: codex.checked }));
   claude.addEventListener("change", () => savePatch({ claudeEnabled: claude.checked }));
+  engine.addEventListener("change", () => savePatch({ engine: engine.value }));
   voice.addEventListener("change", () => savePatch({ voice: voice.value }));
+  kokoroVoice.addEventListener("change", () => savePatch({ kokoroVoice: kokoroVoice.value }));
 
   rate.addEventListener("input", () => {
     rateValue.value = formatRate(rate.value);
   });
   rate.addEventListener("change", () =>
-    savePatch({ rate: clampNumber(rate.value, currentSettings.rate, 0.1, 10) })
+    savePatch({ rate: clampNumber(rate.value, currentSettings.rate, 0.25, 4) })
   );
 
   volume.addEventListener("input", () => {
     volumeValue.value = formatVolume(volume.value);
+    onLivePreview?.({ volume: clampNumber(volume.value, currentSettings.volume, 0, 1) });
   });
   volume.addEventListener("change", () =>
     savePatch({ volume: clampNumber(volume.value, currentSettings.volume, 0, 1) })

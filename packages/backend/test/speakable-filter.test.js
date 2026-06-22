@@ -127,9 +127,31 @@ function testStyleSpokenTextHandlesFormalPhrasing() {
   );
 }
 
+function testAuthoredSpokenSectionIsNotTruncated() {
+  const input = [
+    "Spoken:",
+    "First, the backend is up.",
+    "Second, the model loaded fine.",
+    "Third, playback uses Web Audio now.",
+    "Fourth, the rate slider is ours.",
+    "",
+    "Displayed:",
+    "```js",
+    "const x = 1;",
+    "```"
+  ].join("\n");
+
+  const result = filterSpeakableText(input);
+
+  assert.equal(result.reason, "spoken_section");
+  assert.equal(result.text.includes("Fourth, the rate slider is ours."), true);
+  assert.equal(result.text.includes("const x"), false);
+}
+
 const tests = [
   testShortExplanationBecomesSpeakable,
   testSpokenSectionWinsOverDisplayedDetails,
+  testAuthoredSpokenSectionIsNotTruncated,
   testCodeBlockIsRemovedButSurroundingSummaryRemains,
   testDiffJsonLogsAndTablesAreReducedToProse,
   testCodeHeavyOutputIsSkipped,

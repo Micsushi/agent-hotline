@@ -46,7 +46,9 @@ test("settings persist after edit and reload", () => {
   assert.deepEqual(restartedStore.load(), {
     readBehavior: "auto",
     mute: true,
+    engine: "webview",
     voice: "Test Voice",
+    kokoroVoice: "af_heart",
     rate: 1.25,
     volume: 0.6,
     skipRules: {

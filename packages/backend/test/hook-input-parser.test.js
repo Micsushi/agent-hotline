@@ -113,9 +113,21 @@ function testExportedHelpersDoNotThrowForUnexpectedValues() {
   assert.deepEqual(extractAssistantText(null), { text: "", schema: "unknown" });
 }
 
+function testBomPrefixedJsonStillParses() {
+  // PowerShell 5.1 prepends a UTF-8 BOM when piping to node.
+  const bom = String.fromCharCode(0xfeff);
+  const payload = bom + JSON.stringify({ source: "claude", assistant_response: { text: "Hi" } });
+  const result = parseHookInput(payload);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceApp, SOURCE_APPS.CLAUDE);
+  assert.equal(result.assistantText, "Hi");
+}
+
 const tests = [
   testCodexFixturesParseAssistantText,
   testClaudeFixturesParseAssistantText,
+  testBomPrefixedJsonStillParses,
   testMalformedJsonSkipsSafely,
   testUnknownSchemaSkipsWithStructuredReason,
   testParserHandlesNonStringInputWithoutThrowing,

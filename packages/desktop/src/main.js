@@ -280,7 +280,11 @@ const config = await loadRuntimeConfig();
 const targetUrl = config.backendUrl || DEFAULT_BACKEND_URL;
 settingsUi = initSettingsUi({
   backendUrl: targetUrl,
+  onLivePreview: (partial) => {
+    playback?.applyLiveSettings(partial);
+  },
   onSettingsChanged: (settings) => {
+    playback?.applyLiveSettings(settings);
     const refreshAfterSettingsChange = () => refreshPanel(targetUrl).catch(showError);
     if (settings?.mute && (playback?.isSpeaking || playback?.isPaused)) {
       playback.stop("User muted playback.").then(refreshAfterSettingsChange).catch(showError);

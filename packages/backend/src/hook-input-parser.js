@@ -9,9 +9,14 @@ function parseHookInput(text) {
     return skipResult("invalid_input", "Hook input must be a string.");
   }
 
+  // PowerShell 5.1 prepends a UTF-8 BOM when piping to node, which breaks
+  // JSON.parse. Strip a leading BOM and surrounding whitespace defensively so
+  // hook wrappers on any shell work.
+  const cleaned = text.replace(/^\uFEFF/, "").trim();
+
   let payload;
   try {
-    payload = JSON.parse(text);
+    payload = JSON.parse(cleaned);
   } catch (error) {
     return skipResult("malformed_json", "Hook input is not valid JSON.", {
       error: error.message

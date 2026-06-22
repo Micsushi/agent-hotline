@@ -5,11 +5,14 @@ const path = require("path");
 const APP_NAME = "Agent Hotline";
 const SETTINGS_FILE = "settings.json";
 const READ_BEHAVIORS = new Set(["manual", "auto", "ask_every_time"]);
+const TTS_ENGINES = new Set(["webview", "kokoro"]);
 
 const DEFAULT_SETTINGS = Object.freeze({
   readBehavior: "manual",
   mute: false,
+  engine: "webview",
   voice: "",
+  kokoroVoice: "af_heart",
   rate: 0.92,
   volume: 1,
   skipRules: Object.freeze({
@@ -78,7 +81,9 @@ function normalizeSettings(input) {
       ? source.readBehavior
       : defaults.readBehavior,
     mute: booleanOrDefault(source.mute, defaults.mute),
+    engine: TTS_ENGINES.has(source.engine) ? source.engine : defaults.engine,
     voice: stringOrDefault(source.voice, defaults.voice),
+    kokoroVoice: stringOrDefault(source.kokoroVoice, defaults.kokoroVoice),
     rate: numberInRangeOrDefault(source.rate, defaults.rate, 0.1, 10),
     volume: numberInRangeOrDefault(source.volume, defaults.volume, 0, 1),
     skipRules: {
@@ -155,6 +160,7 @@ function createSettingsStore(options = {}) {
 module.exports = {
   DEFAULT_SETTINGS,
   READ_BEHAVIORS: Array.from(READ_BEHAVIORS),
+  TTS_ENGINES: Array.from(TTS_ENGINES),
   createSettingsStore,
   getDefaultDataDir,
   getSettingsPath,

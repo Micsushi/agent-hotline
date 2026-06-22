@@ -1,3 +1,10 @@
+import { generateKokoroAudio } from "./tts-kokoro.js";
+import { SoundTouchNode } from "@soundtouchjs/audio-worklet";
+import soundTouchProcessorUrl from "@soundtouchjs/audio-worklet/processor?url";
+
+const RATE_MIN = 0.25;
+const RATE_MAX = 4;
+
 const CODE_HEAVY_PATTERNS = [
   /```/,
   /^\s*(diff --git|\+\+\+|---)\s/m,
@@ -104,9 +111,77 @@ function getSkipReason(item) {
 
 export function createPlaybackController({ backendUrl, onUpdate, onStateChanged }) {
   let activeUtterance = null;
+  let audioContext = null;
+  let activeSource = null;
+  let activeStretch = null;
+  let activeGain = null;
   let activeItem = null;
   let playbackState = "idle";
   let playbackToken = 0;
+  let stretchRegistration = null;
+
+  function getAudioContext() {
+    if (!audioContext) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioContext = Ctx ? new Ctx() : null;
+    }
+    return audioContext;
+  }
+
+  // Register the SoundTouch worklet once per context. Returns true when the
+  // pitch-preserving time-stretch node is usable; false means we fall back to
+  // baking speed into generation instead.
+  async function ensureStretch(context) {
+    if (!SoundTouchNode || typeof context.audioWorklet === "undefined") return false;
+    if (!stretchRegistration) {
+      stretchRegistration = SoundTouchNode.register(context, soundTouchProcessorUrl).then(
+        () => true,
+        () => {
+          stretchRegistration = null;
+          return false;
+        }
+      );
+    }
+    return stretchRegistration;
+  }
+
+  // True while a Kokoro buffer is playing through Web Audio.
+  function hasActiveAudio() {
+    return Boolean(activeSource);
+  }
+
+  function releaseActiveAudio() {
+    if (activeSource) {
+      activeSource.onended = null;
+      try {
+        activeSource.stop();
+      } catch {
+        // ignore: source may not have started or already stopped
+      }
+      try {
+        activeSource.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+    if (activeStretch) {
+      try {
+        activeStretch.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+    if (activeGain) {
+      try {
+        activeGain.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+    activeSource = null;
+    activeStretch = null;
+    activeGain = null;
+  }
 
   function notify(message) {
     if (typeof onUpdate === "function") onUpdate(message);
@@ -142,6 +217,11 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     if (skipReason) {
       await markSkipped(item, skipReason);
       notify(skipReason);
+      return;
+    }
+
+    if (settings.engine === "kokoro") {
+      await speakWithKokoro(item, settings);
       return;
     }
 
@@ -213,6 +293,128 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     }
   }
 
+  async function speakWithKokoro(item, settings) {
+    const token = playbackToken + 1;
+    playbackToken = token;
+
+    const synth = getSpeechSynthesis();
+    if (synth) synth.cancel();
+    releaseActiveAudio();
+
+    const context = getAudioContext();
+    if (!context) {
+      const reason = "This WebView does not expose Web Audio, so Kokoro cannot play.";
+      await markSkipped(item, reason);
+      notify(reason);
+      return;
+    }
+
+    const playingItem = await markPlaying(item);
+    const rate = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
+
+    // When time-stretch is available we generate at native speed and change rate
+    // live; otherwise we bake the speed into generation (still pitch-preserved,
+    // but only changeable per-read).
+    const useStretch = await ensureStretch(context);
+    if (playbackToken !== token) return;
+    const genSpeed = useStretch ? 1 : rate;
+    notify(`Generating natural Kokoro speech${useStretch ? "" : ` at ${rate}x`}...`);
+
+    let generated = null;
+    try {
+      generated = await generateKokoroAudio(
+        normalizeSpeakableText(playingItem),
+        settings.kokoroVoice,
+        genSpeed
+      );
+    } catch (error) {
+      if (playbackToken !== token) return;
+      setPlaybackState("idle");
+      const reason = `Local Kokoro speech failed: ${error.message}`;
+      await markSkipped(playingItem, reason);
+      notify(`${reason} The speakable preview remains visible.`);
+      return;
+    }
+
+    if (playbackToken !== token) return;
+
+    try {
+      if (context.state === "suspended") await context.resume();
+
+      const buffer = context.createBuffer(1, generated.samples.length, generated.sampleRate);
+      buffer.copyToChannel(generated.samples, 0);
+
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+
+      const gain = context.createGain();
+      gain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
+
+      if (useStretch) {
+        const stretch = new SoundTouchNode({ context, outputChannelCount: 1 });
+        // Set both rates to the same value: source speeds up, the stretch node
+        // compensates pitch so it stays natural. Both are live AudioParams.
+        source.playbackRate.value = rate;
+        stretch.playbackRate.value = rate;
+        source.connect(stretch);
+        stretch.connect(gain);
+        activeStretch = stretch;
+      } else {
+        // Speed baked into generation, so play at native rate.
+        source.playbackRate.value = 1;
+        source.connect(gain);
+      }
+      gain.connect(context.destination);
+
+      activeSource = source;
+      activeGain = gain;
+      activeItem = playingItem;
+      setPlaybackState("speaking");
+      notify(
+        `Reading from ${playingItem.sourceApp} with Kokoro${useStretch ? " (live speed)" : ""}.`
+      );
+
+      source.onended = async () => {
+        if (playbackToken !== token) return;
+        releaseActiveAudio();
+        activeItem = null;
+        setPlaybackState("idle");
+        try {
+          await markPlayed(playingItem);
+          notify("Read aloud finished.");
+        } catch (error) {
+          notify(`Playback finished, but queue state could not be saved: ${error.message}`);
+        }
+      };
+
+      source.start();
+    } catch (error) {
+      if (playbackToken !== token) return;
+      releaseActiveAudio();
+      activeItem = null;
+      setPlaybackState("idle");
+      const reason = `Local Kokoro audio playback failed: ${error.message}`;
+      await markSkipped(playingItem, reason);
+      notify(`${reason} The speakable preview remains visible.`);
+    }
+  }
+
+  // Live-apply rate/volume to a Kokoro buffer that is already playing. Rate is
+  // live only when the SoundTouch stretch node is active (pitch-preserved); set
+  // both the source and stretch playbackRate so pitch stays compensated. Without
+  // the stretch node, speed was baked into generation and applies on next read.
+  function applyLiveSettings(settings) {
+    if (!settings) return;
+    if (activeStretch && activeSource && Number.isFinite(Number(settings.rate))) {
+      const rate = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
+      activeSource.playbackRate.value = rate;
+      activeStretch.playbackRate.value = rate;
+    }
+    if (activeGain && Number.isFinite(Number(settings.volume))) {
+      activeGain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
+    }
+  }
+
   async function readNextPending({ settings, queue }) {
     const item = Array.isArray(queue.pending) ? queue.pending[0] : null;
     if (!item) {
@@ -228,6 +430,13 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
   }
 
   function pause() {
+    if (hasActiveAudio() && playbackState === "speaking") {
+      audioContext?.suspend();
+      setPlaybackState("paused");
+      notify("Paused Kokoro playback.");
+      return;
+    }
+
     const synth = getSpeechSynthesis();
     if (!synth || !activeUtterance || playbackState !== "speaking") {
       notify("No active speech is available to pause.");
@@ -240,6 +449,13 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
   }
 
   function resume() {
+    if (hasActiveAudio() && playbackState === "paused") {
+      audioContext?.resume();
+      setPlaybackState("speaking");
+      notify("Resumed Kokoro playback.");
+      return;
+    }
+
     const synth = getSpeechSynthesis();
     if (!synth || !activeUtterance || playbackState !== "paused") {
       notify("No paused speech is available to resume.");
@@ -253,11 +469,14 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
 
   async function stop(reason = "User stopped playback.") {
     const item = activeItem;
-    const hadActiveSpeech = Boolean(activeUtterance || item);
+    const hadActiveSpeech = Boolean(activeUtterance || hasActiveAudio() || item);
     playbackToken += 1;
     activeUtterance = null;
+    releaseActiveAudio();
     activeItem = null;
     setPlaybackState("idle");
+
+    if (audioContext?.state === "suspended") audioContext.resume();
 
     const synth = getSpeechSynthesis();
     if (synth) synth.cancel();
@@ -312,6 +531,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     stop,
     replayLatest,
     setMute,
+    applyLiveSettings,
     readNextPending,
     get isSpeaking() {
       return playbackState === "speaking";

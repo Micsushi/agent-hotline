@@ -2,7 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 
-const { READ_BEHAVIORS, createSettingsStore } = require("./settings-store");
+const { READ_BEHAVIORS, TTS_ENGINES, createSettingsStore } = require("./settings-store");
 const { createSpeechQueueStore } = require("./speech-queue-store");
 
 const PORT = Number(process.env.AGENT_HOTLINE_PORT || process.env.VOICE_QUESTION_LOOP_PORT || 4777);
@@ -241,7 +241,9 @@ function validateSettingsPatch(patch) {
   const allowed = new Set([
     "readBehavior",
     "mute",
+    "engine",
     "voice",
+    "kokoroVoice",
     "rate",
     "volume",
     "skipRules",
@@ -266,7 +268,13 @@ function validateSettingsPatch(patch) {
     errors.push("readBehavior must be manual, auto, or ask_every_time");
   }
   if ("mute" in patch && typeof patch.mute !== "boolean") errors.push("mute must be boolean");
+  if ("engine" in patch && !TTS_ENGINES.includes(patch.engine)) {
+    errors.push("engine must be webview or kokoro");
+  }
   if ("voice" in patch && typeof patch.voice !== "string") errors.push("voice must be string");
+  if ("kokoroVoice" in patch && typeof patch.kokoroVoice !== "string") {
+    errors.push("kokoroVoice must be string");
+  }
   if ("rate" in patch && (!Number.isFinite(patch.rate) || patch.rate < 0.1 || patch.rate > 10)) {
     errors.push("rate must be a number from 0.1 to 10");
   }
