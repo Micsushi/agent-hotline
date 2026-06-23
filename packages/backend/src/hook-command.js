@@ -1,5 +1,6 @@
 const { parseHookInput, SOURCE_APPS } = require("./hook-input-parser");
 const { filterSpeakableText } = require("./speakable-filter");
+const { createSpoolStore } = require("./spool-store");
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 4777;
@@ -30,6 +31,19 @@ async function runHookCommand(options = {}) {
   const baseUrl = trimTrailingSlash(options.baseUrl || getDefaultBaseUrl(options.env));
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const timeoutMs = options.timeoutMs || REQUEST_TIMEOUT_MS;
+  const env = options.env || process.env;
+  const spoolStore =
+    options.spoolStore ||
+    createSpoolStore({ dataDir: options.dataDir || env.AGENT_HOTLINE_DATA_DIR });
+
+  function bufferOffline(item, reason, message, error) {
+    try {
+      spoolStore.append(item);
+      return recoverable(reason, `${message} Buffered offline for the next backend start.`, error);
+    } catch (spoolError) {
+      return recoverable(reason, message, error || { message: spoolError.message });
+    }
+  }
 
   if (typeof fetchImpl !== "function") {
     return recoverable("fetch_unavailable", "This Node runtime does not expose fetch.");
@@ -48,13 +62,29 @@ async function runHookCommand(options = {}) {
   if (!filtered.shouldSpeak) {
     return skipped(filtered.reason, "No speakable text after filtering.");
   }
+  // Capture only when the read-aloud skill is triggered, i.e. the reply has an
+  // explicit "Spoken:" section. Plain replies are never captured. This is the
+  // single capture control and it lives entirely in the agent.
+  if (filtered.source !== "spoken") {
+    return skipped("skill_not_triggered", "No Spoken section; read-aloud skill is not active.");
+  }
+
+  const enqueueBody = {
+    rawSource: parsed.assistantText,
+    speakableText: filtered.text,
+    sourceApp: parsed.sourceApp,
+    threadId: parsed.threadId,
+    threadLabel: parsed.threadLabel
+  };
 
   const settingsResult = await requestJson(fetchImpl, `${baseUrl}/api/settings`, {
     method: "GET",
     timeoutMs
   });
   if (!settingsResult.ok) {
-    return recoverable(
+    // Backend down: buffer the message so it is not lost.
+    return bufferOffline(
+      enqueueBody,
       "backend_unavailable",
       "Agent Hotline backend is not available.",
       settingsResult.error
@@ -69,14 +99,11 @@ async function runHookCommand(options = {}) {
   const enqueueResult = await requestJson(fetchImpl, `${baseUrl}/api/queue`, {
     method: "POST",
     timeoutMs,
-    body: {
-      rawSource: parsed.assistantText,
-      speakableText: filtered.text,
-      sourceApp: parsed.sourceApp
-    }
+    body: enqueueBody
   });
   if (!enqueueResult.ok) {
-    return recoverable(
+    return bufferOffline(
+      enqueueBody,
       "enqueue_failed",
       "Speakable text could not be queued.",
       enqueueResult.error

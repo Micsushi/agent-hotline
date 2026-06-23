@@ -4,6 +4,7 @@ const path = require("path");
 
 const { READ_BEHAVIORS, TTS_ENGINES, createSettingsStore } = require("./settings-store");
 const { createSpeechQueueStore } = require("./speech-queue-store");
+const { createSpoolStore } = require("./spool-store");
 
 const PORT = Number(process.env.AGENT_HOTLINE_PORT || process.env.VOICE_QUESTION_LOOP_PORT || 4777);
 const HOST = "127.0.0.1";
@@ -460,6 +461,17 @@ function createServer(options = {}) {
       ensureFiles: options.ensureQuestionFiles
     });
 
+  // Drain any messages the hook buffered offline while the backend was down,
+  // in order, into the live queue.
+  const spoolStore =
+    options.spoolStore ||
+    createSpoolStore({ dataDir: options.dataDir, filePath: options.spoolPath });
+  try {
+    spoolStore.drain((item) => queueStore.enqueue(item));
+  } catch {
+    // A broken spool must never stop the server from starting.
+  }
+
   return http.createServer(async (req, res) => {
     try {
       applyCors(req, res);
@@ -518,7 +530,9 @@ function createServer(options = {}) {
           id: body.id,
           rawSource: body.rawSource,
           speakableText: body.speakableText,
-          sourceApp: body.sourceApp
+          sourceApp: body.sourceApp,
+          threadId: body.threadId,
+          threadLabel: body.threadLabel
         });
         sendJson(res, 201, { item, queue: queueState(queueStore) });
         return;
@@ -552,6 +566,16 @@ function createServer(options = {}) {
         const item = queueStore.replayLatest();
         if (!item) {
           throw createHttpError(404, "not_found", "No replayable queue item exists");
+        }
+        sendJson(res, 201, { item, queue: queueState(queueStore) });
+        return;
+      }
+
+      const replayMatch = pathname.match(/^\/api\/queue\/([^/]+)\/replay$/);
+      if (req.method === "POST" && replayMatch) {
+        const item = queueStore.replayItem(decodeURIComponent(replayMatch[1]));
+        if (!item) {
+          throw createHttpError(404, "not_found", "Queue item cannot be replayed");
         }
         sendJson(res, 201, { item, queue: queueState(queueStore) });
         return;

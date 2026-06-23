@@ -4,10 +4,11 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 use tauri::menu::MenuBuilder;
-use tauri::tray::TrayIconBuilder;
-use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager, PhysicalPosition, RunEvent, WindowEvent};
 
 const MAIN_WINDOW_LABEL: &str = "main";
+const MINI_WINDOW_LABEL: &str = "mini";
 const TRAY_TOOLTIP: &str = "Agent Hotline: idle";
 const OPEN_PANEL: &str = "open-panel";
 const READ_LATEST: &str = "read-latest";
@@ -101,6 +102,44 @@ fn open_panel(app: &tauri::AppHandle) {
 
     let _ = window.unminimize();
     let _ = window.show();
+    let _ = window.set_focus();
+    // Force the panel to pull the freshest queue the moment it appears, so it
+    // never shows stale state while the poll loop catches up.
+    let _ = app.emit_to(MAIN_WINDOW_LABEL, "agent-hotline://show", ());
+}
+
+fn hide_mini(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(MINI_WINDOW_LABEL) {
+        let _ = window.hide();
+    }
+}
+
+// Pop the compact controls up near the tray icon on a left click and force a
+// refresh so the latest reply and its read controls are immediately usable.
+fn show_mini(app: &tauri::AppHandle, click: PhysicalPosition<f64>) {
+    let Some(window) = app.get_webview_window(MINI_WINDOW_LABEL) else {
+        return;
+    };
+
+    let size = window
+        .outer_size()
+        .map(|s| (s.width as f64, s.height as f64))
+        .unwrap_or((340.0, 210.0));
+    // Anchor the popup just above-left of the cursor (tray sits bottom-right on
+    // a default Windows taskbar). Clamp so it never lands off the top/left edge.
+    let x = (click.x - size.0).max(8.0);
+    let y = (click.y - size.1 - 12.0).max(8.0);
+
+    let _ = window.set_position(PhysicalPosition::new(x, y));
+    let _ = window.show();
+    let _ = window.set_focus();
+    let _ = app.emit_to(MINI_WINDOW_LABEL, "agent-hotline://show", ());
+}
+
+#[tauri::command]
+fn show_main_panel(app: tauri::AppHandle) {
+    hide_mini(&app);
+    open_panel(&app);
 }
 
 fn emit_placeholder_action(app: &tauri::AppHandle, action: &'static str) {
@@ -131,6 +170,17 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip(TRAY_TOOLTIP)
         .menu(&menu)
         .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                position,
+                ..
+            } = event
+            {
+                show_mini(tray.app_handle(), position);
+            }
+        })
         .on_menu_event(|app, event| match event.id().as_ref() {
             OPEN_PANEL | SETTINGS => open_panel(app),
             READ_LATEST => emit_placeholder_action(app, READ_LATEST),
@@ -149,22 +199,25 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 fn main() {
     let app = tauri::Builder::default()
         .setup(setup_tray)
-        .invoke_handler(tauri::generate_handler![backend_status])
+        .invoke_handler(tauri::generate_handler![backend_status, show_main_panel])
         .build(tauri::generate_context!())
         .expect("error while building Agent Hotline desktop");
 
     app.run(|app, event| {
-        if let RunEvent::WindowEvent {
-            label,
-            event: WindowEvent::CloseRequested { api, .. },
-            ..
-        } = event
-        {
-            if label == MAIN_WINDOW_LABEL {
-                api.prevent_close();
-                if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-                    let _ = window.hide();
+        if let RunEvent::WindowEvent { label, event, .. } = event {
+            match event {
+                // Keep the app tray-resident: closing a window just hides it.
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    if let Some(window) = app.get_webview_window(&label) {
+                        let _ = window.hide();
+                    }
                 }
+                // Dismiss the tray popup as soon as the user clicks elsewhere.
+                WindowEvent::Focused(false) if label == MINI_WINDOW_LABEL => {
+                    hide_mini(app);
+                }
+                _ => {}
             }
         }
     });

@@ -15,6 +15,8 @@ try {
   @{
     source = "claude"
     hook_event_name = "Stop"
+    session_id = $payload.session_id
+    cwd = $payload.cwd
     assistant_response = @{
       text = $assistantText
     }

@@ -1,9 +1,33 @@
 import { generateKokoroAudio } from "./tts-kokoro.js";
-import { SoundTouchNode } from "@soundtouchjs/audio-worklet";
-import soundTouchProcessorUrl from "@soundtouchjs/audio-worklet/processor?url";
 
 const RATE_MIN = 0.25;
 const RATE_MAX = 4;
+
+// Above this rate the SoundTouch pitch-compensation (resample-up +
+// WSOLA-pitch-shift-down) starts dropping whole phonemes/words and leaves
+// residual pitch, so we keep the live stretch factor at or below it.
+const STRETCH_SAFE_MAX = 1.5;
+
+// Above this generation speed Kokoro's duration predictor starts dropping the
+// LEADING words entirely (worse the faster you go). So we never generate faster
+// than this; any extra speed is carried by the live WSOLA stretch instead.
+const KOKORO_SAFE_SPEED = 1.5;
+
+// The SoundTouch worklet swallows its first input chunk while priming, which
+// clips the start of the first word (worse at higher stretch). Prepend this much
+// silence so the warm-up eats silence instead of speech. Input-time, so it's
+// independent of the stretch factor.
+const STRETCH_LEADIN_SEC = 0.2;
+
+// WSOLA timing tuned for speech instead of the auto music defaults. Shorter
+// sequence/seek with exhaustive seek (quickSeek off) reduces stitch artifacts
+// across the 1.0–1.5x live range. See @soundtouchjs setStretchParameters.
+const SPEECH_STRETCH_PARAMS = {
+  sequenceMs: 40,
+  seekWindowMs: 15,
+  overlapMs: 8,
+  quickSeek: false
+};
 
 const CODE_HEAVY_PATTERNS = [
   /```/,
@@ -115,10 +139,12 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
   let activeSource = null;
   let activeStretch = null;
   let activeGain = null;
+  let activeGenSpeed = 1;
   let activeItem = null;
   let playbackState = "idle";
   let playbackToken = 0;
   let stretchRegistration = null;
+  let StretchNodeClass = null;
 
   function getAudioContext() {
     if (!audioContext) {
@@ -132,15 +158,20 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
   // pitch-preserving time-stretch node is usable; false means we fall back to
   // baking speed into generation instead.
   async function ensureStretch(context) {
-    if (!SoundTouchNode || typeof context.audioWorklet === "undefined") return false;
+    if (typeof context.audioWorklet === "undefined") return false;
     if (!stretchRegistration) {
-      stretchRegistration = SoundTouchNode.register(context, soundTouchProcessorUrl).then(
-        () => true,
-        () => {
-          stretchRegistration = null;
-          return false;
-        }
-      );
+      stretchRegistration = (async () => {
+        const [{ SoundTouchNode }, { default: processorUrl }] = await Promise.all([
+          import("@soundtouchjs/audio-worklet"),
+          import("@soundtouchjs/audio-worklet/processor?url")
+        ]);
+        await SoundTouchNode.register(context, processorUrl);
+        StretchNodeClass = SoundTouchNode;
+        return true;
+      })().catch(() => {
+        stretchRegistration = null;
+        return false;
+      });
     }
     return stretchRegistration;
   }
@@ -181,6 +212,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     activeSource = null;
     activeStretch = null;
     activeGain = null;
+    activeGenSpeed = 1;
   }
 
   function notify(message) {
@@ -312,13 +344,28 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     const playingItem = await markPlaying(item);
     const rate = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
 
-    // When time-stretch is available we generate at native speed and change rate
-    // live; otherwise we bake the speed into generation (still pitch-preserved,
-    // but only changeable per-read).
-    const useStretch = await ensureStretch(context);
+    // Split the requested speed between Kokoro generation and the live WSOLA
+    // stretch so neither is pushed into its word-dropping regime:
+    //   - up to STRETCH_SAFE_MAX: generate at 1x, stretch live (pitch-perfect)
+    //   - above it: generate up to KOKORO_SAFE_SPEED, stretch carries the rest
+    // Kokoro drops the LEADING words past KOKORO_SAFE_SPEED, so we never bake a
+    // faster speed than that into generation.
+    const canStretch = await ensureStretch(context);
     if (playbackToken !== token) return;
-    const genSpeed = useStretch ? 1 : rate;
-    notify(`Generating natural Kokoro speech${useStretch ? "" : ` at ${rate}x`}...`);
+    let genSpeed;
+    let stretchRate;
+    if (!canStretch) {
+      genSpeed = Math.min(rate, KOKORO_SAFE_SPEED);
+      stretchRate = 1;
+    } else if (rate <= STRETCH_SAFE_MAX) {
+      genSpeed = 1;
+      stretchRate = rate;
+    } else {
+      genSpeed = Math.min(rate / STRETCH_SAFE_MAX, KOKORO_SAFE_SPEED);
+      stretchRate = rate / genSpeed;
+    }
+    const useStretch = canStretch && Math.abs(stretchRate - 1) > 0.001;
+    notify(`Generating natural Kokoro speech${genSpeed > 1 ? ` at ${genSpeed.toFixed(2)}x` : ""}...`);
 
     let generated = null;
     try {
@@ -341,8 +388,18 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     try {
       if (context.state === "suspended") await context.resume();
 
-      const buffer = context.createBuffer(1, generated.samples.length, generated.sampleRate);
-      buffer.copyToChannel(generated.samples, 0);
+      // Pad a silent lead-in only when the stretch node is in the graph, so its
+      // priming swallows silence rather than the first word.
+      const leadInSamples =
+        useStretch && StretchNodeClass
+          ? Math.round(generated.sampleRate * STRETCH_LEADIN_SEC)
+          : 0;
+      const buffer = context.createBuffer(
+        1,
+        leadInSamples + generated.samples.length,
+        generated.sampleRate
+      );
+      buffer.copyToChannel(generated.samples, 0, leadInSamples);
 
       const source = context.createBufferSource();
       source.buffer = buffer;
@@ -350,17 +407,20 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
       const gain = context.createGain();
       gain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
 
-      if (useStretch) {
-        const stretch = new SoundTouchNode({ context, outputChannelCount: 1 });
-        // Set both rates to the same value: source speeds up, the stretch node
-        // compensates pitch so it stays natural. Both are live AudioParams.
-        source.playbackRate.value = rate;
-        stretch.playbackRate.value = rate;
+      if (useStretch && StretchNodeClass) {
+        const stretch = new StretchNodeClass({ context, outputChannelCount: 1 });
+        if (typeof stretch.setStretchParameters === "function") {
+          stretch.setStretchParameters(SPEECH_STRETCH_PARAMS);
+        }
+        // Set both rates to the residual factor: source speeds up, the stretch
+        // node compensates pitch so it stays natural. Both are live AudioParams.
+        source.playbackRate.value = stretchRate;
+        stretch.playbackRate.value = stretchRate;
         source.connect(stretch);
         stretch.connect(gain);
         activeStretch = stretch;
       } else {
-        // Speed baked into generation, so play at native rate.
+        // Full speed baked into generation, so play the buffer at native rate.
         source.playbackRate.value = 1;
         source.connect(gain);
       }
@@ -368,6 +428,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
 
       activeSource = source;
       activeGain = gain;
+      activeGenSpeed = genSpeed;
       activeItem = playingItem;
       setPlaybackState("speaking");
       notify(
@@ -406,13 +467,31 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
   function applyLiveSettings(settings) {
     if (!settings) return;
     if (activeStretch && activeSource && Number.isFinite(Number(settings.rate))) {
-      const rate = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
-      activeSource.playbackRate.value = rate;
-      activeStretch.playbackRate.value = rate;
+      // The baked generation speed is fixed for this read; the stretch node
+      // carries the residual factor. Solve for it from the requested total so
+      // dragging the slider stays pitch-preserved without re-generating. The
+      // next read re-splits optimally.
+      const target = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
+      const residual = clampNumber(target / (activeGenSpeed || 1), 1, RATE_MIN, RATE_MAX);
+      activeSource.playbackRate.value = residual;
+      activeStretch.playbackRate.value = residual;
     }
     if (activeGain && Number.isFinite(Number(settings.volume))) {
       activeGain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
     }
+  }
+
+  // Play a specific item (from history or the current selection).
+  async function playItem(item, settings = {}) {
+    if (!item) {
+      notify("No item is selected to read.");
+      return;
+    }
+    if (settings.mute) {
+      notify("Muted. The speakable preview remains available to read on screen.");
+      return;
+    }
+    await speakItem(item, settings);
   }
 
   async function readNextPending({ settings, queue }) {
@@ -532,6 +611,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     replayLatest,
     setMute,
     applyLiveSettings,
+    playItem,
     readNextPending,
     get isSpeaking() {
       return playbackState === "speaking";

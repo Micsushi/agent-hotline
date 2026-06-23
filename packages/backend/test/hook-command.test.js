@@ -7,6 +7,7 @@ const test = require("node:test");
 
 const { runHookCommand } = require("../src/hook-command");
 const { createServer, HOST } = require("../src/server");
+const { createSpoolStore } = require("../src/spool-store");
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "agent-hotline-hook-"));
@@ -97,8 +98,10 @@ test("hook command filters Claude output before queueing for playback", async ()
     const result = await runHookCommand({
       input: claudePayload(
         [
+          "Spoken:",
           "Here is the short answer to read aloud.",
           "",
+          "Displayed:",
           "```js",
           "const displayedOnly = true;",
           "```"
@@ -129,7 +132,9 @@ test("hook command skips disabled sources before enqueueing", async () => {
     assert.equal(settingsResponse.status, 200);
 
     const result = await runHookCommand({
-      input: codexPayload("This is a normal assistant response that would otherwise be queued."),
+      input: codexPayload(
+        "Spoken:\nThis is a triggered response that would otherwise be queued for Codex."
+      ),
       baseUrl
     });
 
@@ -139,15 +144,70 @@ test("hook command skips disabled sources before enqueueing", async () => {
   });
 });
 
-test("hook command returns recoverable failure when backend is not running", async () => {
+test("hook command skips replies without a Spoken section (skill not triggered)", async () => {
+  await withServer({}, async ({ baseUrl, dataDir }) => {
+    const result = await runHookCommand({
+      input: codexPayload(
+        "This is a normal reply with no Spoken section, so it must not be queued."
+      ),
+      baseUrl
+    });
+
+    assert.equal(result.action, "skipped");
+    assert.equal(result.reason, "skill_not_triggered");
+    assert.equal(fs.existsSync(path.join(dataDir, "speech-queue.json")), false);
+  });
+});
+
+test("hook command buffers to the spool when backend is not running", async () => {
+  const spoolStore = createSpoolStore({ filePath: path.join(tempDir(), "spool.json") });
   const result = await runHookCommand({
-    input: codexPayload("This should not break the calling agent when the backend is down."),
+    input: codexPayload(
+      "Spoken:\nThis should buffer offline so it is not lost while the backend is down."
+    ),
     baseUrl: "http://127.0.0.1:9",
-    timeoutMs: 100
+    timeoutMs: 100,
+    spoolStore
   });
 
   assert.equal(result.action, "recoverable_failure");
   assert.equal(result.reason, "backend_unavailable");
+
+  const buffered = spoolStore.read();
+  assert.equal(buffered.length, 1);
+  assert.equal(buffered[0].sourceApp, "Codex");
+  assert.equal(
+    buffered[0].speakableText,
+    "This should buffer offline so it is not lost while the backend is down."
+  );
+});
+
+test("backend drains the offline spool on startup, in order", async () => {
+  const dataDir = tempDir();
+  const spoolStore = createSpoolStore({ dataDir });
+  spoolStore.append({
+    rawSource: "a",
+    speakableText: "First buffered message.",
+    sourceApp: "Claude"
+  });
+  spoolStore.append({
+    rawSource: "b",
+    speakableText: "Second buffered message.",
+    sourceApp: "Codex"
+  });
+
+  const server = createServer({ dataDir });
+  const port = await listen(server);
+  try {
+    const response = await fetch(`http://${HOST}:${port}/api/queue`);
+    const { queue } = await response.json();
+    assert.equal(queue.items.length, 2);
+    assert.equal(queue.items[0].speakableText, "First buffered message.");
+    assert.equal(queue.items[1].speakableText, "Second buffered message.");
+    assert.equal(spoolStore.read().length, 0);
+  } finally {
+    await close(server);
+  }
 });
 
 test("hook command skips malformed or unspeakable input safely", async () => {

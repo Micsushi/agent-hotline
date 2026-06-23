@@ -1,4 +1,4 @@
-import { warmKokoro, getKokoroVoices } from "./tts-kokoro.js";
+import { getKokoroVoices } from "./tts-kokoro.js";
 
 const READ_BEHAVIORS = new Set(["manual", "auto", "ask_every_time"]);
 const TTS_ENGINES = new Set(["webview", "kokoro"]);
@@ -160,6 +160,8 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   const state = document.querySelector("#settings-state");
   const error = document.querySelector("#settings-error");
   const readBehaviorInputs = Array.from(document.querySelectorAll("input[name='read-behavior']"));
+  const readAloud = document.querySelector("#setting-readaloud");
+  const readAloudSub = document.querySelector("#readaloud-sub");
   const mute = document.querySelector("#setting-mute");
   const codex = document.querySelector("#setting-codex");
   const claude = document.querySelector("#setting-claude");
@@ -200,6 +202,12 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
       input.checked = input.value === currentSettings.readBehavior;
     }
 
+    if (readAloud) readAloud.checked = !currentSettings.mute;
+    if (readAloudSub) {
+      readAloudSub.textContent = currentSettings.mute
+        ? "Off — replies are still captured to history, just not read."
+        : "On — captured replies will be read.";
+    }
     mute.checked = currentSettings.mute;
     codex.checked = currentSettings.codexEnabled;
     claude.checked = currentSettings.claudeEnabled;
@@ -210,11 +218,8 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
     const usingKokoro = currentSettings.engine === "kokoro";
     voice.closest(".field-row").hidden = usingKokoro;
     kokoroVoiceRow.hidden = !usingKokoro;
-    if (usingKokoro) {
-      warmKokoro().catch(() => {
-        // Surfaced at playback time; warm-up failure should not block settings.
-      });
-    }
+    // Do not warm the model here. TTS must only start on an explicit user action
+    // (clicking Read), so Kokoro loads lazily on first playback instead.
 
     rate.value = String(currentSettings.rate);
     rateValue.value = formatRate(currentSettings.rate);
@@ -261,6 +266,9 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
     });
   }
 
+  if (readAloud) {
+    readAloud.addEventListener("change", () => savePatch({ mute: !readAloud.checked }));
+  }
   mute.addEventListener("change", () => savePatch({ mute: mute.checked }));
   codex.addEventListener("change", () => savePatch({ codexEnabled: codex.checked }));
   claude.addEventListener("change", () => savePatch({ claudeEnabled: claude.checked }));
@@ -270,6 +278,7 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
 
   rate.addEventListener("input", () => {
     rateValue.value = formatRate(rate.value);
+    onLivePreview?.({ rate: clampNumber(rate.value, currentSettings.rate, 0.25, 4) });
   });
   rate.addEventListener("change", () =>
     savePatch({ rate: clampNumber(rate.value, currentSettings.rate, 0.25, 4) })

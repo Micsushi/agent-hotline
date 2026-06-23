@@ -1,0 +1,145 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.mini-body {
+  margin: 0;
+  background: #15181c;
+  color: #edf0ed;
+  overflow: hidden;
+}
+
+.mini {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 11px;
+  height: 100vh;
+  border: 1px solid #262b30;
+  background: #15181c;
+}
+
+.mini-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-source {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #242a30;
+  color: #a8b3ad;
+}
+
+.mini-badge.is-speaking {
+  background: #d6ff64;
+  color: #151713;
+}
+
+.mini-badge.is-paused {
+  background: #ffd25e;
+  color: #2a2410;
+}
+
+.mini-badge.is-pending {
+  background: #5ea0ff;
+  color: #07111f;
+}
+
+.mini-badge.is-muted,
+.mini-badge.is-error {
+  background: #ff7a7a;
+  color: #2a0d0d;
+}
+
+.mini-open {
+  border: 1px solid #303740;
+  background: transparent;
+  color: #a8b3ad;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mini-open:hover {
+  color: #edf0ed;
+  border-color: #4a525c;
+}
+
+.mini-preview {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #cdd5cf;
+  height: 50px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.mini-transport {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.mini-btn {
+  border: 1px solid #303740;
+  background: #1c2127;
+  color: #edf0ed;
+  font-size: 12px;
+  padding: 7px 4px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.mini-btn:hover:not(:disabled) {
+  border-color: #4a525c;
+}
+
+.mini-btn.primary {
+  background: #d6ff64;
+  border-color: #d6ff64;
+  color: #151713;
+  font-weight: 700;
+}
+
+.mini-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.mini-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #828d86;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

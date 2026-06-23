@@ -148,10 +148,33 @@ function testAuthoredSpokenSectionIsNotTruncated() {
   assert.equal(result.text.includes("const x"), false);
 }
 
+function testMarkdownHeadingsAndMarkupAreStripped() {
+  const msg = [
+    "**Spoken:**",
+    "No prompt is fine. The **extension** trusts hooks. Listen for _purple elephant_.",
+    "",
+    "==========",
+    "",
+    "**Displayed:**",
+    "```js",
+    "const x = 1;",
+    "```"
+  ].join("\n");
+
+  const result = filterSpeakableText(msg);
+
+  assert.equal(result.reason, "spoken_section");
+  assert.equal(result.text.includes("*"), false);
+  assert.equal(result.text.includes("="), false);
+  assert.equal(/const x/.test(result.text), false);
+  assert.equal(result.text.includes("purple elephant"), true);
+}
+
 const tests = [
   testShortExplanationBecomesSpeakable,
   testSpokenSectionWinsOverDisplayedDetails,
   testAuthoredSpokenSectionIsNotTruncated,
+  testMarkdownHeadingsAndMarkupAreStripped,
   testCodeBlockIsRemovedButSurroundingSummaryRemains,
   testDiffJsonLogsAndTablesAreReducedToProse,
   testCodeHeavyOutputIsSkipped,

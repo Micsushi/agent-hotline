@@ -22,6 +22,21 @@
         "center": true,
         "focus": false,
         "visible": false
+      },
+      {
+        "label": "mini",
+        "url": "mini.html",
+        "title": "Agent Hotline",
+        "width": 340,
+        "height": 210,
+        "resizable": false,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "visible": false
       }
     ],
     "security": {

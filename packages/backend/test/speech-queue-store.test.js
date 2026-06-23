@@ -150,12 +150,34 @@ function testClearQueue() {
   assert.deepEqual(JSON.parse(fs.readFileSync(store.filePath, "utf8")), { items: [] });
 }
 
+function testThreadFieldsStoredAndReplayedById() {
+  const store = createSpeechQueueStore({
+    filePath: createTempFile(),
+    now: createClock(),
+    idGenerator: createIds(["orig", "replay"])
+  });
+
+  const item = store.enqueue(
+    sampleItem({ threadId: "sess-123", threadLabel: "agent-hotline · sess-123" })
+  );
+  assert.equal(item.threadId, "sess-123");
+  assert.equal(item.threadLabel, "agent-hotline · sess-123");
+
+  const replayed = store.replayItem("orig");
+  assert.equal(replayed.replayOf, "orig");
+  assert.equal(replayed.threadId, "sess-123");
+  assert.equal(replayed.speakableText, item.speakableText);
+
+  assert.equal(store.replayItem("does-not-exist"), null);
+}
+
 const tests = [
   testDefaultRuntimeFile,
   testQueueLifecycle,
   testPersistenceAndReplayAfterRestart,
   testSkippedItemsRecordReason,
   testReplayIgnoresSkippedLatest,
+  testThreadFieldsStoredAndReplayedById,
   testClearQueue
 ];
 

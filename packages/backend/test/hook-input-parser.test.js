@@ -124,9 +124,25 @@ function testBomPrefixedJsonStillParses() {
   assert.equal(result.assistantText, "Hi");
 }
 
+function testThreadIdAndLabelExtracted() {
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "claude",
+      session_id: "abcdef12-3456-7890",
+      cwd: "C:\\Users\\me\\Documents\\Github\\agent-hotline",
+      assistant_response: { text: "Done." }
+    })
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.threadId, "abcdef12-3456-7890");
+  assert.equal(result.threadLabel, "agent-hotline · abcdef12");
+}
+
 const tests = [
   testCodexFixturesParseAssistantText,
   testClaudeFixturesParseAssistantText,
+  testThreadIdAndLabelExtracted,
   testBomPrefixedJsonStillParses,
   testMalformedJsonSkipsSafely,
   testUnknownSchemaSkipsWithStructuredReason,

@@ -34,12 +34,16 @@ function parseHookInput(text) {
       });
     }
 
+    const thread = extractThread(payload, sourceApp);
+
     return {
       ok: true,
       action: "accept",
       sourceApp,
       assistantText: extracted.text,
       schema: extracted.schema,
+      threadId: thread.threadId,
+      threadLabel: thread.threadLabel,
       payload
     };
   } catch (error) {
@@ -49,6 +53,46 @@ function parseHookInput(text) {
       payload
     });
   }
+}
+
+// Pull a stable chat-thread id and a human label so history can group items by
+// the conversation they came from. Claude Stop payloads carry session_id + cwd;
+// Codex and others vary, so several keys are checked.
+function extractThread(payload, sourceApp) {
+  if (!isPlainObject(payload)) {
+    return { threadId: undefined, threadLabel: undefined };
+  }
+
+  const threadId =
+    firstString(
+      payload.session_id,
+      payload.sessionId,
+      payload.conversation_id,
+      payload.conversationId,
+      payload.thread_id,
+      payload.threadId
+    ) || undefined;
+
+  const cwd = firstString(payload.cwd, payload.workspace, payload.project_dir);
+  const folder = cwd
+    ? cwd
+        .replace(/[\\/]+$/, "")
+        .split(/[\\/]/)
+        .pop()
+    : "";
+  const shortId = threadId ? threadId.slice(0, 8) : "";
+  const labelParts = [folder || sourceApp];
+  if (shortId) labelParts.push(shortId);
+  const threadLabel = labelParts.filter(Boolean).join(" · ") || undefined;
+
+  return { threadId, threadLabel };
+}
+
+function firstString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+  }
+  return "";
 }
 
 function detectSourceApp(payload) {

@@ -6,75 +6,42 @@
     <title>Agent Hotline</title>
   </head>
   <body>
-    <main class="shell" aria-labelledby="app-title">
-      <section class="control-panel">
-        <div class="brand-row">
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
           <div class="mark" aria-hidden="true">AH</div>
           <div class="title-block">
-            <p class="eyebrow">Read-aloud queue</p>
             <h1 id="app-title">Agent Hotline</h1>
+            <p class="meta-line">
+              <span id="queue-count">0</span> waiting · <span id="read-mode">Manual</span>
+            </p>
           </div>
           <span id="status-badge" class="status-badge is-idle">Idle</span>
         </div>
 
-        <section class="status-card" aria-live="polite">
-          <p class="label">Current status</p>
-          <div class="status-line">
-            <strong id="status-label">Idle</strong>
-          </div>
-          <p id="status-detail" class="detail">Checking queue state...</p>
-        </section>
+        <nav class="tabs" role="tablist" aria-label="Sections">
+          <button id="tab-home" class="tab is-active" type="button" role="tab">Home</button>
+          <button id="tab-settings" class="tab" type="button" role="tab">Settings</button>
+        </nav>
+      </header>
 
-        <dl class="facts" aria-label="Queue summary">
-          <div>
-            <dt>Pending</dt>
-            <dd id="queue-count">0</dd>
-          </div>
-          <div>
-            <dt>Mode</dt>
-            <dd id="read-mode">Manual</dd>
-          </div>
-          <div>
-            <dt>Source</dt>
-            <dd id="source-app">None</dd>
-          </div>
-          <div>
-            <dt>Item</dt>
-            <dd id="item-status">none</dd>
-          </div>
-        </dl>
-
-        <section class="preview-card" aria-labelledby="preview-title">
-          <div class="section-heading">
-            <p class="label" id="preview-title">Latest speakable preview</p>
-            <button id="refresh" class="refresh-button" type="button">Refresh</button>
-          </div>
-          <p id="preview-text" class="preview-text">No speakable text is queued yet.</p>
-          <p id="preview-meta" class="preview-meta">Waiting for Codex or Claude hook output.</p>
-        </section>
-
-        <div class="actions">
-          <button id="read-button" class="primary" type="button" disabled>Read</button>
-          <button id="skip-button" type="button" disabled>Skip</button>
-        </div>
-
-        <div class="transport-actions" aria-label="Playback controls">
-          <button id="pause-button" type="button" disabled>Pause</button>
-          <button id="resume-button" type="button" disabled>Resume</button>
-          <button id="stop-button" type="button" disabled>Stop</button>
-          <button id="replay-button" type="button" disabled>Replay</button>
-          <button id="mute-button" type="button">Mute</button>
-        </div>
-
-        <section class="settings-panel" aria-labelledby="settings-title">
-          <div class="section-heading">
+      <!-- HOME -->
+      <section id="panel-home" class="panel" role="tabpanel" aria-label="Home">
+        <section class="card master-card">
+          <div class="master-row">
             <div>
-              <p class="label">Settings</p>
-              <h2 id="settings-title">Read behavior</h2>
+              <p class="card-title">Read aloud</p>
+              <p id="readaloud-sub" class="master-sub">On — captured replies will be read.</p>
             </div>
-            <span id="settings-state" class="settings-state">Loading</span>
+            <label class="switch" for="setting-readaloud">
+              <input id="setting-readaloud" type="checkbox" />
+              <span class="switch-track" aria-hidden="true"></span>
+            </label>
           </div>
+        </section>
 
+        <section class="card">
+          <p class="card-title">Read behavior</p>
           <div class="segmented-control" role="radiogroup" aria-label="Read behavior">
             <label>
               <input type="radio" name="read-behavior" value="manual" />
@@ -89,68 +56,110 @@
               <span>Ask</span>
             </label>
           </div>
-
-          <div class="toggle-grid" aria-label="Source and playback toggles">
-            <label class="toggle-row">
-              <input id="setting-mute" type="checkbox" />
-              <span>Mute</span>
-            </label>
-            <label class="toggle-row">
-              <input id="setting-codex" type="checkbox" />
-              <span>Codex</span>
-            </label>
-            <label class="toggle-row">
-              <input id="setting-claude" type="checkbox" />
-              <span>Claude</span>
-            </label>
-          </div>
-
-          <div class="field-grid">
-            <label class="field-row" for="setting-engine">
-              <span>Engine</span>
-              <select id="setting-engine">
-                <option value="webview">System voice (fast)</option>
-                <option value="kokoro">Kokoro local model (natural)</option>
-              </select>
-            </label>
-            <label class="field-row" for="setting-voice">
-              <span>Voice</span>
-              <select id="setting-voice"></select>
-            </label>
-            <label class="field-row" for="setting-kokoro-voice" id="kokoro-voice-row" hidden>
-              <span>Kokoro voice</span>
-              <select id="setting-kokoro-voice"></select>
-            </label>
-            <label class="field-row" for="setting-rate">
-              <span>Rate <output id="setting-rate-value">1.0x</output></span>
-              <input id="setting-rate" type="range" min="0.25" max="4" step="0.05" />
-            </label>
-            <label class="field-row" for="setting-volume">
-              <span>Volume <output id="setting-volume-value">100%</output></span>
-              <input id="setting-volume" type="range" min="0" max="1" step="0.05" />
-            </label>
-          </div>
-
-          <details class="skip-rules">
-            <summary>Skip rules</summary>
-            <div class="skip-grid" aria-label="Skip rule toggles">
-              <label><input data-skip-rule="codeBlocks" type="checkbox" /> Code</label>
-              <label><input data-skip-rule="diffs" type="checkbox" /> Diffs</label>
-              <label><input data-skip-rule="logs" type="checkbox" /> Logs</label>
-              <label><input data-skip-rule="tables" type="checkbox" /> Tables</label>
-              <label><input data-skip-rule="json" type="checkbox" /> JSON</label>
-              <label><input data-skip-rule="longBulletLists" type="checkbox" /> Long lists</label>
-            </div>
-          </details>
-
-          <p id="settings-error" class="settings-error" hidden></p>
         </section>
 
-        <div class="footer-row">
-          <span id="action-hint" class="footnote">Loading panel state...</span>
-          <span id="backend-url" class="backend-url">http://127.0.0.1:4777</span>
-        </div>
+        <section class="card" aria-labelledby="history-title">
+          <div class="section-heading">
+            <p class="card-title" id="history-title">History</p>
+            <button id="refresh" class="refresh-button" type="button">Refresh</button>
+          </div>
+          <div id="history" class="history-list">
+            <p class="history-empty">Nothing has been spoken yet.</p>
+          </div>
+        </section>
+
+        <section class="card" aria-live="polite">
+          <p class="card-title">Test &amp; play</p>
+          <div class="now-head">
+            <span id="source-app" class="now-source">None</span>
+            <span id="item-time" class="now-time"></span>
+            <span id="item-status" class="now-status">none</span>
+          </div>
+          <p id="preview-text" class="now-text">No speakable text yet.</p>
+          <p id="preview-meta" class="now-meta">Waiting for Codex or Claude output.</p>
+
+          <label class="field-row" for="setting-rate">
+            <span>Read speed <output id="setting-rate-value">1.0x</output></span>
+            <input id="setting-rate" type="range" min="0.25" max="4" step="0.05" />
+          </label>
+
+          <div class="transport-primary">
+            <button id="prev-button" type="button" disabled>‹ Prev</button>
+            <button id="read-button" class="primary" type="button" disabled>► Read</button>
+            <button id="next-button" type="button" disabled>Next ›</button>
+          </div>
+          <div class="transport-secondary" aria-label="Playback controls">
+            <button id="pause-button" type="button" disabled>Pause</button>
+            <button id="resume-button" type="button" disabled>Resume</button>
+            <button id="stop-button" type="button" disabled>Stop</button>
+            <button id="mute-button" type="button">Mute</button>
+          </div>
+        </section>
       </section>
+
+      <!-- SETTINGS -->
+      <section id="panel-settings" class="panel" role="tabpanel" aria-label="Settings" hidden>
+        <div class="section-heading">
+          <h2 id="settings-title">Voice &amp; sources</h2>
+          <span id="settings-state" class="settings-state">Loading</span>
+        </div>
+
+        <div class="toggle-grid" aria-label="Source and playback toggles">
+          <label class="toggle-row">
+            <input id="setting-mute" type="checkbox" />
+            <span>Mute</span>
+          </label>
+          <label class="toggle-row">
+            <input id="setting-codex" type="checkbox" />
+            <span>Codex</span>
+          </label>
+          <label class="toggle-row">
+            <input id="setting-claude" type="checkbox" />
+            <span>Claude</span>
+          </label>
+        </div>
+
+        <div class="field-grid">
+          <label class="field-row" for="setting-engine">
+            <span>Engine</span>
+            <select id="setting-engine">
+              <option value="webview">System voice (fast)</option>
+              <option value="kokoro">Kokoro local model (natural)</option>
+            </select>
+          </label>
+          <label class="field-row" for="setting-voice">
+            <span>Voice</span>
+            <select id="setting-voice"></select>
+          </label>
+          <label class="field-row" for="setting-kokoro-voice" id="kokoro-voice-row" hidden>
+            <span>Kokoro voice</span>
+            <select id="setting-kokoro-voice"></select>
+          </label>
+          <label class="field-row" for="setting-volume">
+            <span>Volume <output id="setting-volume-value">100%</output></span>
+            <input id="setting-volume" type="range" min="0" max="1" step="0.05" />
+          </label>
+        </div>
+
+        <details class="skip-rules">
+          <summary>Skip rules</summary>
+          <div class="skip-grid" aria-label="Skip rule toggles">
+            <label><input data-skip-rule="codeBlocks" type="checkbox" /> Code</label>
+            <label><input data-skip-rule="diffs" type="checkbox" /> Diffs</label>
+            <label><input data-skip-rule="logs" type="checkbox" /> Logs</label>
+            <label><input data-skip-rule="tables" type="checkbox" /> Tables</label>
+            <label><input data-skip-rule="json" type="checkbox" /> JSON</label>
+            <label><input data-skip-rule="longBulletLists" type="checkbox" /> Long lists</label>
+          </div>
+        </details>
+
+        <p id="settings-error" class="settings-error" hidden></p>
+      </section>
+
+      <footer class="footer-row">
+        <span id="action-hint" class="footnote">Loading panel state...</span>
+        <span id="backend-url" class="backend-url">http://127.0.0.1:4777</span>
+      </footer>
     </main>
     <script type="module" src="/src/main.js"></script>
   </body>

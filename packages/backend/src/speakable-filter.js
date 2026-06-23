@@ -1,6 +1,10 @@
-const SPOKEN_HEADING = /^\s*Spoken\s*:\s*$/imu;
+// Headings may arrive as plain "Spoken:", markdown bold "**Spoken:**", or a
+// markdown heading "## Spoken" - tolerate all, alone on their own line.
+const SPOKEN_HEADING =
+  /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*|__)?[ \t]*Spoken[ \t]*:?[ \t]*(?:\*\*|__)?[ \t]*$/imu;
 const SECTION_HEADING =
-  /^\s*(Displayed|Display|Details|Detail|Code|Commands?|Logs?|Output)\s*:\s*$/imu;
+  /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*|__)?[ \t]*(?:Displayed|Display|Details|Detail|Code|Commands?|Logs?|Output)[ \t]*:?[ \t]*(?:\*\*|__)?[ \t]*$/imu;
+const SEPARATOR_LINE = /^[ \t]*[=*_-]{3,}[ \t]*$/;
 const FENCED_BLOCK = /```[\s\S]*?```/g;
 const INLINE_CODE = /`([^`\n]{1,120})`/g;
 const TABLE_SEPARATOR = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/;
@@ -91,11 +95,25 @@ function removeUnsafeBlocks(input) {
     output.push(line);
   }
 
-  return output.join("\n").replace(INLINE_CODE, "$1");
+  return stripInlineMarkdown(output.join("\n").replace(INLINE_CODE, "$1"));
+}
+
+// Remove markdown punctuation so TTS never speaks "asterisk", "underscore", etc.
+function stripInlineMarkdown(input) {
+  return input
+    .replace(/`+/g, "")
+    .replace(/(\*\*|__)(.*?)\1/g, "$2") // bold -> inner text
+    .replace(/\*\*|__/g, "")
+    .replace(/~~/g, "")
+    .replace(/\*/g, "")
+    .replace(/^[ \t]*#{1,6}[ \t]*/gm, "")
+    .replace(/^[ \t]*>[ \t]?/gm, "")
+    .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?]|$)/g, "$1$2"); // _italic_ -> italic
 }
 
 function shouldSkipLine(line) {
   return (
+    SEPARATOR_LINE.test(line) ||
     TABLE_SEPARATOR.test(line) ||
     TABLE_ROW.test(line) ||
     DIFF_LINE.test(line) ||

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Hotline</title>
+  </head>
+  <body class="mini-body">
+    <main class="mini">
+      <header class="mini-head">
+        <span id="mini-source" class="mini-source">None</span>
+        <span id="mini-status" class="mini-badge is-idle">Idle</span>
+        <button id="mini-open" class="mini-open" type="button" title="Open full panel">Panel ↗</button>
+      </header>
+
+      <p id="mini-preview" class="mini-preview">No speakable text yet.</p>
+
+      <div class="mini-transport">
+        <button id="mini-read" class="mini-btn primary" type="button" disabled>► Read</button>
+        <button id="mini-pause" class="mini-btn" type="button" disabled>Pause</button>
+        <button id="mini-stop" class="mini-btn" type="button" disabled>Stop</button>
+        <button id="mini-mute" class="mini-btn" type="button">Mute</button>
+      </div>
+
+      <p id="mini-hint" class="mini-hint">Loading…</p>
+    </main>
+    <script type="module" src="/src/mini.js"></script>
+  </body>
+</html>

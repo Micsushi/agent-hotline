@@ -89,6 +89,10 @@ function createSpeechQueueStore(options = {}) {
     item.timestamps.updatedAt = timestamp;
   }
 
+  function optionalString(value) {
+    return typeof value === "string" && value.trim() !== "" ? value : undefined;
+  }
+
   function enqueue(input) {
     const timestamp = now();
     const item = {
@@ -102,6 +106,11 @@ function createSpeechQueueStore(options = {}) {
         updatedAt: timestamp
       }
     };
+
+    const threadId = optionalString(input.threadId);
+    if (threadId) item.threadId = threadId;
+    const threadLabel = optionalString(input.threadLabel);
+    if (threadLabel) item.threadLabel = threadLabel;
 
     if (findItem(item.id)) {
       throw new Error(`Queue item already exists: ${item.id}`);
@@ -165,32 +174,43 @@ function createSpeechQueueStore(options = {}) {
     return clone(item);
   }
 
-  function replayLatest() {
-    const latest = [...state.items]
-      .reverse()
-      .find((item) => item.speakableText && item.status !== "skipped");
-    if (!latest) {
-      return null;
-    }
-
+  function pushReplay(source) {
     const timestamp = now();
     const item = {
       id: idGenerator(),
-      rawSource: latest.rawSource,
-      speakableText: latest.speakableText,
-      sourceApp: latest.sourceApp,
+      rawSource: source.rawSource,
+      speakableText: source.speakableText,
+      sourceApp: source.sourceApp,
       status: "pending",
-      replayOf: latest.id,
+      replayOf: source.id,
       timestamps: {
         createdAt: timestamp,
         updatedAt: timestamp,
         replayedAt: timestamp
       }
     };
+    if (source.threadId) item.threadId = source.threadId;
+    if (source.threadLabel) item.threadLabel = source.threadLabel;
 
     state.items.push(item);
     persist();
     return clone(item);
+  }
+
+  function replayLatest() {
+    const latest = [...state.items]
+      .reverse()
+      .find((item) => item.speakableText && item.status !== "skipped");
+    return latest ? pushReplay(latest) : null;
+  }
+
+  // Replay a specific historical item by id (used by the history list).
+  function replayItem(id) {
+    const source = findItem(id);
+    if (!source || !source.speakableText) {
+      return null;
+    }
+    return pushReplay(source);
   }
 
   function clearQueue() {
@@ -213,6 +233,7 @@ function createSpeechQueueStore(options = {}) {
     markPlayed,
     markSkipped,
     replayLatest,
+    replayItem,
     clearQueue,
     getState
   };
