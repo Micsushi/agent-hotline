@@ -177,6 +177,10 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
 
   let currentSettings = normalizeSettings();
   let isRendering = false;
+  // While the user is actively dragging a slider, the 1s poll's render() must
+  // not snap the control back to the saved value (caused the slider to jiggle).
+  let draggingRate = false;
+  let draggingVolume = false;
 
   function showMessage(kind, message) {
     state.textContent = message;
@@ -221,10 +225,16 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
     // Do not warm the model here. TTS must only start on an explicit user action
     // (clicking Read), so Kokoro loads lazily on first playback instead.
 
-    rate.value = String(currentSettings.rate);
-    rateValue.value = formatRate(currentSettings.rate);
-    volume.value = String(currentSettings.volume);
-    volumeValue.value = formatVolume(currentSettings.volume);
+    // Skip controls the user is mid-drag on so a background poll never fights
+    // the live adjustment.
+    if (!draggingRate) {
+      rate.value = String(currentSettings.rate);
+      rateValue.value = formatRate(currentSettings.rate);
+    }
+    if (!draggingVolume) {
+      volume.value = String(currentSettings.volume);
+      volumeValue.value = formatVolume(currentSettings.volume);
+    }
 
     for (const input of skipRuleInputs) {
       input.checked = currentSettings.skipRules[input.dataset.skipRule] === true;
@@ -276,21 +286,29 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   voice.addEventListener("change", () => savePatch({ voice: voice.value }));
   kokoroVoice.addEventListener("change", () => savePatch({ kokoroVoice: kokoroVoice.value }));
 
+  rate.addEventListener("pointerdown", () => (draggingRate = true));
   rate.addEventListener("input", () => {
+    draggingRate = true;
     rateValue.value = formatRate(rate.value);
     onLivePreview?.({ rate: clampNumber(rate.value, currentSettings.rate, 0.25, 4) });
   });
-  rate.addEventListener("change", () =>
-    savePatch({ rate: clampNumber(rate.value, currentSettings.rate, 0.25, 4) })
-  );
+  rate.addEventListener("change", () => {
+    draggingRate = false;
+    savePatch({ rate: clampNumber(rate.value, currentSettings.rate, 0.25, 4) });
+  });
+  rate.addEventListener("blur", () => (draggingRate = false));
 
+  volume.addEventListener("pointerdown", () => (draggingVolume = true));
   volume.addEventListener("input", () => {
+    draggingVolume = true;
     volumeValue.value = formatVolume(volume.value);
     onLivePreview?.({ volume: clampNumber(volume.value, currentSettings.volume, 0, 1) });
   });
-  volume.addEventListener("change", () =>
-    savePatch({ volume: clampNumber(volume.value, currentSettings.volume, 0, 1) })
-  );
+  volume.addEventListener("change", () => {
+    draggingVolume = false;
+    savePatch({ volume: clampNumber(volume.value, currentSettings.volume, 0, 1) });
+  });
+  volume.addEventListener("blur", () => (draggingVolume = false));
 
   for (const input of skipRuleInputs) {
     input.addEventListener("change", () => {

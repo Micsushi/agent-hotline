@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Hotline</title>
+    <!-- Paint the dark background immediately so a reload / HMR never flashes
+         white before the bundled CSS is applied. -->
+    <style>
+      html,
+      body {
+        background: #15181c;
+      }
+    </style>
   </head>
   <body class="mini-body">
     <main class="mini">
@@ -16,10 +24,12 @@
       <p id="mini-preview" class="mini-preview">No speakable text yet.</p>
 
       <div class="mini-transport">
-        <button id="mini-read" class="mini-btn primary" type="button" disabled>► Read</button>
-        <button id="mini-pause" class="mini-btn" type="button" disabled>Pause</button>
-        <button id="mini-stop" class="mini-btn" type="button" disabled>Stop</button>
-        <button id="mini-mute" class="mini-btn" type="button">Mute</button>
+        <button id="mini-playpause" class="mini-btn primary" type="button" disabled aria-label="Read aloud" title="Read aloud">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>
+        </button>
+        <button id="mini-mute" class="mini-btn" type="button" aria-label="Mute" title="Mute">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
       </div>
 
       <p id="mini-hint" class="mini-hint">Loading…</p>

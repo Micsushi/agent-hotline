@@ -17,6 +17,16 @@ const STATUS_LABELS = {
 const QUEUE_POLL_INTERVAL_MS = 1000;
 const AUTO_READ_STORAGE_KEY = "agent-hotline.auto-read-attempted";
 
+// Inline icons so the transport stays icon-only while reflecting state.
+const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>';
+const ICON_PAUSE =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+const ICON_SPEAKER =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+// Speaker with a diagonal slash = the mute control.
+const ICON_SPEAKER_MUTED =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M4.5 4.5 19.5 19.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
 const el = (id) => document.getElementById(id);
 const statusBadge = el("status-badge");
 const queueCount = el("queue-count");
@@ -27,11 +37,8 @@ const itemStatus = el("item-status");
 const previewText = el("preview-text");
 const previewMeta = el("preview-meta");
 const prevButton = el("prev-button");
-const readButton = el("read-button");
+const playPauseButton = el("playpause-button");
 const nextButton = el("next-button");
-const pauseButton = el("pause-button");
-const resumeButton = el("resume-button");
-const stopButton = el("stop-button");
 const muteButton = el("mute-button");
 const refreshButton = el("refresh");
 const historyList = el("history");
@@ -48,6 +55,9 @@ let latestState = null;
 let refreshInFlight = false;
 let selectedItemId = null;
 let lastLatestId = null;
+// Signature of the last rendered backend payload; lets quiet polls skip a
+// no-op DOM rebuild (see refreshPanel) so selections survive.
+let lastDataSig = null;
 // Per-thread expand state. Unset = use default (only the newest group open).
 const threadExpand = new Map();
 let autoReadAttemptedItemIds = loadAutoReadAttempted();
@@ -238,11 +248,20 @@ function updateControls(settings, items, selected) {
   const index = items.findIndex((item) => item.id === selectedItemId);
   prevButton.disabled = index <= 0;
   nextButton.disabled = index < 0 || index >= items.length - 1;
-  readButton.disabled = !selected || settings.mute;
-  pauseButton.disabled = !playback?.isSpeaking || settings.mute;
-  resumeButton.disabled = !playback?.isPaused || settings.mute;
-  stopButton.disabled = !(playback?.isSpeaking || playback?.isPaused);
-  muteButton.textContent = settings.mute ? "Unmute" : "Mute";
+
+  // One button cycles read -> pause -> resume.
+  const speaking = playback?.isSpeaking;
+  const paused = playback?.isPaused;
+  playPauseButton.innerHTML = speaking ? ICON_PAUSE : ICON_PLAY;
+  const ppLabel = speaking ? "Pause" : paused ? "Resume" : "Read aloud";
+  playPauseButton.title = ppLabel;
+  playPauseButton.setAttribute("aria-label", ppLabel);
+  playPauseButton.disabled = settings.mute || (!selected && !speaking && !paused);
+
+  const muteLabel = settings.mute ? "Unmute" : "Mute";
+  muteButton.innerHTML = settings.mute ? ICON_SPEAKER_MUTED : ICON_SPEAKER;
+  muteButton.title = muteLabel;
+  muteButton.setAttribute("aria-label", muteLabel);
 }
 
 function renderState({ settings, queue }) {
@@ -288,7 +307,7 @@ function runAutoRead(settings, queue) {
   playback.readNextPending({ settings, queue }).catch(showError);
 }
 
-async function refreshPanel(url, { quiet = false } = {}) {
+async function refreshPanel(url, { quiet = false, force = false } = {}) {
   if (refreshInFlight) return;
   refreshInFlight = true;
   if (!quiet) notify("Refreshing...");
@@ -297,6 +316,12 @@ async function refreshPanel(url, { quiet = false } = {}) {
       fetchJson(`${url}/api/settings`),
       fetchJson(`${url}/api/queue`)
     ]);
+    // Skip the DOM rebuild when a background poll sees no change, so an active
+    // text selection / copy is never interrupted by replaceChildren. Forced
+    // renders (playback state, manual refresh) always go through.
+    const sig = JSON.stringify({ settings, queue });
+    if (quiet && !force && sig === lastDataSig) return;
+    lastDataSig = sig;
     renderState({ settings, queue });
   } catch (error) {
     showError(error);
@@ -308,7 +333,7 @@ async function refreshPanel(url, { quiet = false } = {}) {
 function showError(error) {
   setStatus("error");
   notify(`Backend unavailable: ${String(error?.message || error)}. Start it and refresh.`);
-  readButton.disabled = true;
+  playPauseButton.disabled = true;
   prevButton.disabled = true;
   nextButton.disabled = true;
 }
@@ -354,7 +379,7 @@ settingsUi = initSettingsUi({
 playback = createPlaybackController({
   backendUrl: targetUrl,
   onUpdate: notify,
-  onStateChanged: () => refreshPanel(targetUrl, { quiet: true }).catch(showError)
+  onStateChanged: () => refreshPanel(targetUrl, { quiet: true, force: true }).catch(showError)
 });
 
 tabHome.addEventListener("click", () => setTab("home"));
@@ -362,10 +387,11 @@ tabSettings.addEventListener("click", () => setTab("settings"));
 refreshButton.addEventListener("click", () => refreshPanel(targetUrl).catch(showError));
 prevButton.addEventListener("click", () => moveSelection(-1));
 nextButton.addEventListener("click", () => moveSelection(1));
-readButton.addEventListener("click", playSelected);
-pauseButton.addEventListener("click", () => playback.pause());
-resumeButton.addEventListener("click", () => playback.resume());
-stopButton.addEventListener("click", () => playback.stop().catch(showError));
+playPauseButton.addEventListener("click", () => {
+  if (playback.isSpeaking) return playback.pause();
+  if (playback.isPaused) return playback.resume();
+  playSelected();
+});
 muteButton.addEventListener("click", () => {
   const muted = latestState?.settings?.mute !== true;
   playback.setMute(muted).catch(showError);

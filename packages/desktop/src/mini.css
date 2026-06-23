@@ -13,8 +13,8 @@
 
 .mini-body {
   margin: 0;
-  background: #15181c;
-  color: #edf0ed;
+  background: #0e1320;
+  color: var(--text);
   overflow: hidden;
 }
 
@@ -24,8 +24,8 @@
   gap: 8px;
   padding: 10px 12px 11px;
   height: 100vh;
-  border: 1px solid #262b30;
-  background: #15181c;
+  border: 1px solid #2b3850;
+  background: #0e1320;
 }
 
 .mini-head {
@@ -51,13 +51,13 @@
   letter-spacing: 0.04em;
   padding: 2px 7px;
   border-radius: 999px;
-  background: #242a30;
-  color: #a8b3ad;
+  background: #1d2738;
+  color: var(--text-dim);
 }
 
 .mini-badge.is-speaking {
-  background: #d6ff64;
-  color: #151713;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .mini-badge.is-paused {
@@ -77,9 +77,9 @@
 }
 
 .mini-open {
-  border: 1px solid #303740;
+  border: 1px solid #2b3850;
   background: transparent;
-  color: #a8b3ad;
+  color: var(--text-dim);
   font-size: 11px;
   padding: 3px 8px;
   border-radius: 6px;
@@ -87,15 +87,15 @@
 }
 
 .mini-open:hover {
-  color: #edf0ed;
-  border-color: #4a525c;
+  color: var(--text);
+  border-color: #324158;
 }
 
 .mini-preview {
   margin: 0;
   font-size: 12px;
   line-height: 1.35;
-  color: #cdd5cf;
+  color: #c3cfe2;
   height: 50px;
   overflow: hidden;
   display: -webkit-box;
@@ -105,14 +105,14 @@
 
 .mini-transport {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
 }
 
 .mini-btn {
-  border: 1px solid #303740;
-  background: #1c2127;
-  color: #edf0ed;
+  border: 1px solid #2b3850;
+  background: #1d2738;
+  color: var(--text);
   font-size: 12px;
   padding: 7px 4px;
   border-radius: 7px;
@@ -120,13 +120,22 @@
 }
 
 .mini-btn:hover:not(:disabled) {
-  border-color: #4a525c;
+  border-color: #324158;
+}
+
+.mini-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  display: block;
+  margin: 0 auto;
+  pointer-events: none;
 }
 
 .mini-btn.primary {
-  background: #d6ff64;
-  border-color: #d6ff64;
-  color: #151713;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -138,7 +147,7 @@
 .mini-hint {
   margin: 0;
   font-size: 11px;
-  color: #828d86;
+  color: #8294b0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

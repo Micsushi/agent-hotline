@@ -6,6 +6,15 @@ import { createPlaybackController } from "./playback.js";
 const DEFAULT_BACKEND_URL = "http://127.0.0.1:4777";
 const QUEUE_POLL_INTERVAL_MS = 1000;
 
+// Inline icons so the toggle buttons stay icon-only while reflecting state.
+const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>';
+const ICON_PAUSE =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+const ICON_SPEAKER =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const ICON_SPEAKER_MUTED =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M4.5 4.5 19.5 19.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
 const STATUS_LABELS = {
   idle: "Idle",
   pending: "Pending",
@@ -19,9 +28,7 @@ const el = (id) => document.getElementById(id);
 const sourceEl = el("mini-source");
 const statusEl = el("mini-status");
 const previewEl = el("mini-preview");
-const readButton = el("mini-read");
-const pauseButton = el("mini-pause");
-const stopButton = el("mini-stop");
+const playPauseButton = el("mini-playpause");
 const muteButton = el("mini-mute");
 const openButton = el("mini-open");
 const hintEl = el("mini-hint");
@@ -86,11 +93,20 @@ function render(state) {
   }
 
   setStatus(deriveStatus(settings, queue));
-  readButton.disabled = !latest || settings?.mute;
-  pauseButton.disabled = !(playback?.isSpeaking || playback?.isPaused) || settings?.mute;
-  pauseButton.textContent = playback?.isPaused ? "Resume" : "Pause";
-  stopButton.disabled = !(playback?.isSpeaking || playback?.isPaused);
-  muteButton.textContent = settings?.mute ? "Unmute" : "Mute";
+
+  // One button cycles read -> pause -> resume.
+  const speaking = playback?.isSpeaking;
+  const paused = playback?.isPaused;
+  playPauseButton.innerHTML = speaking ? ICON_PAUSE : ICON_PLAY;
+  const ppLabel = speaking ? "Pause" : paused ? "Resume" : "Read aloud";
+  playPauseButton.title = ppLabel;
+  playPauseButton.setAttribute("aria-label", ppLabel);
+  playPauseButton.disabled = settings?.mute || (!latest && !speaking && !paused);
+
+  const muted = settings?.mute;
+  muteButton.innerHTML = muted ? ICON_SPEAKER_MUTED : ICON_SPEAKER;
+  muteButton.title = muted ? "Unmute" : "Mute";
+  muteButton.setAttribute("aria-label", muted ? "Unmute" : "Mute");
 }
 
 async function refresh({ quiet = false } = {}) {
@@ -107,7 +123,7 @@ async function refresh({ quiet = false } = {}) {
   } catch (error) {
     setStatus("error");
     notify(`Backend unavailable. Start it and reopen.`);
-    readButton.disabled = true;
+    playPauseButton.disabled = true;
   } finally {
     refreshInFlight = false;
   }
@@ -132,9 +148,11 @@ playback = createPlaybackController({
   onStateChanged: () => refresh({ quiet: true }).catch(() => {})
 });
 
-readButton.addEventListener("click", readLatest);
-pauseButton.addEventListener("click", () => (playback.isPaused ? playback.resume() : playback.pause()));
-stopButton.addEventListener("click", () => playback.stop().catch(() => {}));
+playPauseButton.addEventListener("click", () => {
+  if (playback.isSpeaking) return playback.pause();
+  if (playback.isPaused) return playback.resume();
+  readLatest();
+});
 muteButton.addEventListener("click", () => {
   const muted = latestState?.settings?.mute !== true;
   playback.setMute(muted).catch(() => {});
