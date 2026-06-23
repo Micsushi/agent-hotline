@@ -15,6 +15,7 @@
   "dependencies": {
     "@soundtouchjs/audio-worklet": "^2.0.4",
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-notification": "^2.0.0",
     "kokoro-js": "^1.2.1"
   },
   "devDependencies": {

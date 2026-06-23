@@ -6,6 +6,7 @@ const APP_NAME = "Agent Hotline";
 const SETTINGS_FILE = "settings.json";
 const READ_BEHAVIORS = new Set(["manual", "auto", "ask_every_time"]);
 const TTS_ENGINES = new Set(["webview", "kokoro"]);
+const NOTIFICATION_OPENS = new Set(["full", "mini"]);
 
 const DEFAULT_SETTINGS = Object.freeze({
   readBehavior: "manual",
@@ -24,7 +25,10 @@ const DEFAULT_SETTINGS = Object.freeze({
     longBulletLists: true
   }),
   codexEnabled: true,
-  claudeEnabled: true
+  claudeEnabled: true,
+  notifyOnNewReply: false,
+  notificationOpens: "full",
+  highlightSpokenText: false
 });
 
 function getDefaultDataDir(env = process.env, platform = process.platform) {
@@ -98,7 +102,12 @@ function normalizeSettings(input) {
       )
     },
     codexEnabled: booleanOrDefault(source.codexEnabled, defaults.codexEnabled),
-    claudeEnabled: booleanOrDefault(source.claudeEnabled, defaults.claudeEnabled)
+    claudeEnabled: booleanOrDefault(source.claudeEnabled, defaults.claudeEnabled),
+    notifyOnNewReply: booleanOrDefault(source.notifyOnNewReply, defaults.notifyOnNewReply),
+    notificationOpens: NOTIFICATION_OPENS.has(source.notificationOpens)
+      ? source.notificationOpens
+      : defaults.notificationOpens,
+    highlightSpokenText: booleanOrDefault(source.highlightSpokenText, defaults.highlightSpokenText)
   };
 }
 

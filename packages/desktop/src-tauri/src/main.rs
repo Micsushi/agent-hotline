@@ -1,11 +1,37 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::net::{TcpStream, ToSocketAddrs};
+use std::path::Path;
+use std::process::{Child, Command};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::menu::MenuBuilder;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, PhysicalPosition, RunEvent, WindowEvent};
+use tauri_plugin_window_state::StateFlags;
+
+// The Node backend, owned by the app: spawned on launch, killed on exit so the
+// port is never left occupied after Agent Hotline quits.
+struct BackendProcess(Mutex<Option<Child>>);
+
+fn spawn_backend() -> Option<Child> {
+    // Resolve the backend entry relative to this crate (dev layout). If a backend
+    // is already running, ours hits EADDRINUSE and exits cleanly (see server.js),
+    // so spawning unconditionally is safe.
+    let server = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../backend/src/server.js");
+    Command::new("node").arg(server).spawn().ok()
+}
+
+fn kill_backend(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<BackendProcess>() {
+        if let Ok(mut guard) = state.0.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+            }
+        }
+    }
+}
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const MINI_WINDOW_LABEL: &str = "mini";
@@ -142,6 +168,36 @@ fn show_main_panel(app: tauri::AppHandle) {
     open_panel(&app);
 }
 
+// Open the mini popup without a tray cursor position (e.g. from a notification
+// click): anchor it bottom-right above the taskbar on its monitor.
+#[tauri::command]
+fn show_mini_panel(app: tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(MINI_WINDOW_LABEL) else {
+        return;
+    };
+
+    let size = window
+        .outer_size()
+        .map(|s| (s.width as f64, s.height as f64))
+        .unwrap_or((340.0, 268.0));
+
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten());
+    if let Some(monitor) = monitor {
+        let m = monitor.size();
+        let x = (m.width as f64) - size.0 - 16.0;
+        let y = (m.height as f64) - size.1 - 56.0;
+        let _ = window.set_position(PhysicalPosition::new(x.max(8.0), y.max(8.0)));
+    }
+
+    let _ = window.show();
+    let _ = window.set_focus();
+    let _ = app.emit_to(MINI_WINDOW_LABEL, "agent-hotline://show", ());
+}
+
 fn emit_placeholder_action(app: &tauri::AppHandle, action: &'static str) {
     let _ = app.emit("agent-hotline://tray-action", TrayActionPayload { action });
 }
@@ -198,27 +254,53 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 fn main() {
     let app = tauri::Builder::default()
-        .setup(setup_tray)
-        .invoke_handler(tauri::generate_handler![backend_status, show_main_panel])
+        // Must be registered first: a second launch focuses the existing window
+        // instead of starting another instance.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            hide_mini(app);
+            open_panel(app);
+        }))
+        // Remember the main window's monitor + position across restarts (so
+        // "Open Panel" reopens on the last-used screen). Position/size only, so
+        // windows still start hidden (tray-resident). Mini is positioned live.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(StateFlags::POSITION | StateFlags::SIZE)
+                .with_denylist(&[MINI_WINDOW_LABEL])
+                .build(),
+        )
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            if let Some(child) = spawn_backend() {
+                app.manage(BackendProcess(Mutex::new(Some(child))));
+            }
+            setup_tray(app)
+        })
+        .invoke_handler(tauri::generate_handler![
+            backend_status,
+            show_main_panel,
+            show_mini_panel
+        ])
         .build(tauri::generate_context!())
         .expect("error while building Agent Hotline desktop");
 
-    app.run(|app, event| {
-        if let RunEvent::WindowEvent { label, event, .. } = event {
-            match event {
-                // Keep the app tray-resident: closing a window just hides it.
-                WindowEvent::CloseRequested { api, .. } => {
-                    api.prevent_close();
-                    if let Some(window) = app.get_webview_window(&label) {
-                        let _ = window.hide();
-                    }
+    app.run(|app, event| match event {
+        RunEvent::WindowEvent { label, event, .. } => match event {
+            // Keep the app tray-resident: closing a window just hides it.
+            WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                if let Some(window) = app.get_webview_window(&label) {
+                    let _ = window.hide();
                 }
-                // Dismiss the tray popup as soon as the user clicks elsewhere.
-                WindowEvent::Focused(false) if label == MINI_WINDOW_LABEL => {
-                    hide_mini(app);
-                }
-                _ => {}
             }
-        }
+            // Dismiss the tray popup as soon as the user clicks elsewhere.
+            WindowEvent::Focused(false) if label == MINI_WINDOW_LABEL => {
+                hide_mini(app);
+            }
+            _ => {}
+        },
+        // App is quitting (tray Quit / exit): stop the backend so :4777 frees.
+        RunEvent::Exit => kill_backend(app),
+        _ => {}
     });
 }

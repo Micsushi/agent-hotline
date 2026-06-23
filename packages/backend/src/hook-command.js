@@ -1,3 +1,4 @@
+const fs = require("fs");
 const { parseHookInput, SOURCE_APPS } = require("./hook-input-parser");
 const { filterSpeakableText } = require("./speakable-filter");
 const { createSpoolStore } = require("./spool-store");
@@ -74,7 +75,8 @@ async function runHookCommand(options = {}) {
     speakableText: filtered.text,
     sourceApp: parsed.sourceApp,
     threadId: parsed.threadId,
-    threadLabel: parsed.threadLabel
+    threadLabel: parsed.threadLabel,
+    sessionName: resolveSessionName(parsed)
   };
 
   const settingsResult = await requestJson(fetchImpl, `${baseUrl}/api/settings`, {
@@ -220,6 +222,67 @@ function recoverable(reason, message, error) {
 
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
+}
+
+// A human chat name for the queue item. Codex forwards its curated thread_name;
+// Claude has none in the hook payload, so we read the first user message from
+// the conversation transcript it points at.
+function resolveSessionName(parsed) {
+  if (parsed.sessionName) {
+    return truncateName(parsed.sessionName);
+  }
+  const transcriptPath = parsed.payload && parsed.payload.transcript_path;
+  if (typeof transcriptPath === "string" && transcriptPath) {
+    return truncateName(readFirstUserMessage(transcriptPath));
+  }
+  return undefined;
+}
+
+function truncateName(name) {
+  const clean = String(name || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return undefined;
+  return clean.length > 60 ? `${clean.slice(0, 57)}...` : clean;
+}
+
+// Read just the head of the transcript (the first user message sits near the
+// top) and return its text. Tolerant of unreadable files and partial lines.
+function readFirstUserMessage(transcriptPath) {
+  try {
+    const fd = fs.openSync(transcriptPath, "r");
+    try {
+      const buffer = Buffer.alloc(262144);
+      const bytes = fs.readSync(fd, buffer, 0, buffer.length, 0);
+      const text = buffer.toString("utf8", 0, bytes);
+      for (const line of text.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        let entry;
+        try {
+          entry = JSON.parse(line);
+        } catch {
+          continue; // last line may be partial; skip
+        }
+        if (!entry || entry.type !== "user" || !entry.message || entry.message.role !== "user") {
+          continue;
+        }
+        const content = entry.message.content;
+        let candidate = "";
+        if (typeof content === "string") {
+          candidate = content;
+        } else if (Array.isArray(content)) {
+          const part = content.find((p) => p && p.type === "text" && typeof p.text === "string");
+          candidate = part ? part.text : "";
+        }
+        if (candidate.trim()) return candidate.trim();
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    // unreadable transcript -> no name
+  }
+  return "";
 }
 
 async function main(options = {}) {

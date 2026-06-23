@@ -105,8 +105,31 @@
 
 .mini-transport {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
+}
+
+.mini-speed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mini-speed span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.mini-speed output {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.mini-speed input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
 }
 
 .mini-btn {

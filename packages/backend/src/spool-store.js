@@ -43,6 +43,7 @@ function createSpoolStore(options = {}) {
         sourceApp: item.sourceApp,
         threadId: item.threadId,
         threadLabel: item.threadLabel,
+        sessionName: item.sessionName,
         spooledAt: now()
       });
       writeItems(filePath, items);
@@ -65,7 +66,8 @@ function createSpoolStore(options = {}) {
             speakableText: item.speakableText,
             sourceApp: item.sourceApp,
             threadId: item.threadId,
-            threadLabel: item.threadLabel
+            threadLabel: item.threadLabel,
+            sessionName: item.sessionName
           });
           flushed += 1;
         } catch {

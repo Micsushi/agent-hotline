@@ -41,9 +41,13 @@
           <div class="master-row">
             <div>
               <p class="card-title">Read aloud</p>
-              <p id="readaloud-sub" class="master-sub">On — captured replies will be read.</p>
+              <p id="readaloud-sub" class="master-sub">On: saved replies will be read.</p>
             </div>
-            <label class="switch" for="setting-readaloud">
+            <label
+              class="switch"
+              for="setting-readaloud"
+              title="Master switch for speaking replies. When off, replies are still saved to history but are never read aloud."
+            >
               <input id="setting-readaloud" type="checkbox" />
               <span class="switch-track" aria-hidden="true"></span>
             </label>
@@ -53,15 +57,15 @@
         <section class="card">
           <p class="card-title">Read behavior</p>
           <div class="segmented-control" role="radiogroup" aria-label="Read behavior">
-            <label>
+            <label title="Replies are saved, but only read when you press play.">
               <input type="radio" name="read-behavior" value="manual" />
               <span>Manual</span>
             </label>
-            <label>
+            <label title="Each new reply is read aloud automatically as it arrives.">
               <input type="radio" name="read-behavior" value="auto" />
               <span>Auto</span>
             </label>
-            <label>
+            <label title="When a new reply arrives, wait for you to choose whether to read it.">
               <input type="radio" name="read-behavior" value="ask_every_time" />
               <span>Ask</span>
             </label>
@@ -71,7 +75,10 @@
         <section class="card" aria-labelledby="history-title">
           <div class="section-heading">
             <p class="card-title" id="history-title">History</p>
-            <button id="refresh" class="refresh-button" type="button">Refresh</button>
+            <button id="refresh" class="refresh-button" type="button" title="Refresh">
+              <svg class="refresh-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"/></svg>
+              Refresh
+            </button>
           </div>
           <div id="history" class="history-list">
             <p class="history-empty">Nothing has been spoken yet.</p>
@@ -79,7 +86,12 @@
         </section>
 
         <section class="card" aria-live="polite">
-          <p class="card-title">Test &amp; play</p>
+          <div class="section-heading">
+            <p class="card-title">Test &amp; play</p>
+            <button id="mute-button" class="mute-circle" type="button" aria-label="Mute" title="Mute">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
           <div class="now-head">
             <span id="source-app" class="now-source">None</span>
             <span id="item-time" class="now-time"></span>
@@ -87,6 +99,18 @@
           </div>
           <p id="preview-text" class="now-text">No speakable text yet.</p>
           <p id="preview-meta" class="now-meta">Waiting for Codex or Claude output.</p>
+
+          <input
+            id="seek-bar"
+            class="seek-bar"
+            type="range"
+            min="0"
+            max="1000"
+            step="1"
+            value="0"
+            disabled
+            aria-label="Playback position"
+          />
 
           <label class="field-row" for="setting-rate">
             <span>Read speed <output id="setting-rate-value">1.0x</output></span>
@@ -102,9 +126,6 @@
             </button>
             <button id="next-button" type="button" disabled aria-label="Next" title="Next">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 6h2v12h-2zM4 6v12l9-6-9-6z"/></svg>
-            </button>
-            <button id="mute-button" type="button" aria-label="Mute" title="Mute">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             </button>
           </div>
         </section>
@@ -152,6 +173,37 @@
             <span>Volume <output id="setting-volume-value">100%</output></span>
             <input id="setting-volume" type="range" min="0" max="1" step="0.05" />
           </label>
+        </div>
+
+        <div class="field-grid">
+          <label
+            class="toggle-row"
+            title="Show a desktop notification when a new reply arrives while the app is not focused."
+          >
+            <input id="setting-notify" type="checkbox" />
+            <span>Notify on new reply</span>
+          </label>
+          <label class="field-row" id="notify-opens-row" for="setting-notify-opens" hidden>
+            <span>Notification opens</span>
+            <select id="setting-notify-opens">
+              <option value="full">Full window</option>
+              <option value="mini">Mini popup</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="field-grid">
+          <label
+            class="toggle-row"
+            title="Highlight the text as it is read. The seek bar still works either way."
+          >
+            <input id="setting-highlight" type="checkbox" />
+            <span>Highlight spoken text</span>
+          </label>
+          <p id="highlight-warn" class="settings-warn" hidden>
+            Experimental: the highlight is estimated from sentence timing, so it only roughly
+            matches the audio, not exactly.
+          </p>
         </div>
 
         <details class="skip-rules">

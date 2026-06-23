@@ -310,11 +310,76 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.seek-bar {
+  width: 100%;
+  margin: 2px 0 4px;
+  accent-color: var(--accent);
+}
+
+.seek-bar:disabled {
+  opacity: 0.4;
+}
+
+/* Text already spoken, highlighted as playback advances. */
+.spoken-done {
+  color: var(--accent-hover);
+}
+
+/* Inline warning under an experimental setting toggle. */
+.settings-warn {
+  margin: -4px 2px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #ffcf6e;
+}
+
 /* Transport */
 .transport-primary {
   display: grid;
-  grid-template-columns: 1fr 1.4fr 1fr 1fr;
+  grid-template-columns: 1fr 1.5fr 1fr;
   gap: 10px;
+}
+
+/* Prev / Next: clearer enabled vs disabled so it's obvious which can be used. */
+.transport-primary button:not(.primary) {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.transport-primary button:not(.primary):not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.transport-primary button:not(.primary):disabled {
+  background: transparent;
+  border-color: #1c2738;
+  color: #41506a;
+  opacity: 1;
+}
+
+/* Circular mute, top-right of the Test & play card. */
+.mute-circle {
+  width: 34px;
+  height: 34px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.mute-circle:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.mute-circle svg {
+  width: 18px;
+  height: 18px;
 }
 
 .transport-secondary {
@@ -412,44 +477,92 @@ button.primary:disabled {
   text-align: center;
 }
 
-.thread-group {
-  border: 1px solid #232f44;
-  border-radius: 9px;
-  overflow: hidden;
-}
-
-.thread-head {
+/* Session list: one row per conversation, newest first. Rows live inside the
+   shared .detail-scroll container so the list and detail views look the same. */
+.session-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
   min-height: 0;
-  padding: 9px 11px;
+  padding: 11px 12px;
   border: 0;
+  border-top: 1px solid #232f44;
   border-radius: 0;
-  background: var(--surface-2-rgba);
-  font-size: 12px;
-  font-weight: 700;
-  color: #e7ecf3;
+  background: transparent;
   text-align: left;
   cursor: pointer;
 }
 
-.thread-head:hover:not(:disabled) {
-  border-color: transparent;
+.session-row:hover:not(:disabled) {
   background: var(--accent-soft);
 }
 
-.thread-label {
+.session-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
 }
 
-.thread-count {
+.session-meta {
+  flex: 0 0 auto;
   color: var(--text-dim);
+  font-size: 11px;
   font-weight: 600;
+}
+
+/* Session detail: back control + a capped, scrollable item list. */
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.back-button {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.back-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.detail-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.detail-scroll {
+  max-height: 188px;
+  overflow-y: auto;
+  border: 1px solid #232f44;
+  border-radius: 9px;
+}
+
+.detail-scroll .history-item:first-child,
+.detail-scroll .session-row:first-child {
+  border-top: 0;
 }
 
 .history-item {
@@ -664,6 +777,25 @@ input[type="range"] {
   min-height: 28px;
   padding: 0 9px;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.refresh-icon {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+@keyframes ah-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.refresh-button.is-spinning .refresh-icon {
+  animation: ah-spin 0.6s linear infinite;
 }
 
 .footer-row {

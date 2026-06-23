@@ -1,8 +1,12 @@
 import "./styles.css";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import * as notification from "@tauri-apps/plugin-notification";
 import { createPlaybackController } from "./playback.js";
 import { shouldAutoReadPending, getNextPendingItem } from "./read-mode.js";
 import { initSettingsUi } from "./settings-ui.js";
+
+const isTauri = Boolean(window.__TAURI_INTERNALS__);
 
 const DEFAULT_BACKEND_URL = "http://127.0.0.1:4777";
 const STATUS_LABELS = {
@@ -36,6 +40,7 @@ const itemTime = el("item-time");
 const itemStatus = el("item-status");
 const previewText = el("preview-text");
 const previewMeta = el("preview-meta");
+const seekBar = el("seek-bar");
 const prevButton = el("prev-button");
 const playPauseButton = el("playpause-button");
 const nextButton = el("next-button");
@@ -55,11 +60,13 @@ let latestState = null;
 let refreshInFlight = false;
 let selectedItemId = null;
 let lastLatestId = null;
+let seekDragging = false;
 // Signature of the last rendered backend payload; lets quiet polls skip a
 // no-op DOM rebuild (see refreshPanel) so selections survive.
 let lastDataSig = null;
-// Per-thread expand state. Unset = use default (only the newest group open).
-const threadExpand = new Map();
+// History view: either the session list, or one session's detail. Default lands
+// on the most recent session so a fresh reply is visible without scrolling.
+let historyView = { mode: "detail", sessionKey: null };
 let autoReadAttemptedItemIds = loadAutoReadAttempted();
 
 function loadAutoReadAttempted() {
@@ -122,6 +129,34 @@ function notify(message) {
   actionHint.textContent = message;
 }
 
+// OS notification on a new reply (opt-in, and only when the app isn't focused so
+// it never toasts while you're looking at the panel).
+async function ensureNotifyPermission() {
+  try {
+    let granted = await notification.isPermissionGranted();
+    if (!granted) granted = (await notification.requestPermission()) === "granted";
+    return granted;
+  } catch {
+    return false;
+  }
+}
+
+async function maybeNotify(item, settings) {
+  if (!isTauri || !settings?.notifyOnNewReply || document.hasFocus()) return;
+  try {
+    if (!(await ensureNotifyPermission())) return;
+    notification.sendNotification({
+      title: `Agent Hotline: ${item.sessionName || item.sourceApp}`,
+      body: String(item.speakableText || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120)
+    });
+  } catch {
+    // notifications unavailable; the in-app state still updates
+  }
+}
+
 // All items that carry speakable text, oldest -> newest (queue order).
 function speakableItems(queue) {
   const items = Array.isArray(queue.items) ? queue.items : [];
@@ -143,6 +178,7 @@ function threadKey(item) {
 }
 
 function threadLabel(item) {
+  if (item.sessionName) return item.sessionName;
   if (item.threadLabel) return item.threadLabel;
   if (item.threadId) return `${item.sourceApp} · ${item.threadId.slice(0, 8)}`;
   return `${item.sourceApp} · direct`;
@@ -177,71 +213,167 @@ function renderNowCard(selected) {
     : threadLabel(selected);
 }
 
+// Group speakable items into sessions (threads), ordered newest session first.
+function buildSessions(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = threadKey(item);
+    if (!groups.has(key)) groups.set(key, { key, label: threadLabel(item), items: [] });
+    const group = groups.get(key);
+    group.items.push(item);
+    group.label = threadLabel(item); // newest item wins the label
+  }
+  return [...groups.values()].sort((a, b) => {
+    const ta = a.items[a.items.length - 1]?.timestamps?.createdAt || "";
+    const tb = b.items[b.items.length - 1]?.timestamps?.createdAt || "";
+    return tb.localeCompare(ta);
+  });
+}
+
+function buildHistoryItem(item) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `history-item${item.id === selectedItemId ? " is-selected" : ""}`;
+  button.dataset.id = item.id;
+
+  const time = document.createElement("span");
+  time.className = "h-time";
+  time.textContent = formatTime(item.timestamps?.createdAt);
+
+  const text = document.createElement("span");
+  text.className = "h-text";
+  text.textContent = item.speakableText;
+
+  button.append(time, text);
+  if (item.replayOf) {
+    const badge = document.createElement("span");
+    badge.className = "h-badge";
+    badge.textContent = "↻";
+    button.append(badge);
+  }
+  return button;
+}
+
+function renderSessionList(sessions) {
+  // Same capped, scrollable container as the detail view so the two match.
+  const scroll = document.createElement("div");
+  scroll.className = "detail-scroll";
+  for (const session of sessions) {
+    const last = session.items[session.items.length - 1];
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "session-row";
+    row.dataset.session = session.key;
+
+    const label = document.createElement("span");
+    label.className = "session-label";
+    label.textContent = session.label;
+
+    const meta = document.createElement("span");
+    meta.className = "session-meta";
+    meta.textContent = `${session.items.length} · ${formatTime(last?.timestamps?.createdAt)}`;
+
+    row.append(label, meta);
+    scroll.append(row);
+  }
+  historyList.replaceChildren(scroll);
+}
+
+function renderSessionDetail(session) {
+  const fragment = document.createDocumentFragment();
+
+  const head = document.createElement("div");
+  head.className = "detail-head";
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "back-button";
+  back.dataset.action = "back";
+  back.textContent = "‹ Sessions";
+  const label = document.createElement("span");
+  label.className = "detail-label";
+  label.textContent = session.label;
+  head.append(back, label);
+  fragment.append(head);
+
+  // Newest first, capped height + scroll (see .detail-scroll), so older items
+  // are reachable by scrolling down without growing the page.
+  const scroll = document.createElement("div");
+  scroll.className = "detail-scroll";
+  for (const item of [...session.items].reverse()) {
+    scroll.append(buildHistoryItem(item));
+  }
+  fragment.append(scroll);
+  historyList.replaceChildren(fragment);
+}
+
 function renderHistory(items) {
   if (items.length === 0) {
+    historyView = { mode: "detail", sessionKey: null };
     historyList.innerHTML = '<p class="history-empty">Nothing has been spoken yet.</p>';
     return;
   }
 
-  const groups = new Map();
-  for (const item of [...items].reverse()) {
-    const key = threadKey(item);
-    if (!groups.has(key)) groups.set(key, { key, label: threadLabel(item), items: [] });
-    groups.get(key).items.push(item);
+  const sessions = buildSessions(items);
+  if (historyView.mode === "list") {
+    renderSessionList(sessions);
+    return;
   }
 
-  const topKey = groups.keys().next().value;
-  const fragment = document.createDocumentFragment();
-  for (const group of groups.values()) {
-    const expanded = threadExpand.has(group.key)
-      ? threadExpand.get(group.key)
-      : group.key === topKey;
+  let session = sessions.find((entry) => entry.key === historyView.sessionKey);
+  if (!session) {
+    session = sessions[0];
+    historyView = { mode: "detail", sessionKey: session.key };
+  }
+  renderSessionDetail(session);
+}
 
-    const wrap = document.createElement("div");
-    wrap.className = "thread-group";
+// Highlight the spoken-so-far portion of the text, accurate to the sentence
+// (chunk) boundaries with linear interpolation inside the current sentence.
+function renderHighlightAt(currentSec, segments) {
+  if (!Array.isArray(segments) || segments.length === 0) return;
+  let activeIdx = segments.findIndex((seg) => currentSec < seg.endSec);
+  if (activeIdx === -1) activeIdx = segments.length - 1;
 
-    const head = document.createElement("button");
-    head.type = "button";
-    head.className = "thread-head";
-    head.dataset.thread = group.key;
-    const label = document.createElement("span");
-    label.className = "thread-label";
-    label.textContent = `${expanded ? "▾" : "▸"} ${group.label}`;
-    const count = document.createElement("span");
-    count.className = "thread-count";
-    count.textContent = `${group.items.length}`;
-    head.append(label, count);
-    wrap.append(head);
-
-    if (expanded) {
-      for (const item of group.items) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `history-item${item.id === selectedItemId ? " is-selected" : ""}`;
-        button.dataset.id = item.id;
-
-        const time = document.createElement("span");
-        time.className = "h-time";
-        time.textContent = formatTime(item.timestamps?.createdAt);
-
-        const text = document.createElement("span");
-        text.className = "h-text";
-        text.textContent = item.speakableText;
-
-        button.append(time, text);
-        if (item.replayOf) {
-          const badge = document.createElement("span");
-          badge.className = "h-badge";
-          badge.textContent = "↻";
-          button.append(badge);
-        }
-        wrap.append(button);
-      }
+  let highlightChars = 0;
+  const parts = [];
+  for (let i = 0; i < segments.length; i += 1) {
+    const text = segments[i].text;
+    parts.push(text);
+    if (i < activeIdx) {
+      highlightChars += text.length + 1; // include the joining space
+    } else if (i === activeIdx) {
+      const seg = segments[i];
+      const span = Math.max(0.001, seg.endSec - seg.startSec);
+      const within = Math.min(1, Math.max(0, (currentSec - seg.startSec) / span));
+      highlightChars += Math.round(within * text.length);
     }
-    fragment.append(wrap);
   }
 
-  historyList.replaceChildren(fragment);
+  const full = parts.join(" ");
+  highlightChars = Math.min(full.length, Math.max(0, highlightChars));
+  const done = document.createElement("span");
+  done.className = "spoken-done";
+  done.textContent = full.slice(0, highlightChars);
+  const rest = document.createElement("span");
+  rest.textContent = full.slice(highlightChars);
+  previewText.replaceChildren(done, rest);
+}
+
+// Poll playback position to drive the seek bar + highlight while audio plays.
+function updatePlaybackUi() {
+  const pos = playback?.getPlaybackPosition?.();
+  if (!pos) {
+    seekBar.disabled = true;
+    if (!seekDragging) seekBar.value = "0";
+    return;
+  }
+  seekBar.disabled = false;
+  if (!seekDragging) {
+    seekBar.value = String(Math.round(pos.fraction * 1000));
+    if (latestState?.settings?.highlightSpokenText) {
+      renderHighlightAt(pos.currentSec, pos.segments);
+    }
+  }
 }
 
 function updateControls(settings, items, selected) {
@@ -271,8 +403,10 @@ function renderState({ settings, queue }) {
   // Surface the newest item automatically (so manual mode shows new arrivals).
   const latest = items[items.length - 1] || null;
   if (latest && latest.id !== lastLatestId) {
+    const firstLoad = lastLatestId === null;
     selectedItemId = latest.id;
     lastLatestId = latest.id;
+    if (!firstLoad) maybeNotify(latest, settings);
   }
   if (!findSelected(items)) selectedItemId = latest ? latest.id : null;
 
@@ -384,7 +518,22 @@ playback = createPlaybackController({
 
 tabHome.addEventListener("click", () => setTab("home"));
 tabSettings.addEventListener("click", () => setTab("settings"));
-refreshButton.addEventListener("click", () => refreshPanel(targetUrl).catch(showError));
+refreshButton.addEventListener("click", () => refreshWithSpin());
+
+// Spin the refresh icon on click (min 500ms so the feedback is always visible,
+// even when the refresh returns instantly).
+async function refreshWithSpin() {
+  refreshButton.classList.add("is-spinning");
+  const started = Date.now();
+  try {
+    await refreshPanel(targetUrl, { force: true });
+  } catch (error) {
+    showError(error);
+  } finally {
+    const wait = Math.max(0, 500 - (Date.now() - started));
+    window.setTimeout(() => refreshButton.classList.remove("is-spinning"), wait);
+  }
+}
 prevButton.addEventListener("click", () => moveSelection(-1));
 nextButton.addEventListener("click", () => moveSelection(1));
 playPauseButton.addEventListener("click", () => {
@@ -397,13 +546,29 @@ muteButton.addEventListener("click", () => {
   playback.setMute(muted).catch(showError);
 });
 
+seekBar.addEventListener("pointerdown", () => (seekDragging = true));
+seekBar.addEventListener("input", () => {
+  seekDragging = true;
+  if (!latestState?.settings?.highlightSpokenText) return;
+  const pos = playback?.getPlaybackPosition?.();
+  if (pos) renderHighlightAt((Number(seekBar.value) / 1000) * pos.totalSec, pos.segments);
+});
+seekBar.addEventListener("change", () => {
+  seekDragging = false;
+  playback?.seek?.(Number(seekBar.value) / 1000);
+});
+seekBar.addEventListener("blur", () => (seekDragging = false));
+
 historyList.addEventListener("click", (event) => {
-  const head = event.target.closest(".thread-head");
-  if (head) {
-    const key = head.dataset.thread;
-    const topKey = historyList.querySelector(".thread-head")?.dataset.thread;
-    const current = threadExpand.has(key) ? threadExpand.get(key) : key === topKey;
-    threadExpand.set(key, !current);
+  if (event.target.closest(".back-button")) {
+    historyView = { mode: "list", sessionKey: null };
+    if (latestState) renderState(latestState);
+    return;
+  }
+
+  const row = event.target.closest(".session-row");
+  if (row) {
+    historyView = { mode: "detail", sessionKey: row.dataset.session };
     if (latestState) renderState(latestState);
     return;
   }
@@ -422,6 +587,16 @@ function subscribeTrayEvents() {
   if (!window.__TAURI_INTERNALS__) return;
 
   listen("agent-hotline://show", () => refreshPanel(targetUrl).catch(showError)).catch(() => {});
+
+  // Clicking a notification opens the full window or the mini popup per setting.
+  if (typeof notification.onAction === "function") {
+    notification
+      .onAction(() => {
+        const opens = latestState?.settings?.notificationOpens || "full";
+        invoke(opens === "mini" ? "show_mini_panel" : "show_main_panel").catch(() => {});
+      })
+      .catch(() => {});
+  }
 
   listen("agent-hotline://tray-action", (event) => {
     const action = event.payload?.action || "unknown";
@@ -443,3 +618,4 @@ window.setInterval(
   () => refreshPanel(targetUrl, { quiet: true }).catch(showError),
   QUEUE_POLL_INTERVAL_MS
 );
+window.setInterval(updatePlaybackUi, 150);

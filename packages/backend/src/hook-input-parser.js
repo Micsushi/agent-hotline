@@ -44,6 +44,7 @@ function parseHookInput(text) {
       schema: extracted.schema,
       threadId: thread.threadId,
       threadLabel: thread.threadLabel,
+      sessionName: extractSessionName(payload),
       payload
     };
   } catch (error) {
@@ -86,6 +87,14 @@ function extractThread(payload, sourceApp) {
   const threadLabel = labelParts.filter(Boolean).join(" · ") || undefined;
 
   return { threadId, threadLabel };
+}
+
+// A human session/chat name when the agent provides one (Codex forwards its
+// curated thread_name; Claude has none here and is named from its transcript in
+// the hook command instead).
+function extractSessionName(payload) {
+  if (!isPlainObject(payload)) return undefined;
+  return firstString(payload.sessionName, payload.session_name, payload.thread_name) || undefined;
 }
 
 function firstString(...values) {

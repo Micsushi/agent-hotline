@@ -122,7 +122,12 @@ export async function generateKokoroAudio(text, voice, speed, preferredDevice) {
   const chunks = chunkText(text, MAX_CHARS_PER_CHUNK);
   if (chunks.length <= 1) {
     const result = await tts.generate(text, { voice: useVoice, speed: useSpeed });
-    return { samples: result.audio, sampleRate: result.sampling_rate };
+    const endSec = result.audio.length / result.sampling_rate;
+    return {
+      samples: result.audio,
+      sampleRate: result.sampling_rate,
+      segments: [{ text: text.trim(), startSec: 0, endSec }]
+    };
   }
 
   const buffers = [];
@@ -133,6 +138,17 @@ export async function generateKokoroAudio(text, voice, speed, preferredDevice) {
     sampleRate = result.sampling_rate;
   }
 
+  // Build a timeline mapping each chunk to its exact span in the concatenated
+  // buffer (sentence-accurate, since each chunk's audio length is known).
   const gapSamples = Math.round(sampleRate * CHUNK_GAP_SEC);
-  return { samples: concatSamples(buffers, gapSamples), sampleRate };
+  const segments = [];
+  let cursor = 0;
+  for (let i = 0; i < buffers.length; i += 1) {
+    const startSec = cursor / sampleRate;
+    cursor += buffers[i].length;
+    segments.push({ text: chunks[i], startSec, endSec: cursor / sampleRate });
+    if (i < buffers.length - 1) cursor += gapSamples;
+  }
+
+  return { samples: concatSamples(buffers, gapSamples), sampleRate, segments };
 }

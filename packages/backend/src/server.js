@@ -249,7 +249,10 @@ function validateSettingsPatch(patch) {
     "volume",
     "skipRules",
     "codexEnabled",
-    "claudeEnabled"
+    "claudeEnabled",
+    "notifyOnNewReply",
+    "notificationOpens",
+    "highlightSpokenText"
   ]);
   const allowedSkipRules = new Set([
     "codeBlocks",
@@ -290,6 +293,15 @@ function validateSettingsPatch(patch) {
   }
   if ("claudeEnabled" in patch && typeof patch.claudeEnabled !== "boolean") {
     errors.push("claudeEnabled must be boolean");
+  }
+  if ("notifyOnNewReply" in patch && typeof patch.notifyOnNewReply !== "boolean") {
+    errors.push("notifyOnNewReply must be boolean");
+  }
+  if ("notificationOpens" in patch && !["full", "mini"].includes(patch.notificationOpens)) {
+    errors.push("notificationOpens must be full or mini");
+  }
+  if ("highlightSpokenText" in patch && typeof patch.highlightSpokenText !== "boolean") {
+    errors.push("highlightSpokenText must be boolean");
   }
   if ("skipRules" in patch) {
     if (!patch.skipRules || typeof patch.skipRules !== "object" || Array.isArray(patch.skipRules)) {
@@ -532,7 +544,8 @@ function createServer(options = {}) {
           speakableText: body.speakableText,
           sourceApp: body.sourceApp,
           threadId: body.threadId,
-          threadLabel: body.threadLabel
+          threadLabel: body.threadLabel,
+          sessionName: body.sessionName
         });
         sendJson(res, 201, { item, queue: queueState(queueStore) });
         return;
@@ -629,6 +642,21 @@ function createServer(options = {}) {
 function listen(options = {}) {
   const port = Number(options.port || PORT);
   const server = createServer(options);
+
+  server.on("error", (error) => {
+    if (error && error.code === "EADDRINUSE") {
+      // Another Agent Hotline backend already owns this port. Treat a duplicate
+      // start as a clean no-op instead of crashing with a stack trace, so the
+      // port acts as a single-instance lock for the backend.
+      console.error(
+        `Agent Hotline backend already running on ${HOST}:${port}; this duplicate is exiting.`
+      );
+      process.exit(0);
+    }
+    console.error(`Agent Hotline backend failed to start: ${error.message}`);
+    process.exit(1);
+  });
+
   server.listen(port, HOST, () => {
     console.log(`Agent Hotline listening on http://${HOST}:${port}`);
     console.log(`Question file: ${options.questionsFile || QUESTIONS_FILE}`);

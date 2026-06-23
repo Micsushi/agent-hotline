@@ -60,7 +60,10 @@ test("settings persist after edit and reload", () => {
       longBulletLists: true
     },
     codexEnabled: false,
-    claudeEnabled: true
+    claudeEnabled: true,
+    notifyOnNewReply: false,
+    notificationOpens: "full",
+    highlightSpokenText: false
   });
 });
 

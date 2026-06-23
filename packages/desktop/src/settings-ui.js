@@ -38,7 +38,10 @@ const DEFAULT_SETTINGS = {
     longBulletLists: true
   },
   codexEnabled: true,
-  claudeEnabled: true
+  claudeEnabled: true,
+  notifyOnNewReply: false,
+  notificationOpens: "full",
+  highlightSpokenText: false
 };
 
 function getSpeechVoices() {
@@ -81,7 +84,18 @@ function normalizeSettings(settings) {
     claudeEnabled:
       typeof source.claudeEnabled === "boolean"
         ? source.claudeEnabled
-        : DEFAULT_SETTINGS.claudeEnabled
+        : DEFAULT_SETTINGS.claudeEnabled,
+    notifyOnNewReply:
+      typeof source.notifyOnNewReply === "boolean"
+        ? source.notifyOnNewReply
+        : DEFAULT_SETTINGS.notifyOnNewReply,
+    notificationOpens: ["full", "mini"].includes(source.notificationOpens)
+      ? source.notificationOpens
+      : DEFAULT_SETTINGS.notificationOpens,
+    highlightSpokenText:
+      typeof source.highlightSpokenText === "boolean"
+        ? source.highlightSpokenText
+        : DEFAULT_SETTINGS.highlightSpokenText
   };
 }
 
@@ -165,6 +179,11 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   const mute = document.querySelector("#setting-mute");
   const codex = document.querySelector("#setting-codex");
   const claude = document.querySelector("#setting-claude");
+  const notify = document.querySelector("#setting-notify");
+  const notifyOpensRow = document.querySelector("#notify-opens-row");
+  const notifyOpens = document.querySelector("#setting-notify-opens");
+  const highlight = document.querySelector("#setting-highlight");
+  const highlightWarn = document.querySelector("#highlight-warn");
   const engine = document.querySelector("#setting-engine");
   const voice = document.querySelector("#setting-voice");
   const kokoroVoice = document.querySelector("#setting-kokoro-voice");
@@ -209,12 +228,17 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
     if (readAloud) readAloud.checked = !currentSettings.mute;
     if (readAloudSub) {
       readAloudSub.textContent = currentSettings.mute
-        ? "Off — replies are still captured to history, just not read."
-        : "On — captured replies will be read.";
+        ? "Off: replies are still saved to history, just not read."
+        : "On: saved replies will be read.";
     }
     mute.checked = currentSettings.mute;
     codex.checked = currentSettings.codexEnabled;
     claude.checked = currentSettings.claudeEnabled;
+    if (notify) notify.checked = currentSettings.notifyOnNewReply;
+    if (notifyOpens) notifyOpens.value = currentSettings.notificationOpens;
+    if (notifyOpensRow) notifyOpensRow.hidden = !currentSettings.notifyOnNewReply;
+    if (highlight) highlight.checked = currentSettings.highlightSpokenText;
+    if (highlightWarn) highlightWarn.hidden = !currentSettings.highlightSpokenText;
     engine.value = currentSettings.engine;
     setSelectOptions(voice, currentSettings);
     setKokoroVoiceOptions(kokoroVoice, currentSettings);
@@ -282,6 +306,19 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   mute.addEventListener("change", () => savePatch({ mute: mute.checked }));
   codex.addEventListener("change", () => savePatch({ codexEnabled: codex.checked }));
   claude.addEventListener("change", () => savePatch({ claudeEnabled: claude.checked }));
+  if (notify) {
+    notify.addEventListener("change", () => savePatch({ notifyOnNewReply: notify.checked }));
+  }
+  if (notifyOpens) {
+    notifyOpens.addEventListener("change", () =>
+      savePatch({ notificationOpens: notifyOpens.value })
+    );
+  }
+  if (highlight) {
+    highlight.addEventListener("change", () =>
+      savePatch({ highlightSpokenText: highlight.checked })
+    );
+  }
   engine.addEventListener("change", () => savePatch({ engine: engine.value }));
   voice.addEventListener("change", () => savePatch({ voice: voice.value }));
   kokoroVoice.addEventListener("change", () => savePatch({ kokoroVoice: kokoroVoice.value }));

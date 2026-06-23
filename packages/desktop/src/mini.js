@@ -28,14 +28,32 @@ const el = (id) => document.getElementById(id);
 const sourceEl = el("mini-source");
 const statusEl = el("mini-status");
 const previewEl = el("mini-preview");
+const prevButton = el("mini-prev");
 const playPauseButton = el("mini-playpause");
+const nextButton = el("mini-next");
 const muteButton = el("mini-mute");
 const openButton = el("mini-open");
+const rate = el("mini-rate");
+const rateValue = el("mini-rate-value");
 const hintEl = el("mini-hint");
 
 let playback = null;
 let latestState = null;
 let refreshInFlight = false;
+let selectedId = null;
+let lastLatestId = null;
+// Don't let a poll snap the speed slider back while the user drags it.
+let draggingRate = false;
+
+function clampNumber(value, fallback, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+
+function formatRate(value) {
+  return `${parseFloat(Number(value).toFixed(2))}x`;
+}
 
 function notify(message) {
   hintEl.textContent = message;
@@ -56,13 +74,29 @@ async function fetchJson(url) {
   return response.json();
 }
 
-// Newest item that carries speakable text (queue order is oldest -> newest).
-function latestSpeakable(queue) {
+// Items carrying speakable text, oldest -> newest.
+function speakableItems(queue) {
   const items = Array.isArray(queue?.items) ? queue.items : [];
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    if (items[i].speakableText && items[i].speakableText.trim()) return items[i];
-  }
-  return null;
+  return items.filter((item) => item.speakableText && item.speakableText.trim());
+}
+
+function latestSpeakable(queue) {
+  const items = speakableItems(queue);
+  return items.length ? items[items.length - 1] : null;
+}
+
+function selectedItem() {
+  const items = speakableItems(latestState?.queue);
+  return items.find((item) => item.id === selectedId) || items[items.length - 1] || null;
+}
+
+function moveSelection(delta) {
+  const items = speakableItems(latestState?.queue);
+  const index = items.findIndex((item) => item.id === selectedId);
+  const next = items[index + delta];
+  if (!next) return;
+  selectedId = next.id;
+  if (latestState) render(latestState);
 }
 
 function setStatus(kind) {
@@ -82,17 +116,29 @@ function deriveStatus(settings, queue) {
 function render(state) {
   latestState = state;
   const { settings, queue } = state;
-  const latest = latestSpeakable(queue);
+  const items = speakableItems(queue);
 
-  if (latest) {
-    sourceEl.textContent = latest.sourceApp || "Latest";
-    previewEl.textContent = latest.speakableText;
+  // Follow the newest item as it arrives (same as the full panel).
+  const latest = items[items.length - 1] || null;
+  if (latest && latest.id !== lastLatestId) {
+    selectedId = latest.id;
+    lastLatestId = latest.id;
+  }
+  const selected = selectedItem();
+
+  if (selected) {
+    sourceEl.textContent = selected.sessionName || selected.sourceApp || "Latest";
+    previewEl.textContent = selected.speakableText;
   } else {
     sourceEl.textContent = "None";
     previewEl.textContent = "No speakable text yet.";
   }
 
   setStatus(deriveStatus(settings, queue));
+
+  const index = items.findIndex((item) => item.id === (selected && selected.id));
+  prevButton.disabled = index <= 0;
+  nextButton.disabled = index < 0 || index >= items.length - 1;
 
   // One button cycles read -> pause -> resume.
   const speaking = playback?.isSpeaking;
@@ -101,12 +147,17 @@ function render(state) {
   const ppLabel = speaking ? "Pause" : paused ? "Resume" : "Read aloud";
   playPauseButton.title = ppLabel;
   playPauseButton.setAttribute("aria-label", ppLabel);
-  playPauseButton.disabled = settings?.mute || (!latest && !speaking && !paused);
+  playPauseButton.disabled = settings?.mute || (!selected && !speaking && !paused);
 
   const muted = settings?.mute;
   muteButton.innerHTML = muted ? ICON_SPEAKER_MUTED : ICON_SPEAKER;
   muteButton.title = muted ? "Unmute" : "Mute";
   muteButton.setAttribute("aria-label", muted ? "Unmute" : "Mute");
+
+  if (!draggingRate && Number.isFinite(Number(settings?.rate))) {
+    rate.value = String(settings.rate);
+    rateValue.value = formatRate(settings.rate);
+  }
 }
 
 async function refresh({ quiet = false } = {}) {
@@ -129,14 +180,28 @@ async function refresh({ quiet = false } = {}) {
   }
 }
 
-function readLatest() {
+function playSelected() {
   if (!latestState) return;
-  const latest = latestSpeakable(latestState.queue);
-  if (!latest) {
+  const selected = selectedItem();
+  if (!selected) {
     notify("Nothing to read yet.");
     return;
   }
-  playback.playItem(latest, latestState.settings).catch((error) => notify(String(error?.message || error)));
+  playback
+    .playItem(selected, latestState.settings)
+    .catch((error) => notify(String(error?.message || error)));
+}
+
+async function saveRate(value) {
+  try {
+    await fetch(`${targetUrl}/api/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rate: value })
+    });
+  } catch {
+    // best effort; the live rate already applied to playback
+  }
 }
 
 const config = await loadRuntimeConfig();
@@ -148,15 +213,29 @@ playback = createPlaybackController({
   onStateChanged: () => refresh({ quiet: true }).catch(() => {})
 });
 
+prevButton.addEventListener("click", () => moveSelection(-1));
+nextButton.addEventListener("click", () => moveSelection(1));
 playPauseButton.addEventListener("click", () => {
   if (playback.isSpeaking) return playback.pause();
   if (playback.isPaused) return playback.resume();
-  readLatest();
+  playSelected();
 });
 muteButton.addEventListener("click", () => {
   const muted = latestState?.settings?.mute !== true;
   playback.setMute(muted).catch(() => {});
 });
+
+rate.addEventListener("pointerdown", () => (draggingRate = true));
+rate.addEventListener("input", () => {
+  draggingRate = true;
+  rateValue.value = formatRate(rate.value);
+  playback.applyLiveSettings({ rate: clampNumber(rate.value, 1, 0.25, 4) });
+});
+rate.addEventListener("change", () => {
+  draggingRate = false;
+  saveRate(clampNumber(rate.value, 1, 0.25, 4));
+});
+rate.addEventListener("blur", () => (draggingRate = false));
 openButton.addEventListener("click", () => {
   invoke("show_main_panel").catch(() => {});
 });

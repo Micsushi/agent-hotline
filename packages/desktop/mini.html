@@ -24,13 +24,24 @@
       <p id="mini-preview" class="mini-preview">No speakable text yet.</p>
 
       <div class="mini-transport">
+        <button id="mini-prev" class="mini-btn" type="button" disabled aria-label="Previous" title="Previous">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zM20 6v12l-9-6 9-6z"/></svg>
+        </button>
         <button id="mini-playpause" class="mini-btn primary" type="button" disabled aria-label="Read aloud" title="Read aloud">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>
+        </button>
+        <button id="mini-next" class="mini-btn" type="button" disabled aria-label="Next" title="Next">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 6h2v12h-2zM4 6v12l9-6-9-6z"/></svg>
         </button>
         <button id="mini-mute" class="mini-btn" type="button" aria-label="Mute" title="Mute">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
       </div>
+
+      <label class="mini-speed" for="mini-rate">
+        <span>Speed <output id="mini-rate-value">1.0x</output></span>
+        <input id="mini-rate" type="range" min="0.25" max="4" step="0.05" />
+      </label>
 
       <p id="mini-hint" class="mini-hint">Loading…</p>
     </main>

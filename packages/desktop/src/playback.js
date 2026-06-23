@@ -146,6 +146,17 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
   let stretchRegistration = null;
   let StretchNodeClass = null;
 
+  // Seek + position tracking (Kokoro / Web Audio path). Times are in "speech
+  // seconds" (the generated buffer's own timeline, excluding the silent lead-in).
+  let activeBuffer = null;
+  let activeLeadInSec = 0;
+  let activeSpeechDuration = 0;
+  let activeSegments = [];
+  let activeUseStretch = false;
+  let activeStretchRate = 1;
+  let basePosSec = 0; // speech seconds at the last (re)base point
+  let baseCtxTime = 0; // audioContext.currentTime at that point
+
   function getAudioContext() {
     if (!audioContext) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -181,7 +192,9 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     return Boolean(activeSource);
   }
 
-  function releaseActiveAudio() {
+  // Stop just the source + stretch node (keeps the gain + buffer so seek can
+  // rebuild the source from the same audio).
+  function teardownSource() {
     if (activeSource) {
       activeSource.onended = null;
       try {
@@ -202,6 +215,12 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
         // ignore
       }
     }
+    activeSource = null;
+    activeStretch = null;
+  }
+
+  function releaseActiveAudio() {
+    teardownSource();
     if (activeGain) {
       try {
         activeGain.disconnect();
@@ -209,10 +228,65 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
         // ignore
       }
     }
-    activeSource = null;
-    activeStretch = null;
     activeGain = null;
     activeGenSpeed = 1;
+    activeBuffer = null;
+    activeSegments = [];
+    activeSpeechDuration = 0;
+    activeLeadInSec = 0;
+  }
+
+  // Current playback position in speech seconds. The AudioContext clock freezes
+  // while suspended (paused), so elapsed time is automatically correct.
+  function getCurrentSpeechSec() {
+    if (!activeBuffer || !audioContext) return 0;
+    const rate = activeUseStretch ? activeStretchRate : 1;
+    const elapsed = (audioContext.currentTime - baseCtxTime) * rate;
+    return Math.min(activeSpeechDuration, Math.max(0, basePosSec + elapsed));
+  }
+
+  // Build a fresh source (+ stretch node) from the active buffer and start it.
+  // includeLeadIn plays the silent warm-up at the very start; a seek skips it.
+  function connectSourceFrom(offsetSpeechSec, includeLeadIn) {
+    const context = audioContext;
+    const source = context.createBufferSource();
+    source.buffer = activeBuffer;
+
+    if (activeUseStretch && StretchNodeClass) {
+      const stretch = new StretchNodeClass({ context, outputChannelCount: 1 });
+      if (typeof stretch.setStretchParameters === "function") {
+        stretch.setStretchParameters(SPEECH_STRETCH_PARAMS);
+      }
+      source.playbackRate.value = activeStretchRate;
+      stretch.playbackRate.value = activeStretchRate;
+      source.connect(stretch);
+      stretch.connect(activeGain);
+      activeStretch = stretch;
+    } else {
+      source.playbackRate.value = 1;
+      source.connect(activeGain);
+    }
+
+    const token = playbackToken;
+    const playingItem = activeItem;
+    source.onended = async () => {
+      if (playbackToken !== token) return;
+      releaseActiveAudio();
+      activeItem = null;
+      setPlaybackState("idle");
+      try {
+        await markPlayed(playingItem);
+        notify("Read aloud finished.");
+      } catch (error) {
+        notify(`Playback finished, but queue state could not be saved: ${error.message}`);
+      }
+    };
+
+    const bufferStart = includeLeadIn ? 0 : activeLeadInSec + offsetSpeechSec;
+    source.start(0, bufferStart);
+    activeSource = source;
+    basePosSec = includeLeadIn ? -activeLeadInSec : offsetSpeechSec;
+    baseCtxTime = context.currentTime;
   }
 
   function notify(message) {
@@ -401,54 +475,26 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
       );
       buffer.copyToChannel(generated.samples, 0, leadInSamples);
 
-      const source = context.createBufferSource();
-      source.buffer = buffer;
-
       const gain = context.createGain();
       gain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
-
-      if (useStretch && StretchNodeClass) {
-        const stretch = new StretchNodeClass({ context, outputChannelCount: 1 });
-        if (typeof stretch.setStretchParameters === "function") {
-          stretch.setStretchParameters(SPEECH_STRETCH_PARAMS);
-        }
-        // Set both rates to the residual factor: source speeds up, the stretch
-        // node compensates pitch so it stays natural. Both are live AudioParams.
-        source.playbackRate.value = stretchRate;
-        stretch.playbackRate.value = stretchRate;
-        source.connect(stretch);
-        stretch.connect(gain);
-        activeStretch = stretch;
-      } else {
-        // Full speed baked into generation, so play the buffer at native rate.
-        source.playbackRate.value = 1;
-        source.connect(gain);
-      }
       gain.connect(context.destination);
 
-      activeSource = source;
+      // Store the timeline so the UI can show position and seek.
+      activeBuffer = buffer;
       activeGain = gain;
       activeGenSpeed = genSpeed;
+      activeLeadInSec = leadInSamples / generated.sampleRate;
+      activeSpeechDuration = generated.samples.length / generated.sampleRate;
+      activeSegments = Array.isArray(generated.segments) ? generated.segments : [];
+      activeUseStretch = Boolean(useStretch && StretchNodeClass);
+      activeStretchRate = activeUseStretch ? stretchRate : 1;
       activeItem = playingItem;
+
+      connectSourceFrom(0, true);
       setPlaybackState("speaking");
       notify(
         `Reading from ${playingItem.sourceApp} with Kokoro${useStretch ? " (live speed)" : ""}.`
       );
-
-      source.onended = async () => {
-        if (playbackToken !== token) return;
-        releaseActiveAudio();
-        activeItem = null;
-        setPlaybackState("idle");
-        try {
-          await markPlayed(playingItem);
-          notify("Read aloud finished.");
-        } catch (error) {
-          notify(`Playback finished, but queue state could not be saved: ${error.message}`);
-        }
-      };
-
-      source.start();
     } catch (error) {
       if (playbackToken !== token) return;
       releaseActiveAudio();
@@ -473,12 +519,49 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
       // next read re-splits optimally.
       const target = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
       const residual = clampNumber(target / (activeGenSpeed || 1), 1, RATE_MIN, RATE_MAX);
+      // Rebase the position clock before the rate changes, or elapsed time would
+      // be scaled by the wrong factor.
+      basePosSec = getCurrentSpeechSec();
+      baseCtxTime = audioContext ? audioContext.currentTime : 0;
+      activeStretchRate = residual;
       activeSource.playbackRate.value = residual;
       activeStretch.playbackRate.value = residual;
     }
     if (activeGain && Number.isFinite(Number(settings.volume))) {
       activeGain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
     }
+  }
+
+  // Position for the seek bar + text highlight, or null when nothing is loaded.
+  function getPlaybackPosition() {
+    if (!activeBuffer) return null;
+    const currentSec = getCurrentSpeechSec();
+    const totalSec = activeSpeechDuration;
+    let segmentIndex = activeSegments.findIndex(
+      (seg) => currentSec >= seg.startSec && currentSec < seg.endSec
+    );
+    if (segmentIndex === -1 && activeSegments.length && currentSec >= totalSec) {
+      segmentIndex = activeSegments.length - 1;
+    }
+    return {
+      fraction: totalSec > 0 ? currentSec / totalSec : 0,
+      currentSec,
+      totalSec,
+      segmentIndex,
+      segments: activeSegments
+    };
+  }
+
+  // Jump to a fraction (0..1) of the current read. Rebuilds the source at the
+  // offset; preserves paused state (the context stays suspended).
+  function seek(fraction) {
+    if (!activeBuffer || !audioContext) return;
+    const target = Math.min(
+      activeSpeechDuration,
+      Math.max(0, Number(fraction) * activeSpeechDuration)
+    );
+    teardownSource();
+    connectSourceFrom(target, false);
   }
 
   // Play a specific item (from history or the current selection).
@@ -611,6 +694,8 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     replayLatest,
     setMute,
     applyLiveSettings,
+    seek,
+    getPlaybackPosition,
     playItem,
     readNextPending,
     get isSpeaking() {

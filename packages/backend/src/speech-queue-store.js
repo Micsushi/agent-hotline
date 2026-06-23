@@ -111,6 +111,8 @@ function createSpeechQueueStore(options = {}) {
     if (threadId) item.threadId = threadId;
     const threadLabel = optionalString(input.threadLabel);
     if (threadLabel) item.threadLabel = threadLabel;
+    const sessionName = optionalString(input.sessionName);
+    if (sessionName) item.sessionName = sessionName;
 
     if (findItem(item.id)) {
       throw new Error(`Queue item already exists: ${item.id}`);
@@ -191,6 +193,7 @@ function createSpeechQueueStore(options = {}) {
     };
     if (source.threadId) item.threadId = source.threadId;
     if (source.threadLabel) item.threadLabel = source.threadLabel;
+    if (source.sessionName) item.sessionName = source.sessionName;
 
     state.items.push(item);
     persist();
