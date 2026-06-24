@@ -8,7 +8,7 @@ You keep using Codex or Claude Code as usual. Agent Hotline listens for complete
 
 - Reads completed Codex and Claude Code responses aloud.
 - Filters out code blocks, diffs, logs, stack traces, tables, JSON, and long dumps by default.
-- Lets you choose manual, automatic, or ask-every-time reading.
+- Lets you save replies for manual playback or auto-play them when idle.
 - Includes read, pause, resume, stop, replay, mute, and unmute controls.
 - Stores settings locally in `%APPDATA%\Agent Hotline\`.
 - Uses local browser/WebView text-to-speech.

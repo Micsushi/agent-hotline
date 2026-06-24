@@ -11,12 +11,12 @@ import {
 
 test("read mode normalizes invalid settings to manual behavior", () => {
   assert.equal(normalizeReadBehavior("auto"), "auto");
-  assert.equal(normalizeReadBehavior("ask_every_time"), "ask_every_time");
+  assert.equal(normalizeReadBehavior("ask_every_time"), "manual");
   assert.equal(normalizeReadBehavior("surprise_me"), "manual");
   assert.equal(normalizeReadBehavior(undefined), "manual");
 });
 
-test("manual and ask-every-time modes expose a user choice for pending items", () => {
+test("save-only mode exposes a user choice for pending items", () => {
   const queue = { pending: [{ id: "next-1", speakableText: "Ready to read." }] };
 
   assert.deepEqual(getNextPendingItem(queue), queue.pending[0]);
@@ -85,11 +85,8 @@ test("action hints reflect mute, empty queue, and read behavior decisions", () =
   const queue = { pending: [{ id: "item-1" }] };
 
   assert.match(describeActionHint({ mute: true, readBehavior: "auto" }, queue), /Muted/);
-  assert.match(describeActionHint({ mute: false, readBehavior: "auto" }, queue), /Auto mode/);
-  assert.match(
-    describeActionHint({ mute: false, readBehavior: "ask_every_time" }, queue),
-    /Choose Read or Skip/
-  );
+  assert.match(describeActionHint({ mute: false, readBehavior: "auto" }, queue), /Auto-play/);
+  assert.match(describeActionHint({ mute: false, readBehavior: "manual" }, queue), /Save only/);
   assert.match(
     describeActionHint({ mute: false, readBehavior: "manual" }, { pending: [] }),
     /No pending item/

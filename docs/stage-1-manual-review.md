@@ -106,31 +106,22 @@ Restart the backend before continuing.
 
 Use the Agent Hotline panel unless a step says to use PowerShell.
 
-### SR-01 Manual Mode
+### SR-01 Save-Only Mode
 
-1. Set Read behavior to Manual.
+1. Set Queue behavior to Save only.
 2. Confirm Mute is off.
 3. Run the Codex hook smoke command.
 
 Expected result: the item appears as pending and is not read until the reviewer presses Read.
 
-### SR-02 Auto Mode
+### SR-02 Auto-Play Mode
 
-1. Set Read behavior to Auto.
+1. Set Queue behavior to Auto-play.
 2. Run the Codex or Claude hook smoke command.
 
-Expected result: the next queued item starts reading automatically.
+Expected result: the next queued item starts reading automatically when nothing else is playing.
 
-### SR-03 Ask Every Time Mode
-
-1. Set Read behavior to Ask every time.
-2. Run the Codex or Claude hook smoke command.
-3. Choose Read for one item.
-4. Run another hook smoke command and choose Skip.
-
-Expected result: Agent Hotline does not read before reviewer confirmation. Read starts playback. Skip marks the item skipped and does not speak it.
-
-### SR-04 Mute
+### SR-03 Mute
 
 1. Turn Mute on.
 2. Run a hook smoke command.
@@ -138,7 +129,7 @@ Expected result: Agent Hotline does not read before reviewer confirmation. Read 
 
 Expected result: while muted, no new speech starts and the preview remains visible. After unmuting, normal read behavior resumes for later items.
 
-### SR-05 Codex Enabled Toggle
+### SR-04 Codex Enabled Toggle
 
 1. Turn Codex off in settings.
 2. Run the Codex hook smoke command.
@@ -147,7 +138,7 @@ Expected result: while muted, no new speech starts and the preview remains visib
 
 Expected result: when Codex is disabled, Codex hook output is not queued or spoken. After re-enabling, Codex output queues or reads normally.
 
-### SR-06 Claude Enabled Toggle
+### SR-05 Claude Enabled Toggle
 
 1. Turn Claude off in settings.
 2. Run the Claude hook smoke command.
@@ -156,7 +147,7 @@ Expected result: when Codex is disabled, Codex hook output is not queued or spok
 
 Expected result: when Claude is disabled, Claude hook output is not queued or spoken. After re-enabling, Claude output queues or reads normally.
 
-### SR-07 Voice, Rate, And Volume
+### SR-06 Voice, Rate, And Volume
 
 1. Choose a non-default voice if another voice is available.
 2. Set rate noticeably below default, then read a short item.

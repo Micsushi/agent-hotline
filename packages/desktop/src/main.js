@@ -1,4 +1,4 @@
-﻿import "./styles.css";
+import "./styles.css";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import * as notification from "@tauri-apps/plugin-notification";
@@ -66,6 +66,10 @@ const tabManage = el("tab-manage");
 const panelHome = el("panel-home");
 const panelSettings = el("panel-settings");
 const panelManage = el("panel-manage");
+const projectsList = el("projects-list");
+const sessionsList = el("sessions-list");
+const sessionsPane = el("sessions-pane");
+const tabHomeManage = el("tab-home-manage");
 
 let playback = null;
 let settingsUi = null;
@@ -162,12 +166,12 @@ async function drainPregen() {
 
 function setTab(tab) {
   const active = ["home", "settings", "manage"].includes(tab) ? tab : "home";
-  tabHome.classList.toggle("is-active", active === "home");
-  tabSettings.classList.toggle("is-active", active === "settings");
-  tabManage.classList.toggle("is-active", active === "manage");
-  panelHome.hidden = active !== "home";
-  panelSettings.hidden = active !== "settings";
-  panelManage.hidden = active !== "manage";
+  if (tabHome) tabHome.classList.toggle("is-active", active === "home");
+  if (tabSettings) tabSettings.classList.toggle("is-active", active === "settings");
+  if (tabManage) tabManage.classList.toggle("is-active", active === "manage");
+  if (panelHome) panelHome.hidden = active !== "home";
+  if (panelSettings) panelSettings.hidden = active !== "settings";
+  if (panelManage) panelManage.hidden = active !== "manage";
   if (active === "manage") loadAudioCache().catch(showError);
 }
 
@@ -187,9 +191,8 @@ async function fetchJson(url) {
 }
 
 function readableMode(value) {
-  if (value === "ask_every_time") return "Ask";
-  if (value === "auto") return "Auto";
-  return "Manual";
+  if (value === "auto") return "Auto-play";
+  return "Save only";
 }
 
 function setStatus(kind) {
@@ -362,80 +365,100 @@ function listRow(datasetKey, datasetValue, labelText, metaText, kind) {
 }
 
 function renderProjectsList(projects) {
-  const scroll = document.createElement("div");
-  scroll.className = "detail-scroll";
+  projectsList.replaceChildren();
   for (const project of projects) {
+    const btn = document.createElement("button");
+    btn.className = `tree-item ${project.key === historyView.projectKey ? "is-selected" : ""}`;
+    btn.dataset.project = project.key;
+    const title = document.createElement("span");
+    title.className = "tree-item-title";
+    title.textContent = project.label;
     const count = project.sessions.length;
-    scroll.append(
-      listRow(
-        "project",
-        project.key,
-        project.label,
-        `${count} chat${count === 1 ? "" : "s"}  -  ${formatTime(latestCreatedAt(project.items))}`,
-        "project"
-      )
-    );
+    const meta = document.createElement("span");
+    meta.className = "tree-item-meta";
+    meta.textContent = `${count} session${count === 1 ? "" : "s"} - ${formatTime(latestCreatedAt(project.items))}`;
+    btn.append(title, meta);
+    btn.onclick = () => {
+      historyView.projectKey = project.key;
+      historyView.sessionKey = null;
+      renderState(latestState);
+    };
+    projectsList.append(btn);
   }
-  historyList.replaceChildren(scroll);
 }
 
 function renderSessionsList(project) {
-  const fragment = document.createDocumentFragment();
-  fragment.append(detailHead("projects", "< Projects", project.label));
-  const scroll = document.createElement("div");
-  scroll.className = "detail-scroll";
-  for (const session of project.sessions) {
-    scroll.append(
-      listRow(
-        "session",
-        session.key,
-        session.label,
-        `${session.items.length}  -  ${formatTime(latestCreatedAt(session.items))}`,
-        "session"
-      )
-    );
+  if (!project) {
+    sessionsPane.hidden = true;
+    sessionsList.replaceChildren();
+    return;
   }
-  fragment.append(scroll);
-  historyList.replaceChildren(fragment);
+  sessionsPane.hidden = false;
+  const pt = el("current-project-title");
+  if (pt) pt.textContent = project.label;
+  sessionsList.replaceChildren();
+  for (const session of project.sessions) {
+    const btn = document.createElement("button");
+    btn.className = `tree-item ${session.key === historyView.sessionKey ? "is-selected" : ""}`;
+    btn.dataset.session = session.key;
+    const title = document.createElement("span");
+    title.className = "tree-item-title";
+    title.textContent = session.label;
+    const meta = document.createElement("span");
+    meta.className = "tree-item-meta";
+    meta.textContent = `${session.items.length} msgs - ${formatTime(latestCreatedAt(session.items))}`;
+    btn.append(title, meta);
+    btn.onclick = () => {
+      historyView.sessionKey = session.key;
+      renderState(latestState);
+    };
+    sessionsList.append(btn);
+  }
 }
 
 function renderMessagesDetail(session) {
-  const fragment = document.createDocumentFragment();
-  fragment.append(detailHead("sessions", "< Chats", session.label));
-  const scroll = document.createElement("div");
-  scroll.className = "detail-scroll";
-  for (const item of [...session.items].reverse()) {
-    scroll.append(buildHistoryItem(item));
+  if (!session) {
+    historyList.innerHTML =
+      '<p class="history-empty">Select a project and session to view history.</p>';
+    return;
   }
-  fragment.append(scroll);
+  const st = el("current-session-title");
+  if (st) st.textContent = session.label;
+  const fragment = document.createDocumentFragment();
+  for (const item of [...session.items].reverse()) {
+    fragment.append(buildHistoryItem(item));
+  }
   historyList.replaceChildren(fragment);
 }
 
 function renderHistory(items) {
   if (items.length === 0) {
     historyView = { level: "messages", projectKey: null, sessionKey: null };
-    historyList.innerHTML = '<p class="history-empty">Nothing has been spoken yet.</p>';
+    renderProjectsList([]);
+    renderSessionsList(null);
+    renderMessagesDetail(null);
     return;
   }
 
   const projects = buildProjects(items);
 
-  if (historyView.level === "projects") {
-    renderProjectsList(projects);
-    return;
+  if (!historyView.projectKey || !projects.find((entry) => entry.key === historyView.projectKey)) {
+    historyView.projectKey = projects[0].key;
   }
+  const project = projects.find((entry) => entry.key === historyView.projectKey);
 
-  const project = projects.find((entry) => entry.key === historyView.projectKey) || projects[0];
-  historyView.projectKey = project.key;
-
-  if (historyView.level === "sessions") {
-    renderSessionsList(project);
-    return;
+  if (
+    !historyView.sessionKey ||
+    !project?.sessions?.find((entry) => entry.key === historyView.sessionKey)
+  ) {
+    historyView.sessionKey = project ? project.sessions[0].key : null;
   }
+  const session = project
+    ? project.sessions.find((entry) => entry.key === historyView.sessionKey)
+    : null;
 
-  const session =
-    project.sessions.find((entry) => entry.key === historyView.sessionKey) || project.sessions[0];
-  historyView.sessionKey = session.key;
+  renderProjectsList(projects);
+  renderSessionsList(project);
   renderMessagesDetail(session);
 }
 
@@ -587,7 +610,7 @@ function runAutoRead(settings, queue) {
   }
   const item = getNextPendingItem(queue);
   rememberAutoReadAttempt(item.id);
-  notify("Auto mode found a new item. Starting playback...");
+  notify("Auto-play found a new item. Starting playback...");
   playback.readNextPending({ settings, queue }).catch(showError);
 }
 
@@ -966,9 +989,10 @@ playback = createPlaybackController({
   onStateChanged: () => refreshPanel(targetUrl, { quiet: true, force: true }).catch(showError)
 });
 
-tabHome.addEventListener("click", () => setTab("home"));
-tabSettings.addEventListener("click", () => setTab("settings"));
-tabManage.addEventListener("click", () => setTab("manage"));
+if (tabHome) tabHome.addEventListener("click", () => setTab("home"));
+if (tabSettings) tabSettings.addEventListener("click", () => setTab("settings"));
+if (tabManage) tabManage.addEventListener("click", () => setTab("manage"));
+if (tabHomeManage) tabHomeManage.addEventListener("click", () => setTab("home"));
 setupManageTab();
 refreshButton.addEventListener("click", () => refreshWithSpin());
 
@@ -1016,34 +1040,6 @@ seekBar.addEventListener("change", () => {
 seekBar.addEventListener("blur", () => (seekDragging = false));
 
 historyList.addEventListener("click", (event) => {
-  const back = event.target.closest(".back-button");
-  if (back) {
-    historyView =
-      back.dataset.back === "projects"
-        ? { level: "projects", projectKey: null, sessionKey: null }
-        : { level: "sessions", projectKey: historyView.projectKey, sessionKey: null };
-    if (latestState) renderState(latestState);
-    return;
-  }
-
-  const projectRow = event.target.closest(".session-row[data-project]");
-  if (projectRow) {
-    historyView = { level: "sessions", projectKey: projectRow.dataset.project, sessionKey: null };
-    if (latestState) renderState(latestState);
-    return;
-  }
-
-  const sessionRow = event.target.closest(".session-row[data-session]");
-  if (sessionRow) {
-    historyView = {
-      level: "messages",
-      projectKey: historyView.projectKey,
-      sessionKey: sessionRow.dataset.session
-    };
-    if (latestState) renderState(latestState);
-    return;
-  }
-
   const item = event.target.closest(".history-item");
   if (!item) return;
   selectedItemId = item.dataset.id;
