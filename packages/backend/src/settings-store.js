@@ -4,7 +4,7 @@ const path = require("path");
 
 const APP_NAME = "Agent Hotline";
 const SETTINGS_FILE = "settings.json";
-const READ_BEHAVIORS = new Set(["manual", "auto", "ask_every_time"]);
+const READ_BEHAVIORS = new Set(["manual", "auto"]);
 const TTS_ENGINES = new Set(["webview", "kokoro", "kokoro-ts"]);
 const NOTIFICATION_OPENS = new Set(["full", "mini"]);
 const AUDIO_CACHE_LIMIT_MAX_MB = 100000;

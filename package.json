@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "agent-hotline",
   "version": "0.1.0",
   "private": true,
@@ -29,8 +29,5 @@
     "eslint": "^10.5.0",
     "globals": "^17.6.0",
     "prettier": "^3.8.4"
-  },
-  "overrides": {
-    "@met4citizen/headtts": "file:./met4citizen-headtts-1.3.0.tgz"
   }
 }
