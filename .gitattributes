@@ -1,0 +1,14 @@
+# Normalize line endings: LF in the repo and in every working tree (including
+# Windows CI runners) so Prettier's endOfLine check is deterministic.
+* text=auto eol=lf
+
+# Windows-only script types keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Don't touch binaries.
+*.ico binary
+*.png binary
+*.jpg binary
+*.woff2 binary

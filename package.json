@@ -18,6 +18,7 @@
     "lint": "eslint . && npm run rust:clippy",
     "format": "prettier . --write && npm run rust:fmt",
     "format:check": "prettier . --check && npm run rust:fmt:check",
+    "verify:eol": "node scripts/verify-ci-eol.js",
     "rust:fmt": "cargo fmt --manifest-path packages/desktop/src-tauri/Cargo.toml",
     "rust:fmt:check": "cargo fmt --manifest-path packages/desktop/src-tauri/Cargo.toml --check",
     "rust:clippy": "cargo clippy --manifest-path packages/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings",
