@@ -13,6 +13,12 @@ packages/desktop/src-tauri/gen/
 packages/desktop/public/config.json
 packages/backend/data/*.json
 
+# Local agent configuration and generated hooks
+.claude/
+.codex/
+.gemini/
+.agents/
+
 # Local TTS dependency assets
 packages/desktop/public/headtts/
 
