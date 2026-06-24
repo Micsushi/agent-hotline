@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>HeadTTS word-timestamp de-risk harness</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 820px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.4;
+      }
+      textarea {
+        width: 100%;
+        height: 90px;
+      }
+      #words span {
+        padding: 1px 2px;
+        border-radius: 3px;
+      }
+      #words span.on {
+        background: #ffe680;
+      }
+      pre {
+        background: #f4f4f4;
+        padding: 0.5rem;
+        overflow: auto;
+        max-height: 220px;
+      }
+      button {
+        margin-right: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>HeadTTS word-timestamp harness</h1>
+    <p>
+      Verifies the vendored HeadTTS pipeline returns real per-word timings in this WebView, and that
+      the highlight tracks word-by-word. Not part of the app.
+    </p>
+
+    <textarea id="text">
+Life is like a box of chocolates. You never know what you're gonna get, so stay curious.</textarea
+    >
+    <p>
+      <label
+        >Voice
+        <select id="voice"></select
+      ></label>
+      <label>Speed <input id="speed" type="number" value="1" step="0.1" min="0.5" max="2" /></label>
+    </p>
+    <p>
+      <button id="warm">Warm model</button>
+      <button id="gen">Generate + play</button>
+      <span id="status">idle</span>
+    </p>
+
+    <h3>Preview (highlight follows audio)</h3>
+    <p id="words"></p>
+
+    <h3>Segments (word, start, end in seconds)</h3>
+    <pre id="segments"></pre>
+
+    <script type="module">
+      import {
+        warmKokoroTimestamped,
+        generateKokoroTimestampedAudio,
+        getKokoroTimestampedVoices
+      } from "./src/tts-kokoro-timestamped.js";
+
+      const $ = (id) => document.getElementById(id);
+      const setStatus = (s) => ($("status").textContent = s);
+
+      for (const v of getKokoroTimestampedVoices()) {
+        const opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = v;
+        $("voice").append(opt);
+      }
+
+      let ctx = null;
+      const audioCtx = () => (ctx ||= new (window.AudioContext || window.webkitAudioContext)());
+
+      $("warm").addEventListener("click", async () => {
+        setStatus("warming...");
+        try {
+          await warmKokoroTimestamped();
+          setStatus("warm OK");
+        } catch (e) {
+          setStatus("warm FAILED: " + e.message);
+          console.error(e);
+        }
+      });
+
+      $("gen").addEventListener("click", async () => {
+        setStatus("generating...");
+        try {
+          const t0 = performance.now();
+          const out = await generateKokoroTimestampedAudio(
+            $("text").value,
+            $("voice").value,
+            Number($("speed").value)
+          );
+          const genMs = Math.round(performance.now() - t0);
+          setStatus(`generated in ${genMs}ms, ${out.segments.length} words`);
+
+          // Dump segments
+          $("segments").textContent = out.segments
+            .map(
+              (s) => `${s.startSec.toFixed(3)}  ${s.endSec.toFixed(3)}  ${JSON.stringify(s.text)}`
+            )
+            .join("\n");
+
+          // Render word spans
+          const wordsEl = $("words");
+          wordsEl.replaceChildren();
+          const spans = out.segments.map((s, i) => {
+            const span = document.createElement("span");
+            span.textContent = s.text;
+            wordsEl.append(span, document.createTextNode(" "));
+            return span;
+          });
+
+          // Play and drive the highlight from the audio clock
+          const c = audioCtx();
+          if (c.state === "suspended") await c.resume();
+          const buffer = c.createBuffer(1, out.samples.length, out.sampleRate);
+          buffer.copyToChannel(out.samples, 0);
+          const source = c.createBufferSource();
+          source.buffer = buffer;
+          source.connect(c.destination);
+          const startedAt = c.currentTime;
+          source.start();
+
+          const tick = () => {
+            const t = c.currentTime - startedAt;
+            let active = out.segments.findIndex((s) => t < s.endSec);
+            if (active === -1) active = out.segments.length - 1;
+            spans.forEach((sp, i) => sp.classList.toggle("on", i === active));
+            if (t < out.segments[out.segments.length - 1].endSec + 0.3) {
+              requestAnimationFrame(tick);
+            }
+          };
+          requestAnimationFrame(tick);
+        } catch (e) {
+          setStatus("generate FAILED: " + e.message);
+          console.error(e);
+        }
+      });
+    </script>
+  </body>
+</html>

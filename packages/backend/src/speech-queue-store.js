@@ -1,9 +1,9 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 
-const SOURCE_APPS = new Set(["Codex", "Claude"]);
+const SOURCE_APPS = new Set(["Codex", "Claude", "Antigravity"]);
 const STATUSES = new Set(["pending", "playing", "played", "skipped"]);
 
 function defaultDataDir() {
@@ -50,7 +50,7 @@ function normalizeString(value, fieldName) {
 function normalizeSourceApp(value) {
   const sourceApp = normalizeString(value, "sourceApp");
   if (!SOURCE_APPS.has(sourceApp)) {
-    throw new Error("sourceApp must be Codex or Claude");
+    throw new Error("sourceApp must be Codex, Claude, or Antigravity");
   }
   return sourceApp;
 }
@@ -113,6 +113,10 @@ function createSpeechQueueStore(options = {}) {
     if (threadLabel) item.threadLabel = threadLabel;
     const sessionName = optionalString(input.sessionName);
     if (sessionName) item.sessionName = sessionName;
+    const projectPath = optionalString(input.projectPath);
+    if (projectPath) item.projectPath = projectPath;
+    const projectName = optionalString(input.projectName);
+    if (projectName) item.projectName = projectName;
 
     if (findItem(item.id)) {
       throw new Error(`Queue item already exists: ${item.id}`);
@@ -194,6 +198,8 @@ function createSpeechQueueStore(options = {}) {
     if (source.threadId) item.threadId = source.threadId;
     if (source.threadLabel) item.threadLabel = source.threadLabel;
     if (source.sessionName) item.sessionName = source.sessionName;
+    if (source.projectPath) item.projectPath = source.projectPath;
+    if (source.projectName) item.projectName = source.projectName;
 
     state.items.push(item);
     persist();
@@ -207,7 +213,6 @@ function createSpeechQueueStore(options = {}) {
     return latest ? pushReplay(latest) : null;
   }
 
-  // Replay a specific historical item by id (used by the history list).
   function replayItem(id) {
     const source = findItem(id);
     if (!source || !source.speakableText) {

@@ -1,4 +1,4 @@
-# Claude Code Read-Aloud Hook Setup
+﻿# Claude Code Read-Aloud Hook Setup
 
 Use this guide to let Claude Code send completed assistant responses to Agent Hotline for local read-aloud.
 
@@ -21,10 +21,16 @@ npm run dev:backend
 npm run dev:desktop
 ```
 
+Then install both the Claude Code hook and the spoken-output instruction block:
+
+```powershell
+npm run install-hotline -- --harness claude-code --skill claude-code --scope global
+```
+
 The Agent Hotline hook command path is:
 
 ```powershell
-node C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline-hook.js
+node C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline.js hook
 ```
 
 If your backend is not using the default URL, set `AGENT_HOTLINE_URL` in the environment that starts Claude Code:
@@ -61,7 +67,7 @@ try {
     assistant_response = @{
       text = $assistantText
     }
-  } | ConvertTo-Json -Depth 8 | node "C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline-hook.js"
+  } | ConvertTo-Json -Depth 8 | node "C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline.js" hook
 } catch {
   exit 0
 }
@@ -130,7 +136,7 @@ try {
     assistant_response = @{
       text = $assistantText
     }
-  } | ConvertTo-Json -Depth 8 | node "C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline-hook.js"
+  } | ConvertTo-Json -Depth 8 | node "C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline.js" hook
 } catch {
   exit 0
 }
@@ -187,7 +193,7 @@ To disable read-aloud without changing Claude Code settings, stop Agent Hotline 
 ## Troubleshooting
 
 - No audio: make sure `npm run dev:backend` and `npm run dev:desktop` are running.
-- Hook path errors: run `node C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline-hook.js` from PowerShell to confirm Node can find the file.
+- Hook path errors: run `node C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline.js hook` from PowerShell to confirm Node can find the file.
 - Wrapper path errors: make sure `.claude/settings.local.json` points at the PowerShell wrapper file you created.
 - Custom backend URL: start Claude Code from a shell where `AGENT_HOTLINE_URL` points at your backend.
 - Debugging: set `AGENT_HOTLINE_HOOK_DEBUG=1` before starting Claude Code. The hook will write short skip or recoverable-failure reasons to stderr without printing normal stdout.
