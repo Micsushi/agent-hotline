@@ -5,7 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Hotline</title>
     <style>
-      html, body { background: #0d1117; margin: 0; height: 100vh; overflow: hidden; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      html,
+      body {
+        background: #0d1117;
+        margin: 0;
+        height: 100vh;
+        overflow: hidden;
+        color: #e6edf3;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
     </style>
   </head>
   <body>
@@ -15,7 +24,9 @@
         <div class="sidebar-header">
           <div class="brand">
             <svg viewBox="0 0 24 24" aria-hidden="true" width="24" height="24" fill="currentColor">
-              <path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.4.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.5.6 3.6.1.4 0 .8-.3 1l-2.2 2.2z" />
+              <path
+                d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.4.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.5.6 3.6.1.4 0 .8-.3 1l-2.2 2.2z"
+              />
             </svg>
             <h1 id="app-title">Agent Hotline</h1>
           </div>
@@ -26,10 +37,18 @@
         </div>
         <div class="sidebar-footer">
           <button id="tab-manage" class="icon-button" aria-label="Storage" title="Storage">
-             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"
+              />
+            </svg>
           </button>
           <button id="tab-settings" class="icon-button" aria-label="Settings" title="Settings">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a8 8 0 0 0-2.6-1.5L14 2h-4l-.4 3a8 8 0 0 0-2.6 1.5l-2.4-1-2 3.5 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 2.6 1.5l.4 3h4l.4-3a8 8 0 0 0 2.6-1.5l2.4 1 2-3.5zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"/></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path
+                d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a8 8 0 0 0-2.6-1.5L14 2h-4l-.4 3a8 8 0 0 0-2.6 1.5l-2.4-1-2 3.5 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 2.6 1.5l.4 3h4l.4-3a8 8 0 0 0 2.6-1.5l2.4 1 2-3.5zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
+              />
+            </svg>
           </button>
         </div>
       </nav>
@@ -50,7 +69,9 @@
           <h2 id="current-session-title">Messages</h2>
           <button id="refresh" class="icon-button" type="button" title="Refresh">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"/>
+              <path
+                d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"
+              />
             </svg>
           </button>
         </header>
@@ -66,14 +87,32 @@
           <section class="card playback-card" aria-live="polite">
             <div class="section-heading">
               <p class="card-title">Now playing</p>
-              <button id="mute-button" class="mute-circle" type="button" aria-label="Mute" title="Mute">
-                <svg viewBox="0 0 24 24" aria-hidden="true" width="20" height="20" fill="currentColor">
+              <button
+                id="mute-button"
+                class="mute-circle"
+                type="button"
+                aria-label="Mute"
+                title="Mute"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  width="20"
+                  height="20"
+                  fill="currentColor"
+                >
                   <path d="M3 9v6h4l5 4V5L7 9H3z" />
-                  <path d="M15 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  <path
+                    d="M15 9a4 4 0 0 1 0 6"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
                 </svg>
               </button>
             </div>
-            
+
             <div class="now-head">
               <span id="source-app" class="now-source">None</span>
               <span id="item-time" class="now-time"></span>
@@ -82,12 +121,65 @@
             <p id="preview-text" class="now-text">No speakable text yet.</p>
             <p id="preview-meta" class="now-meta">Waiting for Codex or Claude output.</p>
 
-            <input id="seek-bar" class="seek-bar" type="range" min="0" max="1000" step="1" value="0" disabled aria-label="Playback position" />
+            <input
+              id="seek-bar"
+              class="seek-bar"
+              type="range"
+              min="0"
+              max="1000"
+              step="1"
+              value="0"
+              disabled
+              aria-label="Playback position"
+            />
 
             <div class="transport-primary" aria-label="Playback controls">
-              <button id="prev-button" type="button" disabled aria-label="Previous" title="Previous"><svg viewBox="0 0 24 24" aria-hidden="true" width="24" height="24" fill="currentColor"><path d="M6 6h2v12H6zM20 6v12l-9-6 9-6z" /></svg></button>
-              <button id="playpause-button" class="primary" type="button" disabled aria-label="Read aloud" title="Read aloud"><svg viewBox="0 0 24 24" aria-hidden="true" width="24" height="24" fill="currentColor"><path d="M7 5v14l12-7z" /></svg></button>
-              <button id="next-button" type="button" disabled aria-label="Next" title="Next"><svg viewBox="0 0 24 24" aria-hidden="true" width="24" height="24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6v12l9-6-9-6z" /></svg></button>
+              <button
+                id="prev-button"
+                type="button"
+                disabled
+                aria-label="Previous"
+                title="Previous"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  width="24"
+                  height="24"
+                  fill="currentColor"
+                >
+                  <path d="M6 6h2v12H6zM20 6v12l-9-6 9-6z" />
+                </svg>
+              </button>
+              <button
+                id="playpause-button"
+                class="primary"
+                type="button"
+                disabled
+                aria-label="Read aloud"
+                title="Read aloud"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  width="24"
+                  height="24"
+                  fill="currentColor"
+                >
+                  <path d="M7 5v14l12-7z" />
+                </svg>
+              </button>
+              <button id="next-button" type="button" disabled aria-label="Next" title="Next">
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  width="24"
+                  height="24"
+                  fill="currentColor"
+                >
+                  <path d="M16 6h2v12h-2zM4 6v12l9-6-9-6z" />
+                </svg>
+              </button>
             </div>
           </section>
 
@@ -118,7 +210,13 @@
         <section id="panel-settings" class="panel" role="tabpanel" hidden>
           <div class="section-heading">
             <h2 id="settings-title">Settings</h2>
-            <button id="tab-home" class="icon-button" aria-label="Close Settings" title="Close"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+            <button id="tab-home" class="icon-button" aria-label="Close Settings" title="Close">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path
+                  d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                />
+              </svg>
+            </button>
           </div>
           <span id="settings-state" class="settings-state">Loading</span>
 
@@ -152,19 +250,31 @@
           <section class="card">
             <p class="card-title">Sources</p>
             <div class="toggle-grid">
-              <label class="toggle-row"><input id="setting-mute" type="checkbox" /> <span>Mute</span></label>
-              <label class="toggle-row"><input id="setting-codex" type="checkbox" /> <span>Codex</span></label>
-              <label class="toggle-row"><input id="setting-claude" type="checkbox" /> <span>Claude</span></label>
+              <label class="toggle-row"
+                ><input id="setting-mute" type="checkbox" /> <span>Mute</span></label
+              >
+              <label class="toggle-row"
+                ><input id="setting-codex" type="checkbox" /> <span>Codex</span></label
+              >
+              <label class="toggle-row"
+                ><input id="setting-claude" type="checkbox" /> <span>Claude</span></label
+              >
             </div>
           </section>
 
           <section class="card">
             <p class="card-title">Notifications</p>
             <div class="field-grid">
-              <label class="toggle-row"><input id="setting-notify" type="checkbox" /> <span>Notify on new reply</span></label>
+              <label class="toggle-row"
+                ><input id="setting-notify" type="checkbox" />
+                <span>Notify on new reply</span></label
+              >
               <label class="field-row" id="notify-opens-row" for="setting-notify-opens" hidden>
                 <span>Opens</span>
-                <select id="setting-notify-opens"><option value="full">Full window</option><option value="mini">Mini popup</option></select>
+                <select id="setting-notify-opens">
+                  <option value="full">Full window</option>
+                  <option value="mini">Mini popup</option>
+                </select>
               </label>
             </div>
           </section>
@@ -172,7 +282,10 @@
           <section class="card">
             <p class="card-title">Reading detail</p>
             <div class="field-grid">
-              <label class="toggle-row"><input id="setting-highlight" type="checkbox" /> <span>Highlight spoken text</span></label>
+              <label class="toggle-row"
+                ><input id="setting-highlight" type="checkbox" />
+                <span>Highlight spoken text</span></label
+              >
               <p id="highlight-warn" class="settings-warn" hidden>Experimental.</p>
             </div>
             <details class="skip-rules">
@@ -193,17 +306,39 @@
 
         <!-- Manage Audio Cache UI -->
         <section id="panel-manage" class="panel" role="tabpanel" hidden>
-           <div class="section-heading">
+          <div class="section-heading">
             <h2 id="manage-title">Storage</h2>
             <button id="audio-refresh" class="icon-button" aria-label="Refresh" title="Refresh">
-               <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"/></svg>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path
+                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"
+                />
+              </svg>
             </button>
-            <button id="tab-home-manage" class="icon-button tab-home-btn" aria-label="Close Storage" title="Close"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+            <button
+              id="tab-home-manage"
+              class="icon-button tab-home-btn"
+              aria-label="Close Storage"
+              title="Close"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path
+                  d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                />
+              </svg>
+            </button>
           </div>
           <p id="audio-summary" class="now-meta">Loading saved audio...</p>
           <label class="field-row" for="audio-limit">
             <span>Limit (MB)</span>
-            <input id="audio-limit" type="number" min="10" max="100000" step="64" inputmode="numeric" />
+            <input
+              id="audio-limit"
+              type="number"
+              min="10"
+              max="100000"
+              step="64"
+              inputmode="numeric"
+            />
           </label>
           <div class="manage-actions">
             <button id="audio-delete-selected" type="button" disabled>Delete selected</button>
