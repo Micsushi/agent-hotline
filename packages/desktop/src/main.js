@@ -191,9 +191,8 @@ async function fetchJson(url) {
 }
 
 function readableMode(value) {
-  if (value === "ask_every_time") return "Ask";
-  if (value === "auto") return "Auto";
-  return "Manual";
+  if (value === "auto") return "Auto-play";
+  return "Save only";
 }
 
 function setStatus(kind) {
@@ -611,7 +610,7 @@ function runAutoRead(settings, queue) {
   }
   const item = getNextPendingItem(queue);
   rememberAutoReadAttempt(item.id);
-  notify("Auto mode found a new item. Starting playback...");
+  notify("Auto-play found a new item. Starting playback...");
   playback.readNextPending({ settings, queue }).catch(showError);
 }
 

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -30,7 +30,9 @@
             </svg>
             <h1 id="app-title">Agent Hotline</h1>
           </div>
-          <p class="meta-line"><span id="queue-count">0</span> waiting</p>
+          <p class="meta-line">
+            <span id="queue-count">0</span> waiting · <span id="read-mode">Save only</span>
+          </p>
         </div>
         <div id="projects-list" class="sidebar-list">
           <!-- Populated by JS -->
@@ -184,16 +186,15 @@
           </section>
 
           <section class="card behavior-card">
-            <p class="card-title">Read behavior (<span id="read-mode">Manual</span>)</p>
+            <p class="card-title">Queue behavior</p>
             <div class="segmented-control" role="radiogroup" aria-label="Read behavior">
               <label title="Replies are saved, but only read when you press play.">
-                <input type="radio" name="read-behavior" value="manual" /> <span>Manual</span>
+                <input type="radio" name="read-behavior" value="manual" />
+                <span>Save only</span>
               </label>
-              <label title="Each new reply is read aloud automatically as it arrives.">
-                <input type="radio" name="read-behavior" value="auto" /> <span>Auto</span>
-              </label>
-              <label title="When a new reply arrives, wait for you to choose whether to read it.">
-                <input type="radio" name="read-behavior" value="ask_every_time" /> <span>Ask</span>
+              <label title="New replies play automatically when no other reply is being read.">
+                <input type="radio" name="read-behavior" value="auto" />
+                <span>Auto-play</span>
               </label>
             </div>
           </section>

@@ -1,7 +1,7 @@
-﻿import { getKokoroVoices } from "./tts-kokoro.js";
+import { getKokoroVoices } from "./tts-kokoro.js";
 import { getKokoroTimestampedVoices } from "./tts-kokoro-timestamped.js";
 
-const READ_BEHAVIORS = new Set(["manual", "auto", "ask_every_time"]);
+const READ_BEHAVIORS = new Set(["manual", "auto"]);
 const TTS_ENGINES = new Set(["webview", "kokoro", "kokoro-ts"]);
 
 const KOKORO_ENGINES = new Set(["kokoro", "kokoro-ts"]);
