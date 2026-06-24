@@ -53,6 +53,7 @@ const tabHome = el("tab-home");
 const tabSettings = el("tab-settings");
 const panelHome = el("panel-home");
 const panelSettings = el("panel-settings");
+const workspaceTitle = el("workspace-title");
 
 let playback = null;
 let settingsUi = null;
@@ -94,8 +95,13 @@ function setTab(tab) {
   const home = tab === "home";
   tabHome.classList.toggle("is-active", home);
   tabSettings.classList.toggle("is-active", !home);
+  tabHome.setAttribute("aria-selected", String(home));
+  tabSettings.setAttribute("aria-selected", String(!home));
   panelHome.hidden = !home;
   panelSettings.hidden = home;
+  if (workspaceTitle) {
+    workspaceTitle.textContent = home ? "Messages and playback" : "Voice and source settings";
+  }
 }
 
 async function loadRuntimeConfig() {
