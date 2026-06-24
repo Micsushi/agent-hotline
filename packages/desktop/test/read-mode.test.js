@@ -69,6 +69,16 @@ test("auto mode starts only for the next unattempted pending item", () => {
     }),
     false
   );
+
+  assert.equal(
+    shouldAutoReadPending({
+      settings: { readBehavior: "auto", mute: false },
+      queue,
+      playbackActive: true,
+      attemptedItemIds: new Set()
+    }),
+    false
+  );
 });
 
 test("action hints reflect mute, empty queue, and read behavior decisions", () => {

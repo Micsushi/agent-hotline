@@ -1,4 +1,4 @@
-# Codex Read-Aloud Setup
+﻿# Codex Read-Aloud Setup
 
 Agent Hotline can read Codex responses aloud by using a Codex `Stop` hook. Codex keeps working normally; the hook runs after a turn finishes, sends the final assistant message to the local Agent Hotline backend, and exits quietly so it does not add noise to the Codex chat.
 
@@ -15,12 +15,18 @@ npm run dev:backend
 npm run dev:desktop
 ```
 
+Then install both the Codex hook and the spoken-output instruction block:
+
+```powershell
+npm run install-hotline -- --harness codex --skill codex --scope global
+```
+
 The hook command sends text to `http://127.0.0.1:4777` by default. To use a different local backend URL, set `AGENT_HOTLINE_URL`.
 
 You can smoke test the hook command without Codex:
 
 ```powershell
-'{"source":"codex","response":{"text":"Agent Hotline is ready to read Codex responses aloud."}}' | node C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline-hook.js
+'{"source":"codex","response":{"text":"Spoken:`nAgent Hotline is ready to read Codex responses aloud.`n`nDisplayed:`nSmoke test complete."}}' | node C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline.js hook
 ```
 
 If Agent Hotline is running, this queues the sentence. If Agent Hotline is not running, the hook exits safely.
@@ -52,7 +58,7 @@ try {
     response = @{
       text = $assistantText
     }
-  } | ConvertTo-Json -Depth 8 | node "C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline-hook.js"
+  } | ConvertTo-Json -Depth 8 | node "C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline.js" hook
 } catch {
   exit 0
 }
@@ -86,7 +92,7 @@ Then start or restart Codex in that repository. Codex may ask you to review and 
 Why the wrapper exists: Codex `Stop` hooks provide the final text as `last_assistant_message`. The current Agent Hotline hook command expects a normalized Codex-like payload with `source: "codex"` and `response.text`, so the PowerShell wrapper reshapes the hook input before calling:
 
 ```powershell
-node C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline-hook.js
+node C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline.js hook
 ```
 
 ## Global Setup

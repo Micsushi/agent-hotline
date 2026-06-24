@@ -136,7 +136,33 @@ function testThreadIdAndLabelExtracted() {
 
   assert.equal(result.ok, true);
   assert.equal(result.threadId, "abcdef12-3456-7890");
-  assert.equal(result.threadLabel, "agent-hotline · abcdef12");
+  assert.equal(result.threadLabel, "agent-hotline  -  abcdef12");
+}
+
+function testAntigravitySourceDetectedBySourceField() {
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "antigravity",
+      hook_event_name: "Stop",
+      assistant_response: { text: "Spoken:\nThis is the spoken part.\n\nDisplayed:\nDetails." }
+    })
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceApp, SOURCE_APPS.ANTIGRAVITY);
+  assert.equal(result.assistantText.includes("Spoken:"), true);
+}
+
+function testAntigravitySourceDetectedByEventName() {
+  const result = parseHookInput(
+    JSON.stringify({
+      hook_event_name: "antigravity-stop",
+      assistant_response: { text: "Spoken:\nEvent-based detection works." }
+    })
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceApp, SOURCE_APPS.ANTIGRAVITY);
 }
 
 const tests = [
@@ -148,7 +174,9 @@ const tests = [
   testUnknownSchemaSkipsWithStructuredReason,
   testParserHandlesNonStringInputWithoutThrowing,
   testFutureTextShapesCanStillBeExtracted,
-  testExportedHelpersDoNotThrowForUnexpectedValues
+  testExportedHelpersDoNotThrowForUnexpectedValues,
+  testAntigravitySourceDetectedBySourceField,
+  testAntigravitySourceDetectedByEventName
 ];
 
 for (const test of tests) {

@@ -70,6 +70,22 @@ function claudePayload(text) {
   });
 }
 
+function antigravityPayload(text) {
+  return JSON.stringify({
+    source: "antigravity",
+    hook_event_name: "Stop",
+    assistant_response: {
+      role: "assistant",
+      content: [
+        {
+          type: "text",
+          text
+        }
+      ]
+    }
+  });
+}
+
 test("hook command enqueues speakable text through the localhost API", async () => {
   await withServer({}, async ({ baseUrl, dataDir }) => {
     const result = await runHookCommand({
@@ -244,4 +260,57 @@ test("hook CLI exits zero and keeps stdout quiet when backend is unavailable", (
 
   assert.equal(child.status, 0);
   assert.equal(child.stdout, "");
+});
+
+test("hook command enqueues Antigravity spoken text and labels it correctly", async () => {
+  await withServer({}, async ({ baseUrl, dataDir }) => {
+    const result = await runHookCommand({
+      input: antigravityPayload(
+        [
+          "Spoken:",
+          "Antigravity finished the task and the changes are ready to review.",
+          "",
+          "Displayed:",
+          "```diff",
+          "+ added line",
+          "```"
+        ].join("\n")
+      ),
+      baseUrl
+    });
+
+    assert.equal(result.action, "enqueued");
+    assert.equal(result.sourceApp, "Antigravity");
+    assert.equal(result.item.status, "pending");
+
+    const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "speech-queue.json"), "utf8"));
+    assert.equal(persisted.items.length, 1);
+    assert.equal(persisted.items[0].sourceApp, "Antigravity");
+    assert.equal(
+      persisted.items[0].speakableText,
+      "Antigravity finished the task and the changes are ready to review."
+    );
+  });
+});
+
+test("hook command skips Antigravity when antigravityEnabled is false", async () => {
+  await withServer({}, async ({ baseUrl, dataDir }) => {
+    const settingsResponse = await fetch(`${baseUrl}/api/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ antigravityEnabled: false })
+    });
+    assert.equal(settingsResponse.status, 200);
+
+    const result = await runHookCommand({
+      input: antigravityPayload(
+        "Spoken:\nThis Antigravity response should be skipped because the source is disabled."
+      ),
+      baseUrl
+    });
+
+    assert.equal(result.action, "skipped");
+    assert.equal(result.reason, "source_disabled");
+    assert.equal(fs.existsSync(path.join(dataDir, "speech-queue.json")), false);
+  });
 });

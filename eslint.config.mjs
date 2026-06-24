@@ -11,6 +11,7 @@ export default [
       "node_modules/**",
       "packages/desktop/dist/**",
       "packages/desktop/public/config.json",
+      "packages/desktop/public/headtts/**",
       "packages/desktop/src-tauri/gen/**",
       "packages/desktop/src-tauri/target/**"
     ]

@@ -2,34 +2,31 @@ $ErrorActionPreference = "Stop"
 
 try {
   $inputJson = [Console]::In.ReadToEnd()
-  if ([string]::IsNullOrWhiteSpace($inputJson)) {
-    exit 0
-  }
-
-  # Debug capture: dump the raw hook payload so we can see exactly what Claude
-  # sends (used to derive a session name). Safe no-op if it fails.
-  try {
-    $dbgDir = "C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\data\hook-debug"
-    New-Item -ItemType Directory -Force -Path $dbgDir | Out-Null
-    Set-Content -Path (Join-Path $dbgDir "claude-raw.json") -Value $inputJson -Encoding utf8
-  } catch {}
+  if ([string]::IsNullOrWhiteSpace($inputJson)) { exit 0 }
 
   $payload = $inputJson | ConvertFrom-Json
   $assistantText = $payload.last_assistant_message
-  if ([string]::IsNullOrWhiteSpace($assistantText)) {
-    exit 0
-  }
+  if ([string]::IsNullOrWhiteSpace($assistantText)) { exit 0 }
 
-  @{
+  $normalizedJson = @{
     source = "claude"
     hook_event_name = "Stop"
+    assistant_response = @{ text = $assistantText }
     session_id = $payload.session_id
+    thread_id = $payload.thread_id
+    thread_name = $payload.thread_name
+    session_name = $payload.session_name
     cwd = $payload.cwd
-    transcript_path = $payload.transcript_path
-    assistant_response = @{
-      text = $assistantText
-    }
-  } | ConvertTo-Json -Depth 8 | node "C:\Users\sushi\Documents\Github\agent-hotline\packages\backend\bin\agent-hotline-hook.js"
+    workspace = $payload.workspace
+    project_dir = $payload.project_dir
+  } | ConvertTo-Json -Depth 8
+
+  $hookCommand = $env:AGENT_HOTLINE_HOOK_CMD
+  if ([string]::IsNullOrWhiteSpace($hookCommand)) {
+    $hookCommand = "node \"C:\\Users\\sushi\\Documents\\Github\\agent-hotline\\packages\\backend\\bin\\agent-hotline.js\" hook"
+  }
+
+  $normalizedJson | cmd.exe /d /s /c $hookCommand
 } catch {
   exit 0
 }

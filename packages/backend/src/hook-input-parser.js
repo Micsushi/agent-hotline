@@ -1,6 +1,7 @@
-const SOURCE_APPS = Object.freeze({
+﻿const SOURCE_APPS = Object.freeze({
   CODEX: "Codex",
   CLAUDE: "Claude",
+  ANTIGRAVITY: "Antigravity",
   UNKNOWN: "Unknown"
 });
 
@@ -9,9 +10,6 @@ function parseHookInput(text) {
     return skipResult("invalid_input", "Hook input must be a string.");
   }
 
-  // PowerShell 5.1 prepends a UTF-8 BOM when piping to node, which breaks
-  // JSON.parse. Strip a leading BOM and surrounding whitespace defensively so
-  // hook wrappers on any shell work.
   const cleaned = text.replace(/^\uFEFF/, "").trim();
 
   let payload;
@@ -35,6 +33,7 @@ function parseHookInput(text) {
     }
 
     const thread = extractThread(payload, sourceApp);
+    const project = extractProject(payload);
 
     return {
       ok: true,
@@ -45,6 +44,8 @@ function parseHookInput(text) {
       threadId: thread.threadId,
       threadLabel: thread.threadLabel,
       sessionName: extractSessionName(payload),
+      projectPath: project.projectPath,
+      projectName: project.projectName,
       payload
     };
   } catch (error) {
@@ -56,9 +57,6 @@ function parseHookInput(text) {
   }
 }
 
-// Pull a stable chat-thread id and a human label so history can group items by
-// the conversation they came from. Claude Stop payloads carry session_id + cwd;
-// Codex and others vary, so several keys are checked.
 function extractThread(payload, sourceApp) {
   if (!isPlainObject(payload)) {
     return { threadId: undefined, threadLabel: undefined };
@@ -84,14 +82,27 @@ function extractThread(payload, sourceApp) {
   const shortId = threadId ? threadId.slice(0, 8) : "";
   const labelParts = [folder || sourceApp];
   if (shortId) labelParts.push(shortId);
-  const threadLabel = labelParts.filter(Boolean).join(" · ") || undefined;
+  const threadLabel = labelParts.filter(Boolean).join("  -  ") || undefined;
 
   return { threadId, threadLabel };
 }
 
-// A human session/chat name when the agent provides one (Codex forwards its
-// curated thread_name; Claude has none here and is named from its transcript in
-// the hook command instead).
+function extractProject(payload) {
+  if (!isPlainObject(payload)) {
+    return { projectPath: undefined, projectName: undefined };
+  }
+  const cwd = firstString(payload.cwd, payload.workspace, payload.project_dir);
+  if (!cwd) {
+    return { projectPath: undefined, projectName: undefined };
+  }
+  const projectName =
+    cwd
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() || undefined;
+  return { projectPath: cwd, projectName };
+}
+
 function extractSessionName(payload) {
   if (!isPlainObject(payload)) return undefined;
   return firstString(payload.sessionName, payload.session_name, payload.thread_name) || undefined;
@@ -118,6 +129,9 @@ function detectSourceApp(payload) {
   if (source.includes("claude")) {
     return SOURCE_APPS.CLAUDE;
   }
+  if (source.includes("antigravity")) {
+    return SOURCE_APPS.ANTIGRAVITY;
+  }
 
   const eventName = lowerString(payload.event || payload.hook_event_name || payload.event_name);
   if (eventName.includes("codex")) {
@@ -125,6 +139,9 @@ function detectSourceApp(payload) {
   }
   if (eventName === "stop" || eventName.includes("claude")) {
     return SOURCE_APPS.CLAUDE;
+  }
+  if (eventName.includes("antigravity")) {
+    return SOURCE_APPS.ANTIGRAVITY;
   }
 
   if (isPlainObject(payload.assistant_response)) {
