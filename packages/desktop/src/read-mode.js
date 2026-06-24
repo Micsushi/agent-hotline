@@ -1,4 +1,4 @@
-const READ_BEHAVIORS = new Set(["manual", "auto", "ask_every_time"]);
+const READ_BEHAVIORS = new Set(["manual", "auto"]);
 
 export function normalizeReadBehavior(value) {
   return READ_BEHAVIORS.has(value) ? value : "manual";
@@ -10,9 +10,7 @@ export function getNextPendingItem(queue) {
 
 export function canUserChoose(settings, queue) {
   const mode = normalizeReadBehavior(settings?.readBehavior);
-  return Boolean(
-    getNextPendingItem(queue) && !settings?.mute && (mode === "manual" || mode === "ask_every_time")
-  );
+  return Boolean(getNextPendingItem(queue) && !settings?.mute && mode === "manual");
 }
 
 export function shouldAutoReadPending({ settings, queue, playbackActive, attemptedItemIds }) {
@@ -36,12 +34,8 @@ export function describeActionHint(settings, queue) {
   }
 
   if (mode === "auto") {
-    return "Auto mode is on. New pending speakable items will read aloud automatically.";
+    return "Auto-play is on. New replies read aloud when playback is idle.";
   }
 
-  if (mode === "ask_every_time") {
-    return "New speakable item waiting. Choose Read or Skip.";
-  }
-
-  return "Manual mode is on. Press Read when you want to hear the next pending item.";
+  return "Save only is on. New replies wait in the queue until you press Read.";
 }

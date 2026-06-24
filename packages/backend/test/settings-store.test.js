@@ -73,7 +73,7 @@ test("settings update merges nested skip rules", () => {
   saveSettings(DEFAULT_SETTINGS, { dataDir });
   const settings = updateSettings(
     {
-      readBehavior: "ask_every_time",
+      readBehavior: "auto",
       skipRules: {
         json: false
       }
@@ -81,9 +81,24 @@ test("settings update merges nested skip rules", () => {
     { dataDir }
   );
 
-  assert.equal(settings.readBehavior, "ask_every_time");
+  assert.equal(settings.readBehavior, "auto");
   assert.equal(settings.skipRules.json, false);
   assert.equal(settings.skipRules.codeBlocks, true);
+});
+
+test("legacy ask-every-time settings fall back to manual", () => {
+  const dataDir = tempDir();
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dataDir, "settings.json"),
+    JSON.stringify({
+      ...DEFAULT_SETTINGS,
+      readBehavior: "ask_every_time"
+    }),
+    "utf8"
+  );
+
+  assert.equal(loadSettings({ dataDir }).readBehavior, "manual");
 });
 
 test("invalid settings file falls back safely", () => {

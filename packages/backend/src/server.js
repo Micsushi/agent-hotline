@@ -269,7 +269,7 @@ function validateSettingsPatch(patch) {
   }
 
   if ("readBehavior" in patch && !READ_BEHAVIORS.includes(patch.readBehavior)) {
-    errors.push("readBehavior must be manual, auto, or ask_every_time");
+    errors.push("readBehavior must be manual or auto");
   }
   if ("mute" in patch && typeof patch.mute !== "boolean") errors.push("mute must be boolean");
   if ("engine" in patch && !TTS_ENGINES.includes(patch.engine)) {

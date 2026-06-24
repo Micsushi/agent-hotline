@@ -1,6 +1,6 @@
 import { getKokoroVoices } from "./tts-kokoro.js";
 
-const READ_BEHAVIORS = new Set(["manual", "auto", "ask_every_time"]);
+const READ_BEHAVIORS = new Set(["manual", "auto"]);
 const TTS_ENGINES = new Set(["webview", "kokoro"]);
 const SKIP_RULES = ["codeBlocks", "diffs", "logs", "tables", "json", "longBulletLists"];
 
