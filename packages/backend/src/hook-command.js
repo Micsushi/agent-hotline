@@ -1,4 +1,4 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const { parseHookInput, SOURCE_APPS } = require("./hook-input-parser");
 const { filterSpeakableText } = require("./speakable-filter");
 const { createSpoolStore } = require("./spool-store");
@@ -63,9 +63,6 @@ async function runHookCommand(options = {}) {
   if (!filtered.shouldSpeak) {
     return skipped(filtered.reason, "No speakable text after filtering.");
   }
-  // Capture only when the read-aloud skill is triggered, i.e. the reply has an
-  // explicit "Spoken:" section. Plain replies are never captured. This is the
-  // single capture control and it lives entirely in the agent.
   if (filtered.source !== "spoken") {
     return skipped("skill_not_triggered", "No Spoken section; read-aloud skill is not active.");
   }
@@ -76,7 +73,9 @@ async function runHookCommand(options = {}) {
     sourceApp: parsed.sourceApp,
     threadId: parsed.threadId,
     threadLabel: parsed.threadLabel,
-    sessionName: resolveSessionName(parsed)
+    sessionName: resolveSessionName(parsed),
+    projectPath: parsed.projectPath,
+    projectName: parsed.projectName
   };
 
   const settingsResult = await requestJson(fetchImpl, `${baseUrl}/api/settings`, {
@@ -84,7 +83,6 @@ async function runHookCommand(options = {}) {
     timeoutMs
   });
   if (!settingsResult.ok) {
-    // Backend down: buffer the message so it is not lost.
     return bufferOffline(
       enqueueBody,
       "backend_unavailable",
@@ -182,7 +180,11 @@ function responseError(response, body) {
 }
 
 function isSupportedSource(sourceApp) {
-  return sourceApp === SOURCE_APPS.CODEX || sourceApp === SOURCE_APPS.CLAUDE;
+  return (
+    sourceApp === SOURCE_APPS.CODEX ||
+    sourceApp === SOURCE_APPS.CLAUDE ||
+    sourceApp === SOURCE_APPS.ANTIGRAVITY
+  );
 }
 
 function isSourceEnabled(settings, sourceApp) {
@@ -196,6 +198,10 @@ function isSourceEnabled(settings, sourceApp) {
 
   if (sourceApp === SOURCE_APPS.CLAUDE) {
     return settings.claudeEnabled !== false;
+  }
+
+  if (sourceApp === SOURCE_APPS.ANTIGRAVITY) {
+    return settings.antigravityEnabled !== false;
   }
 
   return false;
@@ -224,9 +230,6 @@ function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
 }
 
-// A human chat name for the queue item. Codex forwards its curated thread_name;
-// Claude has none in the hook payload, so we read the first user message from
-// the conversation transcript it points at.
 function resolveSessionName(parsed) {
   if (parsed.sessionName) {
     return truncateName(parsed.sessionName);
@@ -246,8 +249,6 @@ function truncateName(name) {
   return clean.length > 60 ? `${clean.slice(0, 57)}...` : clean;
 }
 
-// Read just the head of the transcript (the first user message sits near the
-// top) and return its text. Tolerant of unreadable files and partial lines.
 function readFirstUserMessage(transcriptPath) {
   try {
     const fd = fs.openSync(transcriptPath, "r");
@@ -261,7 +262,7 @@ function readFirstUserMessage(transcriptPath) {
         try {
           entry = JSON.parse(line);
         } catch {
-          continue; // last line may be partial; skip
+          continue;
         }
         if (!entry || entry.type !== "user" || !entry.message || entry.message.role !== "user") {
           continue;
@@ -279,9 +280,7 @@ function readFirstUserMessage(transcriptPath) {
     } finally {
       fs.closeSync(fd);
     }
-  } catch {
-    // unreadable transcript -> no name
-  }
+  } catch {}
   return "";
 }
 

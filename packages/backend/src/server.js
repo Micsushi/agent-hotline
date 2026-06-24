@@ -1,10 +1,16 @@
-const http = require("http");
+﻿const http = require("http");
 const fs = require("fs");
 const path = require("path");
 
-const { READ_BEHAVIORS, TTS_ENGINES, createSettingsStore } = require("./settings-store");
+const {
+  AUDIO_CACHE_LIMIT_MAX_MB,
+  READ_BEHAVIORS,
+  TTS_ENGINES,
+  createSettingsStore
+} = require("./settings-store");
 const { createSpeechQueueStore } = require("./speech-queue-store");
 const { createSpoolStore } = require("./spool-store");
+const { createAudioCacheStore } = require("./audio-cache-store");
 
 const PORT = Number(process.env.AGENT_HOTLINE_PORT || process.env.VOICE_QUESTION_LOOP_PORT || 4777);
 const HOST = "127.0.0.1";
@@ -12,7 +18,8 @@ const ROOT = path.resolve(__dirname, "..");
 const DATA_DIR = path.join(ROOT, "data");
 const QUESTIONS_FILE = process.env.QUESTION_FILE || path.join(DATA_DIR, "questions.json");
 const REQUEST_LIMIT_BYTES = 1_000_000;
-const ALLOWED_CORS_METHODS = "GET, POST, PATCH, PUT, OPTIONS";
+const AUDIO_BODY_LIMIT_BYTES = 96 * 1024 * 1024;
+const ALLOWED_CORS_METHODS = "GET, POST, PATCH, PUT, DELETE, OPTIONS";
 const ALLOWED_CORS_HEADERS = "Content-Type";
 
 function readJson(file, fallback) {
@@ -231,6 +238,55 @@ async function readJsonBody(req) {
   }
 }
 
+function readLargeJsonBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(createHttpError(413, "body_too_large", "Request body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      const text = Buffer.concat(chunks).toString("utf8");
+      if (!text.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(text));
+      } catch {
+        reject(createHttpError(400, "invalid_json", "Request body must be valid JSON"));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function getQuery(req) {
+  return new URL(req.url, "http://127.0.0.1").searchParams;
+}
+
+function sendBinary(res, status, buffer, contentType) {
+  res.writeHead(status, {
+    "Content-Type": contentType,
+    "Content-Length": buffer.length
+  });
+  res.end(buffer);
+}
+
+function sessionKeyForItem(item) {
+  return item.threadId || `app:${item.sourceApp}`;
+}
+
+function projectKeyForItem(item) {
+  return item.projectPath || `direct:${item.sourceApp}`;
+}
+
 function requirePlainObject(value, message = "Request body must be a JSON object") {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw createHttpError(400, "invalid_request", message);
@@ -250,9 +306,11 @@ function validateSettingsPatch(patch) {
     "skipRules",
     "codexEnabled",
     "claudeEnabled",
+    "antigravityEnabled",
     "notifyOnNewReply",
     "notificationOpens",
-    "highlightSpokenText"
+    "highlightSpokenText",
+    "audioCacheLimitMb"
   ]);
   const allowedSkipRules = new Set([
     "codeBlocks",
@@ -294,6 +352,9 @@ function validateSettingsPatch(patch) {
   if ("claudeEnabled" in patch && typeof patch.claudeEnabled !== "boolean") {
     errors.push("claudeEnabled must be boolean");
   }
+  if ("antigravityEnabled" in patch && typeof patch.antigravityEnabled !== "boolean") {
+    errors.push("antigravityEnabled must be boolean");
+  }
   if ("notifyOnNewReply" in patch && typeof patch.notifyOnNewReply !== "boolean") {
     errors.push("notifyOnNewReply must be boolean");
   }
@@ -302,6 +363,14 @@ function validateSettingsPatch(patch) {
   }
   if ("highlightSpokenText" in patch && typeof patch.highlightSpokenText !== "boolean") {
     errors.push("highlightSpokenText must be boolean");
+  }
+  if (
+    "audioCacheLimitMb" in patch &&
+    (!Number.isFinite(patch.audioCacheLimitMb) ||
+      patch.audioCacheLimitMb < 10 ||
+      patch.audioCacheLimitMb > AUDIO_CACHE_LIMIT_MAX_MB)
+  ) {
+    errors.push(`audioCacheLimitMb must be a number from 10 to ${AUDIO_CACHE_LIMIT_MAX_MB}`);
   }
   if ("skipRules" in patch) {
     if (!patch.skipRules || typeof patch.skipRules !== "object" || Array.isArray(patch.skipRules)) {
@@ -473,16 +542,23 @@ function createServer(options = {}) {
       ensureFiles: options.ensureQuestionFiles
     });
 
-  // Drain any messages the hook buffered offline while the backend was down,
-  // in order, into the live queue.
+  const audioCacheStore =
+    options.audioCacheStore ||
+    createAudioCacheStore({
+      dataDir: options.dataDir,
+      cacheDir: options.audioCacheDir,
+      maxBytes: options.audioMaxBytes,
+      getMaxBytes: options.audioMaxBytes
+        ? undefined
+        : () => Number(settingsStore.load().audioCacheLimitMb) * 1024 * 1024
+    });
+
   const spoolStore =
     options.spoolStore ||
     createSpoolStore({ dataDir: options.dataDir, filePath: options.spoolPath });
   try {
     spoolStore.drain((item) => queueStore.enqueue(item));
-  } catch {
-    // A broken spool must never stop the server from starting.
-  }
+  } catch {}
 
   return http.createServer(async (req, res) => {
     try {
@@ -513,7 +589,9 @@ function createServer(options = {}) {
       if ((req.method === "PATCH" || req.method === "PUT") && pathname === "/api/settings") {
         const body = await readJsonBody(req);
         validateSettingsPatch(body);
-        sendJson(res, 200, { settings: settingsStore.update(body) });
+        const settings = settingsStore.update(body);
+        if ("audioCacheLimitMb" in body) audioCacheStore.enforceLimit();
+        sendJson(res, 200, { settings });
         return;
       }
 
@@ -545,7 +623,9 @@ function createServer(options = {}) {
           sourceApp: body.sourceApp,
           threadId: body.threadId,
           threadLabel: body.threadLabel,
-          sessionName: body.sessionName
+          sessionName: body.sessionName,
+          projectPath: body.projectPath,
+          projectName: body.projectName
         });
         sendJson(res, 201, { item, queue: queueState(queueStore) });
         return;
@@ -592,6 +672,126 @@ function createServer(options = {}) {
         }
         sendJson(res, 201, { item, queue: queueState(queueStore) });
         return;
+      }
+
+      const audioWavMatch = pathname.match(/^\/api\/queue\/([^/]+)\/audio\.wav$/);
+      if (req.method === "GET" && audioWavMatch) {
+        const id = decodeURIComponent(audioWavMatch[1]);
+        const query = getQuery(req);
+        const filePath = audioCacheStore.getAudioPath(id, query.get("engine"), query.get("voice"));
+        if (!filePath) {
+          throw createHttpError(404, "not_found", "No cached audio for this item");
+        }
+        sendBinary(res, 200, fs.readFileSync(filePath), "audio/wav");
+        return;
+      }
+
+      const audioMatch = pathname.match(/^\/api\/queue\/([^/]+)\/audio$/);
+      if (req.method === "GET" && audioMatch) {
+        const id = decodeURIComponent(audioMatch[1]);
+        const query = getQuery(req);
+        const manifest = audioCacheStore.getManifest(id, query.get("engine"), query.get("voice"));
+        sendJson(res, 200, manifest ? { cached: true, ...manifest } : { cached: false });
+        return;
+      }
+
+      if (req.method === "POST" && audioMatch) {
+        const id = decodeURIComponent(audioMatch[1]);
+        const query = getQuery(req);
+        const engine = query.get("engine");
+        const voice = query.get("voice");
+        requireString(engine, "engine");
+        requireString(voice, "voice");
+        const body = await readLargeJsonBody(req, AUDIO_BODY_LIMIT_BYTES);
+        requirePlainObject(body);
+        requireString(body.wav, "wav");
+        const wavBuffer = Buffer.from(body.wav, "base64");
+        if (wavBuffer.length === 0) {
+          throw createHttpError(400, "invalid_request", "wav must be base64-encoded audio");
+        }
+        const entry = audioCacheStore.put(id, engine, voice, {
+          sampleRate: body.sampleRate,
+          durationSec: body.durationSec,
+          segments: body.segments,
+          wordAccurate: body.wordAccurate,
+          wavBuffer
+        });
+        sendJson(res, 201, { stored: Boolean(entry), entry: entry || null });
+        return;
+      }
+
+      if (req.method === "GET" && pathname === "/api/audio-cache") {
+        const { entries, totalBytes, maxBytes } = audioCacheStore.list();
+        const itemsById = new Map(queueStore.getState().items.map((item) => [item.id, item]));
+        const enriched = entries.map((entry) => {
+          const item = itemsById.get(entry.itemId);
+          return {
+            itemId: entry.itemId,
+            engine: entry.engine,
+            voice: entry.voice,
+            bytes: entry.bytes,
+            durationSec: entry.durationSec,
+            wordAccurate: entry.wordAccurate,
+            createdAt: entry.createdAt,
+            lastAccessedAt: entry.lastAccessedAt,
+            sourceApp: item ? item.sourceApp : null,
+            threadId: item ? item.threadId || null : null,
+            sessionName: item ? item.sessionName || item.threadLabel || null : null,
+            sessionKey: item ? sessionKeyForItem(item) : "app:unknown",
+            projectPath: item ? item.projectPath || null : null,
+            projectName: item ? item.projectName || null : null,
+            projectKey: item ? projectKeyForItem(item) : "direct:unknown",
+            itemCreatedAt: item ? item.timestamps && item.timestamps.createdAt : null,
+            preview: item
+              ? String(item.speakableText || "")
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .slice(0, 80)
+              : ""
+          };
+        });
+        sendJson(res, 200, { entries: enriched, totalBytes, maxBytes });
+        return;
+      }
+
+      const audioCacheItemMatch = pathname.match(/^\/api\/audio-cache\/([^/]+)$/);
+      if (req.method === "DELETE" && audioCacheItemMatch) {
+        const id = decodeURIComponent(audioCacheItemMatch[1]);
+        const query = getQuery(req);
+        const removed = audioCacheStore.removeOne(id, query.get("engine"), query.get("voice"));
+        sendJson(res, 200, { removed });
+        return;
+      }
+
+      if (req.method === "DELETE" && pathname === "/api/audio-cache") {
+        const query = getQuery(req);
+        if (query.get("all") === "true") {
+          sendJson(res, 200, { removed: audioCacheStore.clearAll() });
+          return;
+        }
+        const session = query.get("session");
+        if (session) {
+          const ids = queueStore
+            .getState()
+            .items.filter((item) => sessionKeyForItem(item) === session)
+            .map((item) => item.id);
+          sendJson(res, 200, { removed: audioCacheStore.removeByItemIds(ids) });
+          return;
+        }
+        const project = query.get("project");
+        if (project) {
+          const ids = queueStore
+            .getState()
+            .items.filter((item) => projectKeyForItem(item) === project)
+            .map((item) => item.id);
+          sendJson(res, 200, { removed: audioCacheStore.removeByItemIds(ids) });
+          return;
+        }
+        throw createHttpError(
+          400,
+          "invalid_request",
+          "Specify ?all=true, ?project=<key>, or ?session=<key>"
+        );
       }
 
       if (req.method === "GET" && pathname === "/api/next") {
@@ -645,9 +845,6 @@ function listen(options = {}) {
 
   server.on("error", (error) => {
     if (error && error.code === "EADDRINUSE") {
-      // Another Agent Hotline backend already owns this port. Treat a duplicate
-      // start as a clean no-op instead of crashing with a stack trace, so the
-      // port acts as a single-instance lock for the backend.
       console.error(
         `Agent Hotline backend already running on ${HOST}:${port}; this duplicate is exiting.`
       );

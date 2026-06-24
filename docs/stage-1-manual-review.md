@@ -1,4 +1,4 @@
-# Stage 1 Manual Review: Windows Read-Aloud
+﻿# Stage 1 Manual Review: Windows Read-Aloud
 
 Use this script to review Stage 1 end to end on Windows. Record the result for each checklist item as Pass, Fail, or Blocked. If a step fails, record the step id, what you expected, what happened, any visible error text, and whether the backend, desktop app, Codex, or Claude Code was running.
 

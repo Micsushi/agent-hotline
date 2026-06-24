@@ -1,4 +1,4 @@
-# Spoken / Displayed Output Setup
+﻿# Spoken / Displayed Output Setup
 
 Agent Hotline reads your agent's responses aloud. By default it strips code-heavy
 content and reads a short version of the prose. You get a much better read-aloud
@@ -8,9 +8,17 @@ When a response contains a `Spoken:` section, Agent Hotline reads only that sect
 and ignores the rest. Your chat still shows the entire response, code and all. The
 `Displayed:` section is for everything that should stay on screen but never be read.
 
-This is always-on output formatting, so it belongs in your agent's persistent
-instructions, not in an on-demand skill (an invoked skill would not fire on every
-turn).
+This output formatting can be installed by Agent Hotline:
+
+```powershell
+npm run install-skill -- --target all
+```
+
+The packaged command shape is:
+
+```powershell
+agent-hotline install-skill --target all
+```
 
 ## The Contract
 
@@ -67,5 +75,6 @@ Read-aloud capture uses the `Stop` hook described in
 3. Ask the agent anything. It should answer with `Spoken:` and `Displayed:`.
 4. Agent Hotline should read only the Spoken text. The full answer stays in chat.
 
-If the Spoken section is missing, Agent Hotline falls back to reading a trimmed
-version of the prose, so read-aloud still works without the contract.
+If the `Spoken:` section is missing, Agent Hotline skips the response. This keeps
+the hook safe to leave installed: read-aloud is active only when the agent is
+using the spoken-output contract.

@@ -158,10 +158,10 @@ function testThreadFieldsStoredAndReplayedById() {
   });
 
   const item = store.enqueue(
-    sampleItem({ threadId: "sess-123", threadLabel: "agent-hotline · sess-123" })
+    sampleItem({ threadId: "sess-123", threadLabel: "agent-hotline  -  sess-123" })
   );
   assert.equal(item.threadId, "sess-123");
-  assert.equal(item.threadLabel, "agent-hotline · sess-123");
+  assert.equal(item.threadLabel, "agent-hotline  -  sess-123");
 
   const replayed = store.replayItem("orig");
   assert.equal(replayed.replayOf, "orig");

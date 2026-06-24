@@ -1,4 +1,4 @@
-# Agent Hotline
+﻿# Agent Hotline
 
 Agent Hotline is a local Windows tray app that reads useful parts of Codex and Claude Code responses aloud.
 
@@ -47,6 +47,26 @@ Not included yet:
 npm install
 ```
 
+During install, the desktop workspace runs `install:tts`. That installs the
+HeadTTS npm dependency assets into the ignored local folder
+`packages/desktop/public/headtts/` and downloads the Kokoro voice packs used by
+the timestamped local TTS engine. These files are runtime assets and are not
+committed to the repo.
+
+If install scripts were skipped, or if the local TTS assets need repair, run:
+
+```powershell
+npm run install:tts
+```
+
+Optional TTS asset controls:
+
+```powershell
+npm run install:tts -- --voices=af_heart       # install only one voice
+npm run install:tts -- --voices=af_heart,am_adam
+$env:AGENT_HOTLINE_SKIP_HEADTTS_INSTALL='1'; npm install
+```
+
 ## Run Locally
 
 Start the backend:
@@ -67,17 +87,57 @@ Default backend URL:
 http://127.0.0.1:4777
 ```
 
-## Hook Setup
+## Install Hooks And Spoken Skill
 
-Use the integration guide for the tool you want to read aloud:
+Agent Hotline needs two pieces to work well with an agent harness:
+
+1. A hook that sends completed responses to the local Agent Hotline tool.
+2. The spoken-output skill or instruction block that makes the agent write a `Spoken:` section.
+
+In local development, install both with:
+
+```powershell
+npm run install-hotline -- --harness all --skill all
+```
+
+Or run the two pieces separately:
+
+```powershell
+npm run install-hook
+npm run install-skill -- --target all
+```
+
+`install-hook` wires the harness Stop hook. `install-skill` installs the
+Antigravity skill file and adds managed `Spoken:` / `Displayed:` instructions for
+Codex and Claude Code.
+
+Skip prompts with flags:
+
+```powershell
+npm run install-hook -- --harness antigravity
+npm run install-hook -- --harness claude-code --scope global
+npm run install-hook -- --harness codex --scope repo
+npm run install-hook -- --harness all   # global for all three harnesses
+npm run install-skill -- --target all
+```
+
+The packaged CLI shape is the same command surface:
+
+```powershell
+agent-hotline install --harness all --skill all
+agent-hotline hook
+```
+
+For manual setup, use the integration guide for the harness you want to read aloud:
 
 - [Codex setup](docs/integrations/codex.md)
 - [Claude Code setup](docs/integrations/claude-code.md)
+- [Antigravity setup](docs/integrations/antigravity.md)
 
 You can smoke test without launching either tool:
 
 ```powershell
-'{"source":"codex","response":{"text":"Agent Hotline is ready to read this response aloud."}}' | node packages/backend/bin/agent-hotline-hook.js
+'{"source":"codex","response":{"text":"Spoken:`nAgent Hotline is ready to read this response aloud.`n`nDisplayed:`nSmoke test complete."}}' | node packages/backend/bin/agent-hotline.js hook
 ```
 
 If the backend is running, the response appears in the Agent Hotline queue. If the backend is not running, the hook exits safely.

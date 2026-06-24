@@ -1,11 +1,8 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const path = require("path");
 
 const { defaultDataDir } = require("./speech-queue-store");
 
-// Offline buffer for hook messages captured while the backend is down. The hook
-// appends here (preserving order + thread); the backend drains it on startup so
-// nothing is lost if the tool was off when a reply was sent.
 function defaultSpoolFile() {
   return path.join(defaultDataDir(), "spool.json");
 }
@@ -52,8 +49,6 @@ function createSpoolStore(options = {}) {
     clear() {
       writeItems(filePath, []);
     },
-    // Flush buffered items in order using the supplied enqueue function. Stops at
-    // the first failure and keeps the rest for a later attempt.
     drain(enqueue) {
       const items = readItems(filePath);
       if (items.length === 0) return { flushed: 0, remaining: 0 };

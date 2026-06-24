@@ -1,4 +1,4 @@
-import "./mini.css";
+﻿import "./mini.css";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { createPlaybackController } from "./playback.js";
@@ -6,7 +6,6 @@ import { createPlaybackController } from "./playback.js";
 const DEFAULT_BACKEND_URL = "http://127.0.0.1:4777";
 const QUEUE_POLL_INTERVAL_MS = 1000;
 
-// Inline icons so the toggle buttons stay icon-only while reflecting state.
 const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>';
 const ICON_PAUSE =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
@@ -42,7 +41,6 @@ let latestState = null;
 let refreshInFlight = false;
 let selectedId = null;
 let lastLatestId = null;
-// Don't let a poll snap the speed slider back while the user drags it.
 let draggingRate = false;
 
 function clampNumber(value, fallback, min, max) {
@@ -74,7 +72,6 @@ async function fetchJson(url) {
   return response.json();
 }
 
-// Items carrying speakable text, oldest -> newest.
 function speakableItems(queue) {
   const items = Array.isArray(queue?.items) ? queue.items : [];
   return items.filter((item) => item.speakableText && item.speakableText.trim());
@@ -118,7 +115,6 @@ function render(state) {
   const { settings, queue } = state;
   const items = speakableItems(queue);
 
-  // Follow the newest item as it arrives (same as the full panel).
   const latest = items[items.length - 1] || null;
   if (latest && latest.id !== lastLatestId) {
     selectedId = latest.id;
@@ -140,7 +136,6 @@ function render(state) {
   prevButton.disabled = index <= 0;
   nextButton.disabled = index < 0 || index >= items.length - 1;
 
-  // One button cycles read -> pause -> resume.
   const speaking = playback?.isSpeaking;
   const paused = playback?.isPaused;
   playPauseButton.innerHTML = speaking ? ICON_PAUSE : ICON_PLAY;
@@ -163,15 +158,15 @@ function render(state) {
 async function refresh({ quiet = false } = {}) {
   if (refreshInFlight) return;
   refreshInFlight = true;
-  if (!quiet) notify("Refreshing…");
+  if (!quiet) notify("Refreshing...");
   try {
     const [{ settings }, { queue }] = await Promise.all([
       fetchJson(`${targetUrl}/api/settings`),
       fetchJson(`${targetUrl}/api/queue`)
     ]);
     render({ settings, queue });
-    if (!quiet) notify(latestSpeakable(queue) ? "Latest reply ready." : "Waiting for output…");
-  } catch (error) {
+    if (!quiet) notify(latestSpeakable(queue) ? "Latest reply ready." : "Waiting for output...");
+  } catch {
     setStatus("error");
     notify(`Backend unavailable. Start it and reopen.`);
     playPauseButton.disabled = true;
@@ -199,9 +194,7 @@ async function saveRate(value) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rate: value })
     });
-  } catch {
-    // best effort; the live rate already applied to playback
-  }
+  } catch {}
 }
 
 const config = await loadRuntimeConfig();
@@ -240,8 +233,6 @@ openButton.addEventListener("click", () => {
   invoke("show_main_panel").catch(() => {});
 });
 
-// Force an immediate refresh each time the tray reopens the popup, so the
-// freshest reply is shown without waiting for the next poll tick.
 if (window.__TAURI_INTERNALS__) {
   listen("agent-hotline://show", () => refresh().catch(() => {})).catch(() => {});
 }
