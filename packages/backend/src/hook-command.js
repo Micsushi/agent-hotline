@@ -75,7 +75,8 @@ async function runHookCommand(options = {}) {
     threadLabel: parsed.threadLabel,
     sessionName: resolveSessionName(parsed),
     projectPath: parsed.projectPath,
-    projectName: parsed.projectName
+    projectName: parsed.projectName,
+    userMessages: parsed.userMessages
   };
 
   const settingsResult = await requestJson(fetchImpl, `${baseUrl}/api/settings`, {

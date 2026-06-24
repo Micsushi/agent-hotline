@@ -18,111 +18,399 @@
     </style>
   </head>
   <body>
-    <div class="app-layout">
-      <!-- Projects Sidebar -->
-      <nav id="projects-pane" class="sidebar projects-sidebar" aria-label="Projects">
-        <div class="sidebar-header">
-          <div class="brand">
-            <svg viewBox="0 0 24 24" aria-hidden="true" width="24" height="24" fill="currentColor">
+    <div class="app-shell">
+      <header class="window-titlebar">
+        <div class="window-drag-region" data-tauri-drag-region></div>
+        <div class="window-controls" aria-label="Window controls">
+          <button
+            id="window-minimize"
+            class="window-control"
+            type="button"
+            aria-label="Minimize"
+            title="Minimize"
+          >
+            <svg viewBox="0 0 12 12" aria-hidden="true" width="12" height="12">
+              <path d="M2 6h8" />
+            </svg>
+          </button>
+          <button
+            id="window-maximize"
+            class="window-control"
+            type="button"
+            aria-label="Maximize"
+            title="Maximize"
+          >
+            <svg viewBox="0 0 12 12" aria-hidden="true" width="12" height="12">
+              <rect x="2.5" y="2.5" width="7" height="7" rx="0.6" />
+            </svg>
+          </button>
+          <button
+            id="window-close"
+            class="window-control window-control-close"
+            type="button"
+            aria-label="Close"
+            title="Close"
+          >
+            <svg viewBox="0 0 12 12" aria-hidden="true" width="12" height="12">
+              <path d="M3 3l6 6M9 3 3 9" />
+            </svg>
+          </button>
+        </div>
+      </header>
+      <div class="app-main">
+        <!-- NAV RAIL (column 1) -->
+        <nav class="nav-rail" aria-label="Primary navigation">
+          <div class="nav-brand">
+            <svg viewBox="0 0 24 24" aria-hidden="true" width="22" height="22" fill="currentColor">
               <path
                 d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.4.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.5.6 3.6.1.4 0 .8-.3 1l-2.2 2.2z"
               />
             </svg>
             <h1 id="app-title">Agent Hotline</h1>
           </div>
-          <p class="meta-line">
-            <span id="queue-count">0</span> waiting · <span id="read-mode">Save only</span>
-          </p>
-        </div>
-        <div id="projects-list" class="sidebar-list">
-          <!-- Populated by JS -->
-        </div>
-        <div class="sidebar-footer">
-          <button id="tab-manage" class="icon-button" aria-label="Storage" title="Storage">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"
-              />
-            </svg>
-          </button>
-          <button id="tab-settings" class="icon-button" aria-label="Settings" title="Settings">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path
-                d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a8 8 0 0 0-2.6-1.5L14 2h-4l-.4 3a8 8 0 0 0-2.6 1.5l-2.4-1-2 3.5 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 2.6 1.5l.4 3h4l.4-3a8 8 0 0 0 2.6-1.5l2.4 1 2-3.5zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
-              />
-            </svg>
-          </button>
-        </div>
-      </nav>
 
-      <!-- Sessions Sidebar -->
-      <nav id="sessions-pane" class="sidebar sessions-sidebar" aria-label="Sessions" hidden>
-        <div class="sidebar-header">
-          <h2 id="current-project-title">Sessions</h2>
-        </div>
-        <div id="sessions-list" class="sidebar-list">
-          <!-- Populated by JS -->
-        </div>
-      </nav>
-
-      <!-- Messages Pane -->
-      <main id="messages-pane" class="content-pane">
-        <header class="content-header">
-          <h2 id="current-session-title">Messages</h2>
-          <button id="refresh" class="icon-button" type="button" title="Refresh">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path
-                d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"
-              />
-            </svg>
-          </button>
-        </header>
-        <div id="history" class="history-list">
-          <p class="history-empty">Select a project and session to view history.</p>
-        </div>
-      </main>
-
-      <!-- Playback & Settings Pane -->
-      <aside id="playback-pane" class="right-sidebar">
-        <!-- TEST & PLAY TAB -->
-        <section id="panel-home" class="panel is-active" role="tabpanel">
-          <section class="card playback-card" aria-live="polite">
-            <div class="section-heading">
-              <p class="card-title">Now playing</p>
-              <button
-                id="mute-button"
-                class="mute-circle"
-                type="button"
-                aria-label="Mute"
-                title="Mute"
+          <div class="nav-items" role="tablist">
+            <button id="nav-chats" class="nav-item" type="button" data-view="chats">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linejoin="round"
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                  width="20"
-                  height="20"
-                  fill="currentColor"
-                >
-                  <path d="M3 9v6h4l5 4V5L7 9H3z" />
+                <path
+                  d="M4 5.5h16a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1H9l-4 3.2V17H4a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1z"
+                />
+              </svg>
+              <span>Chats</span>
+            </button>
+            <button id="nav-storage" class="nav-item" type="button" data-view="storage">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linejoin="round"
+              >
+                <path d="M4 7c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2z" />
+                <path d="M4 7v10c0 1.1 3.6 2 8 2s8-.9 8-2V7" />
+                <path d="M4 12c0 1.1 3.6 2 8 2s8-.9 8-2" />
+              </svg>
+              <span>Storage</span>
+            </button>
+            <button id="nav-settings" class="nav-item" type="button" data-view="settings">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="20"
+                height="20"
+                fill="currentColor"
+              >
+                <path
+                  d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a8 8 0 0 0-2.6-1.5L14 2h-4l-.4 3a8 8 0 0 0-2.6 1.5l-2.4-1-2 3.5 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 2.6 1.5l.4 3h4l.4-3a8 8 0 0 0 2.6-1.5l2.4 1 2-3.5zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
+                />
+              </svg>
+              <span>Settings</span>
+            </button>
+          </div>
+        </nav>
+
+        <!-- WORKSPACE (fills the rest, to the right of the nav) -->
+        <div class="workspace">
+          <!-- BLANK: fresh open, nothing selected -->
+          <section id="view-blank" class="view view-blank">
+            <p class="blank-hint">
+              Pick <strong>Chats</strong>, <strong>Storage</strong>, or <strong>Settings</strong> to
+              get started.
+            </p>
+          </section>
+
+          <!-- CHATS: Projects > Sessions > Messages cascade -->
+          <section id="view-chats" class="view view-cascade" hidden>
+            <div class="column col-projects">
+              <header class="column-head">Projects</header>
+              <div id="projects-list" class="column-list"><!-- JS --></div>
+            </div>
+            <div id="sessions-pane" class="column col-sessions" hidden>
+              <header class="column-head" id="current-project-title">Sessions</header>
+              <div id="sessions-list" class="column-list"><!-- JS --></div>
+            </div>
+            <div id="messages-pane" class="column col-messages" hidden>
+              <header class="column-head">
+                <span class="convo-head-left">
+                  <span id="convo-owner" class="owner-badge owner-unknown" hidden>Unknown</span>
+                  <span id="current-session-title">Messages</span>
+                </span>
+                <span class="convo-actions">
+                  <button
+                    id="expand-all"
+                    class="text-button"
+                    type="button"
+                    title="Expand all messages"
+                  >
+                    Expand all
+                  </button>
+                  <button
+                    id="collapse-all"
+                    class="text-button"
+                    type="button"
+                    title="Collapse all messages"
+                  >
+                    Collapse all
+                  </button>
+                </span>
+              </header>
+              <div id="history" class="column-list history-list"><!-- JS --></div>
+            </div>
+          </section>
+
+          <!-- STORAGE: Projects > Sessions > Recordings cascade -->
+          <section id="view-storage" class="view view-storage" hidden>
+            <div class="storage-bar">
+              <h2 id="manage-title">Storage</h2>
+              <p id="audio-summary" class="now-meta">Loading saved audio...</p>
+              <label class="field-row" for="audio-limit">
+                <span>Limit (MB)</span>
+                <input
+                  id="audio-limit"
+                  type="number"
+                  min="10"
+                  max="100000"
+                  step="64"
+                  inputmode="numeric"
+                />
+              </label>
+              <div class="manage-actions">
+                <button id="audio-delete-selected" type="button" disabled>Delete selected</button>
+                <button id="audio-delete-all" type="button">Delete all</button>
+              </div>
+              <button
+                id="audio-refresh"
+                class="icon-button"
+                type="button"
+                aria-label="Refresh"
+                title="Refresh"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                   <path
-                    d="M15 9a4 4 0 0 1 0 6"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
+                    d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"
                   />
                 </svg>
               </button>
             </div>
-
-            <div class="now-head">
-              <span id="source-app" class="now-source">None</span>
-              <span id="item-time" class="now-time"></span>
-              <span id="item-status" class="now-status">none</span>
+            <div id="storage-cascade" class="cascade">
+              <div class="column col-projects">
+                <header class="column-head">Projects</header>
+                <div id="storage-projects" class="column-list"><!-- JS --></div>
+              </div>
+              <div id="storage-sessions-pane" class="column col-sessions" hidden>
+                <header class="column-head" id="storage-project-title">Sessions</header>
+                <div id="storage-sessions" class="column-list"><!-- JS --></div>
+              </div>
+              <div id="storage-recordings-pane" class="column col-messages" hidden>
+                <header class="column-head">
+                  <span id="storage-session-title">Recordings</span>
+                </header>
+                <div id="audio-list" class="column-list storage-list"><!-- JS --></div>
+              </div>
             </div>
-            <p id="preview-text" class="now-text">No speakable text yet.</p>
-            <p id="preview-meta" class="now-meta">Waiting for Codex or Claude output.</p>
+          </section>
 
+          <!-- SETTINGS: full-width page -->
+          <section id="view-settings" class="view view-settings" hidden>
+            <div class="page-head">
+              <h2 id="settings-title">Settings</h2>
+              <span id="settings-state" class="settings-state">Loading</span>
+            </div>
+
+            <div class="settings-grid">
+              <section class="card">
+                <p class="card-title">Queue behavior</p>
+                <div class="segmented-control" role="radiogroup" aria-label="Read behavior">
+                  <label title="Replies are saved, but only read when you press play.">
+                    <input type="radio" name="read-behavior" value="manual" />
+                    <span>Save only</span>
+                  </label>
+                  <label title="New replies play automatically when no other reply is being read.">
+                    <input type="radio" name="read-behavior" value="auto" />
+                    <span>Auto-play</span>
+                  </label>
+                </div>
+              </section>
+
+              <section class="card">
+                <p class="card-title">Voice</p>
+                <div class="field-grid">
+                  <label class="field-row" for="setting-engine">
+                    <span>Engine</span>
+                    <select id="setting-engine">
+                      <option value="webview">System voice</option>
+                      <option value="kokoro">Kokoro</option>
+                      <option value="kokoro-ts">Kokoro TS</option>
+                    </select>
+                  </label>
+                  <label class="field-row" for="setting-voice">
+                    <span>Voice</span>
+                    <select id="setting-voice"></select>
+                  </label>
+                  <label class="field-row" for="setting-kokoro-voice" id="kokoro-voice-row" hidden>
+                    <span>Kokoro voice</span>
+                    <select id="setting-kokoro-voice"></select>
+                  </label>
+                  <label class="field-row" for="setting-volume">
+                    <span>Volume <output id="setting-volume-value">100%</output></span>
+                    <input id="setting-volume" type="range" min="0" max="1" step="0.05" />
+                  </label>
+                </div>
+              </section>
+
+              <section class="card">
+                <p class="card-title">Sources</p>
+                <div class="toggle-grid">
+                  <label class="toggle-row"
+                    ><input id="setting-mute" type="checkbox" /> <span>Mute</span></label
+                  >
+                  <label class="toggle-row"
+                    ><input id="setting-codex" type="checkbox" /> <span>Codex</span></label
+                  >
+                  <label class="toggle-row"
+                    ><input id="setting-claude" type="checkbox" /> <span>Claude</span></label
+                  >
+                </div>
+              </section>
+
+              <section class="card">
+                <p class="card-title">Notifications</p>
+                <div class="field-grid">
+                  <label class="toggle-row"
+                    ><input id="setting-notify" type="checkbox" />
+                    <span>Notify on new reply</span></label
+                  >
+                  <label class="field-row" id="notify-opens-row" for="setting-notify-opens" hidden>
+                    <span>Opens</span>
+                    <select id="setting-notify-opens">
+                      <option value="full">Full window</option>
+                      <option value="mini">Mini popup</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <section class="card">
+                <p class="card-title">Reading detail</p>
+                <div class="field-grid">
+                  <label class="toggle-row"
+                    ><input id="setting-highlight" type="checkbox" />
+                    <span>Highlight spoken text</span></label
+                  >
+                  <p id="highlight-warn" class="settings-warn" hidden>Experimental.</p>
+                </div>
+                <details class="skip-rules">
+                  <summary>Skip rules</summary>
+                  <div class="skip-grid">
+                    <label><input data-skip-rule="codeBlocks" type="checkbox" /> Code</label>
+                    <label><input data-skip-rule="diffs" type="checkbox" /> Diffs</label>
+                    <label><input data-skip-rule="logs" type="checkbox" /> Logs</label>
+                    <label><input data-skip-rule="tables" type="checkbox" /> Tables</label>
+                    <label><input data-skip-rule="json" type="checkbox" /> JSON</label>
+                    <label
+                      ><input data-skip-rule="longBulletLists" type="checkbox" /> Long lists</label
+                    >
+                  </div>
+                </details>
+              </section>
+            </div>
+
+            <p id="settings-error" class="settings-error" hidden></p>
+          </section>
+        </div>
+      </div>
+
+      <!-- PERSISTENT PLAYBACK BAR -->
+      <footer class="now-bar" aria-live="polite">
+        <div class="now-info">
+          <div class="now-head">
+            <span id="source-app" class="now-source">None</span>
+            <p id="preview-meta" class="now-meta">Waiting for Codex or Claude output.</p>
+            <span id="item-time" class="now-time"></span>
+            <span id="item-status" class="now-status">none</span>
+          </div>
+          <p id="preview-text" class="now-text">No speakable text yet.</p>
+        </div>
+
+        <div class="now-controls">
+          <div class="transport-primary" aria-label="Playback controls">
+            <button id="first-button" type="button" disabled aria-label="First" title="Go to first">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="22"
+                height="22"
+                fill="currentColor"
+              >
+                <path d="M5 6h2v12H5zM20 6v12l-7-6 7-6zM13 6v12l-6-6 6-6z" />
+              </svg>
+            </button>
+            <button id="prev-button" type="button" disabled aria-label="Previous" title="Previous">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="22"
+                height="22"
+                fill="currentColor"
+              >
+                <path d="M6 6h2v12H6zM20 6v12l-9-6 9-6z" />
+              </svg>
+            </button>
+            <button
+              id="playpause-button"
+              class="primary"
+              type="button"
+              disabled
+              aria-label="Read aloud"
+              title="Read aloud"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="24"
+                height="24"
+                fill="currentColor"
+              >
+                <path d="M7 5v14l12-7z" />
+              </svg>
+            </button>
+            <button id="next-button" type="button" disabled aria-label="Next" title="Next">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="22"
+                height="22"
+                fill="currentColor"
+              >
+                <path d="M16 6h2v12h-2zM4 6v12l9-6-9-6z" />
+              </svg>
+            </button>
+            <button id="last-button" type="button" disabled aria-label="Last" title="Go to last">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="22"
+                height="22"
+                fill="currentColor"
+              >
+                <path d="M17 6h2v12h-2zM4 6v12l7-6-7-6zM11 6v12l6-6-6-6z" />
+              </svg>
+            </button>
+          </div>
+          <div class="seek-line">
+            <span id="seek-current" class="seek-time">0:00</span>
             <input
               id="seek-bar"
               class="seek-bar"
@@ -134,192 +422,60 @@
               disabled
               aria-label="Playback position"
             />
-
-            <div class="transport-primary" aria-label="Playback controls">
-              <button
-                id="prev-button"
-                type="button"
-                disabled
-                aria-label="Previous"
-                title="Previous"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                  width="24"
-                  height="24"
-                  fill="currentColor"
-                >
-                  <path d="M6 6h2v12H6zM20 6v12l-9-6 9-6z" />
-                </svg>
-              </button>
-              <button
-                id="playpause-button"
-                class="primary"
-                type="button"
-                disabled
-                aria-label="Read aloud"
-                title="Read aloud"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                  width="24"
-                  height="24"
-                  fill="currentColor"
-                >
-                  <path d="M7 5v14l12-7z" />
-                </svg>
-              </button>
-              <button id="next-button" type="button" disabled aria-label="Next" title="Next">
-                <svg
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                  width="24"
-                  height="24"
-                  fill="currentColor"
-                >
-                  <path d="M16 6h2v12h-2zM4 6v12l9-6-9-6z" />
-                </svg>
-              </button>
-            </div>
-          </section>
-
-          <section class="card behavior-card">
-            <p class="card-title">Queue behavior</p>
-            <div class="segmented-control" role="radiogroup" aria-label="Read behavior">
-              <label title="Replies are saved, but only read when you press play.">
-                <input type="radio" name="read-behavior" value="manual" />
-                <span>Save only</span>
-              </label>
-              <label title="New replies play automatically when no other reply is being read.">
-                <input type="radio" name="read-behavior" value="auto" />
-                <span>Auto-play</span>
-              </label>
-            </div>
-          </section>
-
-          <section class="card speed-card">
-            <label class="field-row" for="setting-rate">
-              <span>Read speed <output id="setting-rate-value">1.0x</output></span>
-              <input id="setting-rate" type="range" min="0.25" max="4" step="0.05" />
-            </label>
-          </section>
-        </section>
-
-        <!-- SETTINGS TAB -->
-        <section id="panel-settings" class="panel" role="tabpanel" hidden>
-          <div class="section-heading">
-            <h2 id="settings-title">Settings</h2>
-            <button id="tab-home" class="icon-button" aria-label="Close Settings" title="Close">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <path
-                  d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                />
-              </svg>
-            </button>
+            <span id="seek-total" class="seek-time">0:00</span>
           </div>
-          <span id="settings-state" class="settings-state">Loading</span>
+        </div>
 
-          <!-- Merged Settings UI -->
-          <section class="card">
-            <p class="card-title">Voice</p>
-            <div class="field-grid">
-              <label class="field-row" for="setting-engine">
-                <span>Engine</span>
-                <select id="setting-engine">
-                  <option value="webview">System voice</option>
-                  <option value="kokoro">Kokoro</option>
-                  <option value="kokoro-ts">Kokoro TS</option>
-                </select>
-              </label>
-              <label class="field-row" for="setting-voice">
-                <span>Voice</span>
-                <select id="setting-voice"></select>
-              </label>
-              <label class="field-row" for="setting-kokoro-voice" id="kokoro-voice-row" hidden>
-                <span>Kokoro voice</span>
-                <select id="setting-kokoro-voice"></select>
-              </label>
-              <label class="field-row" for="setting-volume">
-                <span>Volume <output id="setting-volume-value">100%</output></span>
-                <input id="setting-volume" type="range" min="0" max="1" step="0.05" />
-              </label>
-            </div>
-          </section>
-
-          <section class="card">
-            <p class="card-title">Sources</p>
-            <div class="toggle-grid">
-              <label class="toggle-row"
-                ><input id="setting-mute" type="checkbox" /> <span>Mute</span></label
+        <div class="now-extra">
+          <label class="speed-field" for="setting-rate">
+            <span class="speed-icon" aria-label="Speed" title="Speed">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="16"
+                height="16"
+                fill="currentColor"
               >
-              <label class="toggle-row"
-                ><input id="setting-codex" type="checkbox" /> <span>Codex</span></label
-              >
-              <label class="toggle-row"
-                ><input id="setting-claude" type="checkbox" /> <span>Claude</span></label
-              >
-            </div>
-          </section>
-
-          <section class="card">
-            <p class="card-title">Notifications</p>
-            <div class="field-grid">
-              <label class="toggle-row"
-                ><input id="setting-notify" type="checkbox" />
-                <span>Notify on new reply</span></label
-              >
-              <label class="field-row" id="notify-opens-row" for="setting-notify-opens" hidden>
-                <span>Opens</span>
-                <select id="setting-notify-opens">
-                  <option value="full">Full window</option>
-                  <option value="mini">Mini popup</option>
-                </select>
-              </label>
-            </div>
-          </section>
-
-          <section class="card">
-            <p class="card-title">Reading detail</p>
-            <div class="field-grid">
-              <label class="toggle-row"
-                ><input id="setting-highlight" type="checkbox" />
-                <span>Highlight spoken text</span></label
-              >
-              <p id="highlight-warn" class="settings-warn" hidden>Experimental.</p>
-            </div>
-            <details class="skip-rules">
-              <summary>Skip rules</summary>
-              <div class="skip-grid">
-                <label><input data-skip-rule="codeBlocks" type="checkbox" /> Code</label>
-                <label><input data-skip-rule="diffs" type="checkbox" /> Diffs</label>
-                <label><input data-skip-rule="logs" type="checkbox" /> Logs</label>
-                <label><input data-skip-rule="tables" type="checkbox" /> Tables</label>
-                <label><input data-skip-rule="json" type="checkbox" /> JSON</label>
-                <label><input data-skip-rule="longBulletLists" type="checkbox" /> Long lists</label>
-              </div>
-            </details>
-          </section>
-
-          <p id="settings-error" class="settings-error" hidden></p>
-        </section>
-
-        <!-- Manage Audio Cache UI -->
-        <section id="panel-manage" class="panel" role="tabpanel" hidden>
-          <div class="section-heading">
-            <h2 id="manage-title">Storage</h2>
-            <button id="audio-refresh" class="icon-button" aria-label="Refresh" title="Refresh">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                 <path
-                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"
+                  d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44z"
                 />
+                <path d="M10.59 15.41a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z" />
               </svg>
-            </button>
+            </span>
+            <input id="setting-rate" type="range" min="0.2" max="4" step="0.1" />
+            <output id="setting-rate-value">1.0x</output>
+          </label>
+          <button id="mute-button" class="mute-circle" type="button" aria-label="Mute" title="Mute">
+            <svg viewBox="0 0 24 24" aria-hidden="true" width="20" height="20" fill="currentColor">
+              <path d="M3 9v6h4l5 4V5L7 9H3z" />
+              <path
+                d="M15 9a4 4 0 0 1 0 6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+          <div class="now-foot">
+            <span id="action-hint" class="footnote">Loading state...</span>
+            <span id="backend-url" class="backend-url">http://127.0.0.1:4777</span>
+          </div>
+        </div>
+      </footer>
+
+      <!-- FULL MESSAGE VIEW (overlay modal) -->
+      <div id="msg-modal" class="modal-overlay" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-label="Full message">
+          <header class="modal-head">
+            <span id="modal-owner" class="owner-badge owner-unknown">Unknown</span>
+            <span id="modal-time" class="now-time"></span>
+            <span id="modal-meta" class="now-meta"></span>
             <button
-              id="tab-home-manage"
-              class="icon-button tab-home-btn"
-              aria-label="Close Storage"
+              id="modal-close"
+              class="icon-button"
+              type="button"
+              aria-label="Close"
               title="Close"
             >
               <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
@@ -328,31 +484,46 @@
                 />
               </svg>
             </button>
-          </div>
-          <p id="audio-summary" class="now-meta">Loading saved audio...</p>
-          <label class="field-row" for="audio-limit">
-            <span>Limit (MB)</span>
-            <input
-              id="audio-limit"
-              type="number"
-              min="10"
-              max="100000"
-              step="64"
-              inputmode="numeric"
-            />
-          </label>
-          <div class="manage-actions">
-            <button id="audio-delete-selected" type="button" disabled>Delete selected</button>
-            <button id="audio-delete-all" type="button">Delete all</button>
-          </div>
-          <div id="audio-list" class="history-list"></div>
-        </section>
-
-        <footer class="footer-row">
-          <span id="action-hint" class="footnote">Loading state...</span>
-          <span id="backend-url" class="backend-url">http://127.0.0.1:4777</span>
-        </footer>
-      </aside>
+          </header>
+          <div id="modal-body" class="modal-body"></div>
+          <footer class="modal-transport">
+            <button
+              id="modal-prev"
+              class="icon-button"
+              type="button"
+              aria-label="Previous"
+              title="Previous"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                <path d="M6 6h2v12H6zM20 6v12l-9-6 9-6z" />
+              </svg>
+            </button>
+            <button
+              id="modal-play"
+              class="primary"
+              type="button"
+              aria-label="Read aloud"
+              title="Read aloud"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                <path d="M7 5v14l12-7z" />
+              </svg>
+            </button>
+            <button
+              id="modal-next"
+              class="icon-button"
+              type="button"
+              aria-label="Next"
+              title="Next"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                <path d="M16 6h2v12h-2zM4 6v12l9-6-9-6z" />
+              </svg>
+            </button>
+            <output id="modal-speed" class="modal-speed">1.0x</output>
+          </footer>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

@@ -125,6 +125,11 @@
 .mini-speed output {
   color: var(--text);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mini-speed .speed-icon {
+  display: inline-flex;
+  align-items: center;
 }
 
 .mini-speed input[type="range"] {

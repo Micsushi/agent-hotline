@@ -283,8 +283,13 @@ function sessionKeyForItem(item) {
   return item.threadId || `app:${item.sourceApp}`;
 }
 
+// Stable project identity from a (possibly inconsistently-shaped) path. Stripping
+// all separators + lowercasing collapses mixed slash styles and separator-stripped
+// Windows cwds onto one key. Must stay byte-identical to canonicalProjectKey() in
+// the desktop grouping module so Storage delete-by-project matches what the UI sends.
 function projectKeyForItem(item) {
-  return item.projectPath || `direct:${item.sourceApp}`;
+  if (!item.projectPath) return `direct:${item.sourceApp}`;
+  return String(item.projectPath).replace(/[\\/]/g, "").toLowerCase();
 }
 
 function requirePlainObject(value, message = "Request body must be a JSON object") {
@@ -625,7 +630,8 @@ function createServer(options = {}) {
           threadLabel: body.threadLabel,
           sessionName: body.sessionName,
           projectPath: body.projectPath,
-          projectName: body.projectName
+          projectName: body.projectName,
+          userMessages: body.userMessages
         });
         sendJson(res, 201, { item, queue: queueState(queueStore) });
         return;

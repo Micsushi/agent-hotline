@@ -327,11 +327,11 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   rate.addEventListener("input", () => {
     draggingRate = true;
     rateValue.value = formatRate(rate.value);
-    onLivePreview?.({ rate: clampNumber(rate.value, currentSettings.rate, 0.25, 4) });
+    onLivePreview?.({ rate: clampNumber(rate.value, currentSettings.rate, 0.2, 4) });
   });
   rate.addEventListener("change", () => {
     draggingRate = false;
-    savePatch({ rate: clampNumber(rate.value, currentSettings.rate, 0.25, 4) });
+    savePatch({ rate: clampNumber(rate.value, currentSettings.rate, 0.2, 4) });
   });
   rate.addEventListener("blur", () => (draggingRate = false));
 

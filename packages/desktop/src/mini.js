@@ -222,11 +222,11 @@ rate.addEventListener("pointerdown", () => (draggingRate = true));
 rate.addEventListener("input", () => {
   draggingRate = true;
   rateValue.value = formatRate(rate.value);
-  playback.applyLiveSettings({ rate: clampNumber(rate.value, 1, 0.25, 4) });
+  playback.applyLiveSettings({ rate: clampNumber(rate.value, 1, 0.2, 4) });
 });
 rate.addEventListener("change", () => {
   draggingRate = false;
-  saveRate(clampNumber(rate.value, 1, 0.25, 4));
+  saveRate(clampNumber(rate.value, 1, 0.2, 4));
 });
 rate.addEventListener("blur", () => (draggingRate = false));
 openButton.addEventListener("click", () => {

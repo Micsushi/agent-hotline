@@ -19,11 +19,24 @@ function item(overrides) {
 
 test("labels and keys fall back through project/session fields", () => {
   assert.equal(projectKeyOf({ projectKey: "k" }), "k");
-  assert.equal(projectKeyOf({ projectPath: "/p", sourceApp: "Claude" }), "/p");
+  // projectPath is canonicalized (separators stripped, lowercased) so that the
+  // same folder in different slash/case shapes collapses to one project key.
+  assert.equal(projectKeyOf({ projectPath: "/p", sourceApp: "Claude" }), "p");
   assert.equal(projectKeyOf({ sourceApp: "Codex" }), "direct:Codex");
 
-  assert.equal(projectLabelOf({ projectName: "agent-hotline" }), "agent-hotline");
+  assert.equal(
+    projectLabelOf({ projectName: "agent-hotline", projectPath: "/x/agent-hotline" }),
+    "agent-hotline"
+  );
   assert.equal(projectLabelOf({ sourceApp: "Codex" }), "Codex");
+  // A projectName without a projectPath is a direct record (keyed direct:<app>),
+  // so its label must be the harness -- never the name -- or it forks a phantom
+  // project. Guards against the duplicate "agent-hotline" project regression.
+  assert.equal(
+    projectKeyOf({ projectName: "agent-hotline", sourceApp: "Claude" }),
+    "direct:Claude"
+  );
+  assert.equal(projectLabelOf({ projectName: "agent-hotline", sourceApp: "Claude" }), "Claude");
 
   assert.equal(sessionKeyOf({ sessionKey: "s" }), "s");
   assert.equal(sessionKeyOf({ threadId: "abc123", sourceApp: "Claude" }), "abc123");
@@ -102,6 +115,20 @@ test("bytes sort orders largest first and sums project/session bytes", () => {
   assert.equal(groups[1].bytes, 150);
   assert.equal(groups[1].sessions[0].bytes, 150);
   assert.equal(groups[1].sessions[0].items.length, 2);
+});
+
+test("a pathless record never forks a phantom project beside the real one", () => {
+  const items = [
+    item({ projectName: "agent-hotline", projectPath: "/repo/agent-hotline", threadId: "t1" }),
+    // Same name, but no projectPath (e.g. a malformed/direct enqueue): must land
+    // in the direct bucket labeled by harness, not a 2nd "agent-hotline" box.
+    item({ projectName: "agent-hotline", threadId: "t2" })
+  ];
+
+  const groups = groupByProjectSession(items);
+  const labels = groups.map((g) => g.label).sort();
+  assert.deepEqual(labels, ["Claude", "agent-hotline"]);
+  assert.equal(groups.filter((g) => g.label === "agent-hotline").length, 1);
 });
 
 test("direct flag is set when no project path is present", () => {

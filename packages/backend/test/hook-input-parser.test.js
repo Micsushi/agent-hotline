@@ -2,10 +2,13 @@ const assert = require("assert/strict");
 const fs = require("fs");
 const path = require("path");
 
+const os = require("os");
+
 const {
   SOURCE_APPS,
   detectSourceApp,
   extractAssistantText,
+  extractUserMessages,
   parseHookInput
 } = require("../src/hook-input-parser");
 
@@ -165,8 +168,58 @@ function testAntigravitySourceDetectedByEventName() {
   assert.equal(result.sourceApp, SOURCE_APPS.ANTIGRAVITY);
 }
 
+function testCodexInputMessagesBecomeUserMessages() {
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "codex",
+      "input-messages": ["first prompt\n", "  ", "second prompt"],
+      response: { text: "Spoken:\nReply." }
+    })
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.userMessages, ["first prompt", "second prompt"]);
+}
+
+function testClaudeUserMessagesReadFromTranscript() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ah-transcript-"));
+  const transcriptPath = path.join(dir, "session.jsonl");
+  const lines = [
+    { type: "user", message: { role: "user", content: "old turn" } },
+    { type: "assistant", message: { role: "assistant", content: "old reply" } },
+    { type: "user", message: { role: "user", content: "fix the ui" } },
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", content: "ignored" }]
+      }
+    },
+    { type: "user", isMeta: true, message: { role: "user", content: "meta noise" } },
+    { type: "user", message: { role: "user", content: [{ type: "text", text: "and add tests" }] } },
+    { type: "assistant", message: { role: "assistant", content: "Spoken:\nDone." } }
+  ];
+  fs.writeFileSync(transcriptPath, lines.map((l) => JSON.stringify(l)).join("\n"), "utf8");
+
+  const messages = extractUserMessages({ source: "claude", transcript_path: transcriptPath });
+  fs.rmSync(dir, { recursive: true, force: true });
+
+  assert.deepEqual(messages, ["fix the ui", "and add tests"]);
+}
+
+function testMissingTranscriptYieldsNoUserMessages() {
+  const messages = extractUserMessages({
+    source: "claude",
+    transcript_path: path.join(os.tmpdir(), "does-not-exist-ah.jsonl")
+  });
+  assert.deepEqual(messages, []);
+}
+
 const tests = [
   testCodexFixturesParseAssistantText,
+  testCodexInputMessagesBecomeUserMessages,
+  testClaudeUserMessagesReadFromTranscript,
+  testMissingTranscriptYieldsNoUserMessages,
   testClaudeFixturesParseAssistantText,
   testThreadIdAndLabelExtracted,
   testBomPrefixedJsonStillParses,

@@ -75,8 +75,27 @@
       </div>
 
       <label class="mini-speed" for="mini-rate">
-        <span>Speed <output id="mini-rate-value">1.0x</output></span>
-        <input id="mini-rate" type="range" min="0.25" max="4" step="0.05" />
+        <span>
+          <span class="speed-icon" aria-label="Speed" title="Speed">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
+              <path d="M13.4 11.6 18 7" />
+              <path d="M4 18a8 8 0 1 1 16 0" />
+            </svg>
+          </span>
+          <output id="mini-rate-value">1.0x</output>
+        </span>
+        <input id="mini-rate" type="range" min="0.2" max="4" step="0.1" />
       </label>
 
       <p id="mini-hint" class="mini-hint">Loading...</p>

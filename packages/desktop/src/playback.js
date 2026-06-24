@@ -120,7 +120,7 @@ function getSkipReason(item) {
   return "";
 }
 
-export function createPlaybackController({ backendUrl, onUpdate, onStateChanged }) {
+export function createPlaybackController({ backendUrl, onUpdate, onStateChanged, onItemFinished }) {
   let activeUtterance = null;
   let audioContext = null;
   let activeSource = null;
@@ -244,6 +244,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
       basePosSec = activeSpeechDuration;
       baseCtxTime = audioContext ? audioContext.currentTime : 0;
       setPlaybackState("ended");
+      if (typeof onItemFinished === "function" && playingItem) onItemFinished(playingItem.id);
       try {
         await markPlayed(playingItem);
         notify("Read aloud finished.");
@@ -394,6 +395,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     }
 
     const playingItem = await markPlaying(item);
+    activeItem = playingItem;
     if (playbackToken === token) setPlaybackState("loading");
     const rate = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
 
@@ -422,6 +424,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
       }
     } catch (error) {
       if (playbackToken !== token) return;
+      activeItem = null;
       setPlaybackState("idle");
       const reason = `Local Kokoro speech failed: ${error.message}`;
       await markSkipped(playingItem, reason);
@@ -457,8 +460,6 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
       activeWordAccurate = Boolean(generated.wordAccurate);
       activeUseStretch = Boolean(useStretch && StretchNodeClass);
       activeStretchRate = activeUseStretch ? stretchRate : 1;
-      activeItem = playingItem;
-
       connectSourceFrom(0, true);
       setPlaybackState("speaking");
       notify(
@@ -695,6 +696,9 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged 
     },
     get isLoading() {
       return playbackState === "loading";
+    },
+    get activeItemId() {
+      return activeItem?.id || null;
     },
     get state() {
       return playbackState;

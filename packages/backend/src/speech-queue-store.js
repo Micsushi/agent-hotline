@@ -93,6 +93,11 @@ function createSpeechQueueStore(options = {}) {
     return typeof value === "string" && value.trim() !== "" ? value : undefined;
   }
 
+  function normalizeUserMessages(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean);
+  }
+
   function enqueue(input) {
     const timestamp = now();
     const item = {
@@ -117,6 +122,8 @@ function createSpeechQueueStore(options = {}) {
     if (projectPath) item.projectPath = projectPath;
     const projectName = optionalString(input.projectName);
     if (projectName) item.projectName = projectName;
+    const userMessages = normalizeUserMessages(input.userMessages);
+    if (userMessages.length) item.userMessages = userMessages;
 
     if (findItem(item.id)) {
       throw new Error(`Queue item already exists: ${item.id}`);
@@ -200,6 +207,9 @@ function createSpeechQueueStore(options = {}) {
     if (source.sessionName) item.sessionName = source.sessionName;
     if (source.projectPath) item.projectPath = source.projectPath;
     if (source.projectName) item.projectName = source.projectName;
+    if (Array.isArray(source.userMessages) && source.userMessages.length) {
+      item.userMessages = source.userMessages.slice();
+    }
 
     state.items.push(item);
     persist();

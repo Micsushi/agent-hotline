@@ -127,6 +127,7 @@ fn open_panel(app: &tauri::AppHandle) {
     };
 
     let _ = window.unminimize();
+    let _ = window.maximize();
     let _ = window.show();
     let _ = window.set_focus();
     // Force the panel to pull the freshest queue the moment it appears, so it

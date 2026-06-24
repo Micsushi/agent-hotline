@@ -23,7 +23,15 @@ function parseHookInput(text) {
 
   try {
     const sourceApp = detectSourceApp(payload);
-    const extracted = extractAssistantText(payload);
+    let extracted = extractAssistantText(payload);
+
+    // Claude Code's Stop hook carries no inline reply text, only transcript_path;
+    // fall back to the last assistant turn in the transcript so its responses can
+    // still be spoken.
+    if (!extracted.text) {
+      const fromTranscript = extractAssistantFromTranscript(payload);
+      if (fromTranscript) extracted = { text: fromTranscript, schema: "transcript" };
+    }
 
     if (!extracted.text) {
       return skipResult("missing_assistant_text", "No assistant response text was found.", {
@@ -46,6 +54,7 @@ function parseHookInput(text) {
       sessionName: extractSessionName(payload),
       projectPath: project.projectPath,
       projectName: project.projectName,
+      userMessages: extractUserMessages(payload),
       payload
     };
   } catch (error) {
@@ -106,6 +115,165 @@ function extractProject(payload) {
 function extractSessionName(payload) {
   if (!isPlainObject(payload)) return undefined;
   return firstString(payload.sessionName, payload.session_name, payload.thread_name) || undefined;
+}
+
+// User-side prompt text, captured for display only (never spoken). Codex hands us
+// the prompts inline as "input-messages"; Claude's Stop hook only points at a
+// transcript file, so we read the trailing run of user turns from it. Best-effort:
+// any failure yields [] so a missing/locked transcript never blocks playback.
+function extractUserMessages(payload, deps = {}) {
+  try {
+    if (!isPlainObject(payload)) return [];
+
+    const inline = payload["input-messages"] || payload.input_messages || payload.inputMessages;
+    if (Array.isArray(inline)) {
+      const out = inline
+        .map((entry) => (typeof entry === "string" ? entry.trim() : extractTextFromValue(entry)))
+        .filter(Boolean);
+      if (out.length) return out;
+    }
+
+    const prompt = firstString(
+      payload.prompt,
+      payload.user_prompt,
+      payload.userPrompt,
+      payload.user_message,
+      payload.input
+    );
+    if (prompt) return [prompt];
+
+    const transcriptPath = firstString(payload.transcript_path, payload.transcriptPath);
+    if (transcriptPath) {
+      return readUserMessagesFromTranscript(transcriptPath, deps);
+    }
+
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function readUserMessagesFromTranscript(transcriptPath, deps = {}) {
+  const readFileSync = deps.readFileSync || require("fs").readFileSync;
+  let raw;
+  try {
+    raw = readFileSync(transcriptPath, "utf8");
+  } catch {
+    return [];
+  }
+
+  // Reduce the transcript to meaningful events, collapsing tool roundtrips: a
+  // tool_result-only user entry yields no text (skipped), and tool-use assistant
+  // blocks carry no prose. A real turn looks like one human prompt followed by the
+  // assistant working (often several prose + tool entries) before its final reply.
+  const seq = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const role = obj.type || (isPlainObject(obj.message) ? obj.message.role : undefined);
+    if (role === "assistant") {
+      seq.push({ role: "assistant" });
+    } else if (role === "user") {
+      if (obj.isMeta || obj.isVisibleInTranscript === false) continue;
+      const text = extractUserTextFromTranscriptEntry(obj);
+      if (text) seq.push({ role: "user", text });
+    }
+  }
+
+  // Skip every trailing assistant entry (the just-finished reply plus any
+  // intermediate prose/tool turns), then take the contiguous run of real user
+  // prompts that started this turn. Using the whole trailing assistant block --
+  // not just the last entry -- keeps the prompt attached even when the assistant
+  // wrote prose or ran tools mid-turn.
+  let i = seq.length - 1;
+  while (i >= 0 && seq[i].role === "assistant") i -= 1;
+  const out = [];
+  for (; i >= 0; i -= 1) {
+    if (seq[i].role !== "user") break;
+    out.unshift(seq[i].text);
+  }
+  return out;
+}
+
+// Pull the most recent assistant reply text out of a Claude Code transcript
+// (JSONL). The Stop hook fires right after the turn is written, so the last
+// assistant entry with text is the reply we want to speak. Tool-use/result blocks
+// are ignored; only the prose is kept. Best-effort: any failure yields "".
+function extractAssistantFromTranscript(payload, deps = {}) {
+  try {
+    if (!isPlainObject(payload)) return "";
+    const transcriptPath = firstString(payload.transcript_path, payload.transcriptPath);
+    if (!transcriptPath) return "";
+
+    const readFileSync = deps.readFileSync || require("fs").readFileSync;
+    let raw;
+    try {
+      raw = readFileSync(transcriptPath, "utf8");
+    } catch {
+      return "";
+    }
+
+    let lastText = "";
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let obj;
+      try {
+        obj = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const role = obj.type || (isPlainObject(obj.message) ? obj.message.role : undefined);
+      if (role !== "assistant") continue;
+      const message = isPlainObject(obj.message) ? obj.message : obj;
+      const text = extractAssistantTextFromTranscriptEntry(message.content);
+      if (text) lastText = text;
+    }
+    return lastText;
+  } catch {
+    return "";
+  }
+}
+
+function extractAssistantTextFromTranscriptEntry(content) {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+
+  const parts = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part.trim());
+      continue;
+    }
+    if (!isPlainObject(part)) continue;
+    if (part.type === "tool_use" || part.type === "tool_result" || part.type === "thinking")
+      continue;
+    if (typeof part.text === "string") parts.push(part.text.trim());
+  }
+  return parts.filter(Boolean).join("\n\n").trim();
+}
+
+function extractUserTextFromTranscriptEntry(obj) {
+  const message = isPlainObject(obj.message) ? obj.message : obj;
+  const content = message.content;
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+
+  const parts = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part.trim());
+      continue;
+    }
+    if (!isPlainObject(part)) continue;
+    if (part.type === "tool_result") continue;
+    if (typeof part.text === "string") parts.push(part.text.trim());
+  }
+  return parts.filter(Boolean).join("\n\n").trim();
 }
 
 function firstString(...values) {
@@ -266,5 +434,7 @@ module.exports = {
   SOURCE_APPS,
   detectSourceApp,
   extractAssistantText,
+  extractAssistantFromTranscript,
+  extractUserMessages,
   parseHookInput
 };

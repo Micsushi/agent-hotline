@@ -5,10 +5,13 @@ const path = require("path");
 const test = require("node:test");
 
 const {
+  buildPs1,
+  defaultHookCommand,
   installHooks,
   installSkills,
   managedInstructionBlock,
   parseArgs,
+  toPowerShellSingleQuoted,
   upsertManagedBlock
 } = require("../src/installer");
 
@@ -51,6 +54,35 @@ test("installHooks supports all harnesses in non-interactive mode", () => {
   const ps1 = readText(path.join(home, ".codex", "hooks", "agent-hotline-stop.ps1"));
   assert.match(ps1, /agent-hotline hook/);
   assert.match(ps1, /cmd\.exe \/d \/s \/c/);
+});
+
+test("buildPs1 embeds the hook command as a parseable PowerShell literal", () => {
+  // The real default command carries both double quotes and Windows backslashes:
+  //   node "C:\...\agent-hotline.js" hook
+  // The old code used JSON.stringify here, emitting `"node \"C:\\...\" hook"`,
+  // which is a PowerShell PARSE error (backslash is not its escape char). The
+  // script then died before its try/catch and silently enqueued nothing.
+  const ps1 = buildPs1({ source: "claude", schema: "assistant_response" });
+
+  // Must use single-quoted literal form, never the JSON backslash-escape form.
+  assert.ok(!ps1.includes('\\"'), "ps1 must not contain JSON-escaped quotes");
+  const cmd = defaultHookCommand();
+  assert.ok(
+    ps1.includes(`$hookCommand = '${cmd}'`),
+    "hook command must be a single-quoted PowerShell literal"
+  );
+
+  // The embedded command line round-trips verbatim out of the single quotes.
+  const match = ps1.match(/\$hookCommand = '([^]*?)'\r?\n/);
+  assert.ok(match, "hook command assignment line is present");
+  assert.equal(match[1].replace(/''/g, "'"), cmd);
+});
+
+test("toPowerShellSingleQuoted escapes embedded single quotes by doubling", () => {
+  assert.equal(toPowerShellSingleQuoted("plain"), "'plain'");
+  assert.equal(toPowerShellSingleQuoted(`a'b`), "'a''b'");
+  // Backslashes and double quotes are taken verbatim -- the whole point.
+  assert.equal(toPowerShellSingleQuoted('node "C:\\x\\y.js"'), `'node "C:\\x\\y.js"'`);
 });
 
 test("installHooks merges without duplicating existing hook entries", () => {

@@ -22,6 +22,19 @@ function defaultHookCommand() {
   return `node "${path.join(packageRoot(), "bin", "agent-hotline.js")}" hook`;
 }
 
+// Embed an arbitrary string into the generated .ps1 as a PowerShell single-quoted
+// literal. Single quotes take their contents verbatim -- no backslash or
+// double-quote processing -- so the only escaping needed is doubling embedded
+// single quotes. This is the ONLY supported way to inline a value into the ps1.
+// Never use JSON.stringify() for this: its \" and \\ escapes are JSON syntax, not
+// PowerShell (which escapes with backticks), so a Windows command like
+// `node "C:\path\x.js" hook` becomes `"node \"C:\\path\\x.js\" hook"`, which
+// PowerShell fails to PARSE -- the script dies before its try/catch and never
+// runs. That class of bug is impossible once everything routes through here.
+function toPowerShellSingleQuoted(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
 function skillSourcePath() {
   return path.join(packageRoot(), "skills", SKILL_NAME, "SKILL.md");
 }
@@ -103,12 +116,17 @@ function buildPs1({ source, schema, hookCommand = defaultHookCommand() }) {
     ``,
     `  $payload = $inputJson | ConvertFrom-Json`,
     `  $assistantText = $payload.last_assistant_message`,
-    `  if ([string]::IsNullOrWhiteSpace($assistantText)) { exit 0 }`,
+    `  $transcriptPath = $payload.transcript_path`,
+    // Codex hands us the reply text inline (last_assistant_message); Claude Code's
+    // Stop hook only points at a transcript file, so the Node parser reads the
+    // last assistant turn from transcript_path. Bail only when we have neither.
+    `  if ([string]::IsNullOrWhiteSpace($assistantText) -and [string]::IsNullOrWhiteSpace($transcriptPath)) { exit 0 }`,
     ``,
     `  $normalizedJson = @{`,
     `    source = "${source}"`,
     `    hook_event_name = "Stop"`,
     `    ${responseKey} = @{ text = $assistantText }`,
+    `    transcript_path = $transcriptPath`,
     `    session_id = $payload.session_id`,
     `    thread_id = $payload.thread_id`,
     `    thread_name = $payload.thread_name`,
@@ -120,7 +138,7 @@ function buildPs1({ source, schema, hookCommand = defaultHookCommand() }) {
     ``,
     `  $hookCommand = $env:AGENT_HOTLINE_HOOK_CMD`,
     `  if ([string]::IsNullOrWhiteSpace($hookCommand)) {`,
-    `    $hookCommand = ${JSON.stringify(hookCommand)}`,
+    `    $hookCommand = ${toPowerShellSingleQuoted(hookCommand)}`,
     `  }`,
     ``,
     `  $normalizedJson | cmd.exe /d /s /c $hookCommand`,
@@ -328,6 +346,7 @@ function parseArgs(argv) {
 
 module.exports = {
   SKILL_NAME,
+  buildPs1,
   defaultHookCommand,
   defaultHome,
   harnessDefinitions,
@@ -338,5 +357,6 @@ module.exports = {
   parseArgs,
   repoRoot,
   skillSourcePath,
+  toPowerShellSingleQuoted,
   upsertManagedBlock
 };

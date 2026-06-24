@@ -249,13 +249,16 @@ test("audio-cache list reports project info and deletes by project", async () =>
     const list = await (await fetch(`${baseUrl}/api/audio-cache`)).json();
     const alpha = list.entries.find((e) => e.itemId === "p1");
     assert.equal(alpha.projectName, "alpha");
-    assert.equal(alpha.projectKey, "C:/repos/alpha");
+    // projectKey is the canonicalized path (separators stripped, lowercased) so a
+    // folder in any slash/case shape collapses to one project. Delete-by-project
+    // must accept that exact same key -- so reuse the value the list returned.
+    assert.equal(alpha.projectKey, "c:reposalpha");
     const direct = list.entries.find((e) => e.itemId === "d1");
     assert.equal(direct.projectKey, "direct:Claude");
 
     // Delete the whole alpha project -> removes p1 + p2, leaves the direct one.
     const removed = await (
-      await fetch(`${baseUrl}/api/audio-cache?project=${encodeURIComponent("C:/repos/alpha")}`, {
+      await fetch(`${baseUrl}/api/audio-cache?project=${encodeURIComponent(alpha.projectKey)}`, {
         method: "DELETE"
       })
     ).json();
