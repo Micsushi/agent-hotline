@@ -5,8 +5,9 @@ const path = require("path");
 const APP_NAME = "Agent Hotline";
 const SETTINGS_FILE = "settings.json";
 const READ_BEHAVIORS = new Set(["manual", "auto"]);
-const TTS_ENGINES = new Set(["webview", "kokoro"]);
+const TTS_ENGINES = new Set(["webview", "kokoro", "kokoro-ts"]);
 const NOTIFICATION_OPENS = new Set(["full", "mini"]);
+const AUDIO_CACHE_LIMIT_MAX_MB = 100000;
 
 const DEFAULT_SETTINGS = Object.freeze({
   readBehavior: "manual",
@@ -26,9 +27,11 @@ const DEFAULT_SETTINGS = Object.freeze({
   }),
   codexEnabled: true,
   claudeEnabled: true,
+  antigravityEnabled: true,
   notifyOnNewReply: false,
   notificationOpens: "full",
-  highlightSpokenText: false
+  highlightSpokenText: false,
+  audioCacheLimitMb: 1024
 });
 
 function getDefaultDataDir(env = process.env, platform = process.platform) {
@@ -103,11 +106,18 @@ function normalizeSettings(input) {
     },
     codexEnabled: booleanOrDefault(source.codexEnabled, defaults.codexEnabled),
     claudeEnabled: booleanOrDefault(source.claudeEnabled, defaults.claudeEnabled),
+    antigravityEnabled: booleanOrDefault(source.antigravityEnabled, defaults.antigravityEnabled),
     notifyOnNewReply: booleanOrDefault(source.notifyOnNewReply, defaults.notifyOnNewReply),
     notificationOpens: NOTIFICATION_OPENS.has(source.notificationOpens)
       ? source.notificationOpens
       : defaults.notificationOpens,
-    highlightSpokenText: booleanOrDefault(source.highlightSpokenText, defaults.highlightSpokenText)
+    highlightSpokenText: booleanOrDefault(source.highlightSpokenText, defaults.highlightSpokenText),
+    audioCacheLimitMb: numberInRangeOrDefault(
+      source.audioCacheLimitMb,
+      defaults.audioCacheLimitMb,
+      10,
+      AUDIO_CACHE_LIMIT_MAX_MB
+    )
   };
 }
 
@@ -168,6 +178,7 @@ function createSettingsStore(options = {}) {
 
 module.exports = {
   DEFAULT_SETTINGS,
+  AUDIO_CACHE_LIMIT_MAX_MB,
   READ_BEHAVIORS: Array.from(READ_BEHAVIORS),
   TTS_ENGINES: Array.from(TTS_ENGINES),
   createSettingsStore,

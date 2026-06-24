@@ -1,6 +1,4 @@
-// Headings may arrive as plain "Spoken:", markdown bold "**Spoken:**", or a
-// markdown heading "## Spoken" - tolerate all, alone on their own line.
-const SPOKEN_HEADING =
+﻿const SPOKEN_HEADING =
   /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*|__)?[ \t]*Spoken[ \t]*:?[ \t]*(?:\*\*|__)?[ \t]*$/imu;
 const SECTION_HEADING =
   /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*|__)?[ \t]*(?:Displayed|Display|Details|Detail|Code|Commands?|Logs?|Output)[ \t]*:?[ \t]*(?:\*\*|__)?[ \t]*$/imu;
@@ -21,8 +19,6 @@ function filterSpeakableText(input) {
 
   const spoken = extractSpokenSection(input);
   if (spoken) {
-    // The author already chose what to say, so read the whole section instead of
-    // trimming to the first few sentences like we do for unstructured prose.
     const text = styleSpokenText(normalizeSpeakableText(removeUnsafeBlocks(spoken)), {
       maxSentences: 0
     });
@@ -98,17 +94,16 @@ function removeUnsafeBlocks(input) {
   return stripInlineMarkdown(output.join("\n").replace(INLINE_CODE, "$1"));
 }
 
-// Remove markdown punctuation so TTS never speaks "asterisk", "underscore", etc.
 function stripInlineMarkdown(input) {
   return input
     .replace(/`+/g, "")
-    .replace(/(\*\*|__)(.*?)\1/g, "$2") // bold -> inner text
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
     .replace(/\*\*|__/g, "")
     .replace(/~~/g, "")
     .replace(/\*/g, "")
     .replace(/^[ \t]*#{1,6}[ \t]*/gm, "")
     .replace(/^[ \t]*>[ \t]?/gm, "")
-    .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?]|$)/g, "$1$2"); // _italic_ -> italic
+    .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?]|$)/g, "$1$2");
 }
 
 function shouldSkipLine(line) {

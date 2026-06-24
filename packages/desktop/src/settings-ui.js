@@ -1,11 +1,12 @@
 import { getKokoroVoices } from "./tts-kokoro.js";
+import { getKokoroTimestampedVoices } from "./tts-kokoro-timestamped.js";
 
 const READ_BEHAVIORS = new Set(["manual", "auto"]);
-const TTS_ENGINES = new Set(["webview", "kokoro"]);
+const TTS_ENGINES = new Set(["webview", "kokoro", "kokoro-ts"]);
+
+const KOKORO_ENGINES = new Set(["kokoro", "kokoro-ts"]);
 const SKIP_RULES = ["codeBlocks", "diffs", "logs", "tables", "json", "longBulletLists"];
 
-// Curated Kokoro-82M v1.0 voices. The full set is read from the model once it
-// loads; this list keeps the dropdown useful before the first warm-up.
 const KOKORO_VOICES = [
   "af_heart",
   "af_bella",
@@ -147,8 +148,13 @@ function setSelectOptions(select, settings) {
 
 function setKokoroVoiceOptions(select, settings) {
   const current = settings.kokoroVoice || "af_heart";
-  const loaded = getKokoroVoices();
-  const values = loaded.length > 0 ? loaded : KOKORO_VOICES;
+  let values;
+  if (settings.engine === "kokoro-ts") {
+    values = getKokoroTimestampedVoices();
+  } else {
+    const loaded = getKokoroVoices();
+    values = loaded.length > 0 ? loaded : KOKORO_VOICES;
+  }
   const all = [...new Set([...values, current])];
 
   select.replaceChildren(
@@ -196,8 +202,6 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
 
   let currentSettings = normalizeSettings();
   let isRendering = false;
-  // While the user is actively dragging a slider, the 1s poll's render() must
-  // not snap the control back to the saved value (caused the slider to jiggle).
   let draggingRate = false;
   let draggingVolume = false;
 
@@ -243,14 +247,10 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
     setSelectOptions(voice, currentSettings);
     setKokoroVoiceOptions(kokoroVoice, currentSettings);
 
-    const usingKokoro = currentSettings.engine === "kokoro";
+    const usingKokoro = KOKORO_ENGINES.has(currentSettings.engine);
     voice.closest(".field-row").hidden = usingKokoro;
     kokoroVoiceRow.hidden = !usingKokoro;
-    // Do not warm the model here. TTS must only start on an explicit user action
-    // (clicking Read), so Kokoro loads lazily on first playback instead.
 
-    // Skip controls the user is mid-drag on so a background poll never fights
-    // the live adjustment.
     if (!draggingRate) {
       rate.value = String(currentSettings.rate);
       rateValue.value = formatRate(currentSettings.rate);

@@ -61,9 +61,11 @@ test("settings persist after edit and reload", () => {
     },
     codexEnabled: false,
     claudeEnabled: true,
+    antigravityEnabled: true,
     notifyOnNewReply: false,
     notificationOpens: "full",
-    highlightSpokenText: false
+    highlightSpokenText: false,
+    audioCacheLimitMb: 1024
   });
 });
 
