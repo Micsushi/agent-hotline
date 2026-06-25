@@ -215,7 +215,45 @@ function testMissingTranscriptYieldsNoUserMessages() {
   assert.deepEqual(messages, []);
 }
 
+function testProjectResolvesToRepoRootFromSubdir() {
+  const repoRoot = "C:\\Users\\me\\Documents\\Github\\agent-hotline";
+  const subdir = path.join(repoRoot, "packages", "desktop");
+  const gitMarker = path.join(repoRoot, ".git");
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "claude",
+      session_id: "abcdef12-3456-7890",
+      cwd: subdir,
+      assistant_response: { text: "Done." }
+    }),
+    { existsSync: (p) => p === gitMarker }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.projectName, "agent-hotline");
+  assert.equal(result.projectPath, repoRoot);
+  assert.equal(result.threadLabel, "agent-hotline  -  abcdef12");
+}
+
+function testProjectFallsBackToCwdBasenameWithoutMarker() {
+  const subdir = "C:\\Users\\me\\Documents\\Github\\agent-hotline\\packages\\desktop";
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "claude",
+      cwd: subdir,
+      assistant_response: { text: "Done." }
+    }),
+    { existsSync: () => false }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.projectName, "desktop");
+  assert.equal(result.projectPath, subdir);
+}
+
 const tests = [
+  testProjectResolvesToRepoRootFromSubdir,
+  testProjectFallsBackToCwdBasenameWithoutMarker,
   testCodexFixturesParseAssistantText,
   testCodexInputMessagesBecomeUserMessages,
   testClaudeUserMessagesReadFromTranscript,

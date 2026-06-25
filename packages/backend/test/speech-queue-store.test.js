@@ -171,7 +171,37 @@ function testThreadFieldsStoredAndReplayedById() {
   assert.equal(store.replayItem("does-not-exist"), null);
 }
 
+function testProjectRootMigrationOnLoad() {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agent-hotline-repo-"));
+  fs.mkdirSync(path.join(repoRoot, ".git"));
+  const subdir = path.join(repoRoot, "packages", "desktop");
+  fs.mkdirSync(subdir, { recursive: true });
+  const filePath = path.join(repoRoot, "speech-queue.json");
+
+  const first = createSpeechQueueStore({
+    filePath,
+    now: createClock(),
+    idGenerator: createIds(["drifted"])
+  });
+  first.enqueue(sampleItem({ projectPath: subdir, projectName: "desktop" }));
+
+  // Restart: load-time migration should collapse the subdir path onto the repo root.
+  const restarted = createSpeechQueueStore({
+    filePath,
+    now: createClock(),
+    idGenerator: createIds(["after"])
+  });
+  const latest = restarted.getLatest();
+  assert.equal(latest.projectPath, repoRoot);
+  assert.equal(latest.projectName, path.basename(repoRoot));
+
+  // Persisted, so a second restart is a no-op (idempotent).
+  const persisted = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  assert.equal(persisted.items[0].projectPath, repoRoot);
+}
+
 const tests = [
+  testProjectRootMigrationOnLoad,
   testDefaultRuntimeFile,
   testQueueLifecycle,
   testPersistenceAndReplayAfterRestart,

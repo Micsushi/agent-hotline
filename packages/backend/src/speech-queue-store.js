@@ -3,6 +3,17 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 
+const { resolveProjectRoot } = require("./hook-input-parser");
+
+function pathBasename(value) {
+  return (
+    String(value)
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() || undefined
+  );
+}
+
 const SOURCE_APPS = new Set(["Codex", "Claude", "Antigravity"]);
 const STATUSES = new Set(["pending", "playing", "played", "skipped"]);
 
@@ -62,11 +73,31 @@ function createSpeechQueueStore(options = {}) {
   const idGenerator = options.idGenerator || createDefaultId;
 
   let state = loadState();
+  migrateProjectRoots();
 
   function loadState() {
     const data = safeReadJson(filePath);
     const items = Array.isArray(data.items) ? data.items.filter(isValidPersistedItem) : [];
     return { items };
+  }
+
+  // Self-heal items whose projectPath points into a subdirectory of a repo (a
+  // result of shell cwd drift before the parser resolved to repo root). Collapse
+  // them onto the enclosing repo root so subdir work regroups under the real
+  // project. Only rewrites when a repo marker is actually found on disk, so
+  // missing/foreign paths are left untouched. Persists once if anything changed.
+  function migrateProjectRoots() {
+    let changed = false;
+    for (const item of state.items) {
+      if (!item.projectPath) continue;
+      const root = resolveProjectRoot(item.projectPath);
+      if (root && root !== item.projectPath) {
+        item.projectPath = root;
+        item.projectName = pathBasename(root);
+        changed = true;
+      }
+    }
+    if (changed) persist();
   }
 
   function persist() {

@@ -1,6 +1,9 @@
 node_modules/
 package-lock.json
 
+# Runtime data + debug captures (rewritten unformatted at runtime)
+packages/backend/data/
+
 packages/desktop/dist/
 packages/desktop/public/config.json
 packages/desktop/src-tauri/gen/

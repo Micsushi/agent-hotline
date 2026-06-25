@@ -5,7 +5,7 @@
   UNKNOWN: "Unknown"
 });
 
-function parseHookInput(text) {
+function parseHookInput(text, deps = {}) {
   if (typeof text !== "string") {
     return skipResult("invalid_input", "Hook input must be a string.");
   }
@@ -40,8 +40,8 @@ function parseHookInput(text) {
       });
     }
 
-    const thread = extractThread(payload, sourceApp);
-    const project = extractProject(payload);
+    const thread = extractThread(payload, sourceApp, deps);
+    const project = extractProject(payload, deps);
 
     return {
       ok: true,
@@ -66,7 +66,7 @@ function parseHookInput(text) {
   }
 }
 
-function extractThread(payload, sourceApp) {
+function extractThread(payload, sourceApp, deps = {}) {
   if (!isPlainObject(payload)) {
     return { threadId: undefined, threadLabel: undefined };
   }
@@ -82,12 +82,7 @@ function extractThread(payload, sourceApp) {
     ) || undefined;
 
   const cwd = firstString(payload.cwd, payload.workspace, payload.project_dir);
-  const folder = cwd
-    ? cwd
-        .replace(/[\\/]+$/, "")
-        .split(/[\\/]/)
-        .pop()
-    : "";
+  const folder = cwd ? pathBasename(resolveProjectRoot(cwd, deps)) : "";
   const shortId = threadId ? threadId.slice(0, 8) : "";
   const labelParts = [folder || sourceApp];
   if (shortId) labelParts.push(shortId);
@@ -96,7 +91,48 @@ function extractThread(payload, sourceApp) {
   return { threadId, threadLabel };
 }
 
-function extractProject(payload) {
+// Repo-root markers. The hook only reports the shell cwd, which drifts into
+// subdirectories during a session (e.g. running a build from packages/desktop).
+// Naively using the cwd basename then splinters one repo into several phantom
+// "projects". Resolving up to the enclosing repo root keeps subdir work grouped
+// under the real project.
+const PROJECT_ROOT_MARKERS = [".git"];
+
+function pathBasename(value) {
+  return (
+    String(value)
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() || undefined
+  );
+}
+
+function resolveProjectRoot(cwd, deps = {}) {
+  const existsSync = deps.existsSync || require("fs").existsSync;
+  const path = require("path");
+  const normalized = String(cwd).replace(/[\\/]+$/, "");
+  if (!normalized) return normalized;
+
+  let current = normalized;
+  for (let depth = 0; depth < 64; depth += 1) {
+    for (const marker of PROJECT_ROOT_MARKERS) {
+      let hit = false;
+      try {
+        hit = existsSync(path.join(current, marker));
+      } catch {
+        hit = false;
+      }
+      if (hit) return current;
+    }
+    const parent = path.dirname(current);
+    if (!parent || parent === current) break;
+    current = parent;
+  }
+  // No marker found (path missing, or not under a repo): keep the cwd as-is.
+  return normalized;
+}
+
+function extractProject(payload, deps = {}) {
   if (!isPlainObject(payload)) {
     return { projectPath: undefined, projectName: undefined };
   }
@@ -104,12 +140,8 @@ function extractProject(payload) {
   if (!cwd) {
     return { projectPath: undefined, projectName: undefined };
   }
-  const projectName =
-    cwd
-      .replace(/[\\/]+$/, "")
-      .split(/[\\/]/)
-      .pop() || undefined;
-  return { projectPath: cwd, projectName };
+  const root = resolveProjectRoot(cwd, deps);
+  return { projectPath: root, projectName: pathBasename(root) };
 }
 
 function extractSessionName(payload) {
@@ -436,5 +468,6 @@ module.exports = {
   extractAssistantText,
   extractAssistantFromTranscript,
   extractUserMessages,
+  resolveProjectRoot,
   parseHookInput
 };

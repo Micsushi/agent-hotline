@@ -9,6 +9,35 @@ const KOKORO_SAFE_SPEED = 1.5;
 
 const STRETCH_LEADIN_SEC = 0.2;
 
+// High-rate audio quality. Above LIVE_INSTANT_MAX the WSOLA pitch-compensation
+// ratio (1 / playbackRate inside the SoundTouch worklet) gets large enough to
+// smear formants and starve the real-time buffer (dropouts). So for higher
+// rates we offload part of the speed-up to Kokoro's native phoneme-duration
+// speed control and let WSOLA cover only the residual. The native part is
+// quantized into a few bands so the cache holds few variants and the live
+// slider only triggers a regeneration when it crosses a band boundary.
+const LIVE_INSTANT_MAX = 2; // <= this: generate at 1x, WSOLA does all of it (instant slider)
+const NATIVE_SPEED_CAP = 2; // never ask Kokoro to natively speak faster than this
+const GEN_SPEED_STEP = 0.25; // quantize native gen speed to these increments
+
+// Split a target playback rate into a native Kokoro generation speed and a
+// residual real-time stretch rate. canStretch false => fall back to the old
+// native-only path (capped, no WSOLA available).
+function planSpeed(rate, canStretch) {
+  const target = clampNumber(Number(rate), 1, RATE_MIN, RATE_MAX);
+  if (!canStretch) {
+    return { genSpeed: Math.min(target, KOKORO_SAFE_SPEED), stretchRate: 1 };
+  }
+  if (target <= LIVE_INSTANT_MAX) {
+    return { genSpeed: 1, stretchRate: target };
+  }
+  // Geometric split: share the speed-up evenly across both stages so neither
+  // hits an extreme ratio, then quantize the native part into bands.
+  const ideal = Math.min(NATIVE_SPEED_CAP, Math.sqrt(target));
+  const genSpeed = Math.max(1, Math.round(ideal / GEN_SPEED_STEP) * GEN_SPEED_STEP);
+  return { genSpeed, stretchRate: target / genSpeed };
+}
+
 const SPEECH_STRETCH_PARAMS = {
   sequenceMs: 40,
   seekWindowMs: 15,
@@ -260,6 +289,51 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     baseCtxTime = context.currentTime;
   }
 
+  // Wraps generated samples in an AudioBuffer + gain graph and starts playback.
+  // Shared by initial play and the band-crossing speed regeneration. `plan`
+  // carries { genSpeed, stretchRate, useStretch }; offsetFraction resumes from a
+  // proportional position; resume controls whether the context is woken (kept
+  // suspended when re-installing while paused).
+  async function installGeneratedBuffer(
+    generated,
+    settings,
+    plan,
+    { offsetFraction = 0, resume = true } = {}
+  ) {
+    const context = audioContext;
+    if (resume && context.state === "suspended") await context.resume();
+
+    const useStretch = Boolean(plan.useStretch && StretchNodeClass);
+    const leadInSamples = useStretch ? Math.round(generated.sampleRate * STRETCH_LEADIN_SEC) : 0;
+    const buffer = context.createBuffer(
+      1,
+      leadInSamples + generated.samples.length,
+      generated.sampleRate
+    );
+    buffer.copyToChannel(generated.samples, 0, leadInSamples);
+
+    const gain = context.createGain();
+    gain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
+    gain.connect(context.destination);
+
+    activeBuffer = buffer;
+    activeGain = gain;
+    activeGenSpeed = plan.genSpeed;
+    activeLeadInSec = leadInSamples / generated.sampleRate;
+    activeSpeechDuration = generated.samples.length / generated.sampleRate;
+    activeSegments = Array.isArray(generated.segments) ? generated.segments : [];
+    activeWordAccurate = Boolean(generated.wordAccurate);
+    activeUseStretch = useStretch;
+    activeStretchRate = useStretch ? plan.stretchRate : 1;
+
+    const offsetSec = Math.min(
+      activeSpeechDuration,
+      Math.max(0, Number(offsetFraction) * activeSpeechDuration)
+    );
+    const includeLeadIn = offsetSec <= 0.0001;
+    connectSourceFrom(includeLeadIn ? 0 : offsetSec, includeLeadIn);
+  }
+
   function notify(message) {
     if (typeof onUpdate === "function") onUpdate(message);
   }
@@ -403,25 +477,17 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     if (playbackToken !== token) return;
     const { engine, voice, rawGenerate } = resolveKokoro(settings);
     const text = normalizeSpeakableText(playingItem);
-    let genSpeed;
-    let stretchRate;
+    const { genSpeed, stretchRate } = planSpeed(rate, canStretch);
     let generated = null;
     try {
-      if (canStretch) {
-        genSpeed = 1;
-        stretchRate = rate;
-        notify("Generating natural Kokoro speech...");
-        generated = await getAudio(backendUrl, { itemId: playingItem.id, engine, voice }, () =>
-          withGenLock(() => rawGenerate(text, voice, 1))
-        );
-      } else {
-        genSpeed = Math.min(rate, KOKORO_SAFE_SPEED);
-        stretchRate = 1;
-        notify(
-          `Generating natural Kokoro speech${genSpeed > 1 ? ` at ${genSpeed.toFixed(2)}x` : ""}...`
-        );
-        generated = await withGenLock(() => rawGenerate(text, voice, genSpeed));
-      }
+      notify(
+        `Generating natural Kokoro speech${genSpeed > 1 ? ` at ${genSpeed.toFixed(2)}x` : ""}...`
+      );
+      generated = await getAudio(
+        backendUrl,
+        { itemId: playingItem.id, engine, voice, speed: genSpeed },
+        () => withGenLock(() => rawGenerate(text, voice, genSpeed))
+      );
     } catch (error) {
       if (playbackToken !== token) return;
       activeItem = null;
@@ -436,31 +502,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     if (playbackToken !== token) return;
 
     try {
-      if (context.state === "suspended") await context.resume();
-
-      const leadInSamples =
-        useStretch && StretchNodeClass ? Math.round(generated.sampleRate * STRETCH_LEADIN_SEC) : 0;
-      const buffer = context.createBuffer(
-        1,
-        leadInSamples + generated.samples.length,
-        generated.sampleRate
-      );
-      buffer.copyToChannel(generated.samples, 0, leadInSamples);
-
-      const gain = context.createGain();
-      gain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
-      gain.connect(context.destination);
-
-      activeBuffer = buffer;
-      activeGain = gain;
-      activeGenSpeed = genSpeed;
-      activeLeadInSec = leadInSamples / generated.sampleRate;
-      activeSpeechDuration = generated.samples.length / generated.sampleRate;
-      activeSegments = Array.isArray(generated.segments) ? generated.segments : [];
-      activeWordAccurate = Boolean(generated.wordAccurate);
-      activeUseStretch = Boolean(useStretch && StretchNodeClass);
-      activeStretchRate = activeUseStretch ? stretchRate : 1;
-      connectSourceFrom(0, true);
+      await installGeneratedBuffer(generated, settings, { genSpeed, stretchRate, useStretch });
       setPlaybackState("speaking");
       notify(
         `Reading from ${playingItem.sourceApp} with Kokoro${useStretch ? " (live speed)" : ""}.`
@@ -505,6 +547,70 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     }
     if (activeGain && Number.isFinite(Number(settings.volume))) {
       activeGain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
+    }
+  }
+
+  // Commit a target rate. Within the same native-gen band this just live-adjusts
+  // the WSOLA stretch (instant). Crossing a band boundary requires regenerating
+  // the audio at the new native Kokoro speed; that is done here while preserving
+  // the current position and play/pause state. Call on slider release, not drag.
+  async function changeSpeed(rate, settings = {}) {
+    if (!activeBuffer || !activeItem) return;
+    const target = clampNumber(Number(rate), 1, RATE_MIN, RATE_MAX);
+    const canStretch = Boolean(StretchNodeClass);
+    const plan = planSpeed(target, canStretch);
+
+    if (Math.abs(plan.genSpeed - activeGenSpeed) < 0.001) {
+      applyLiveSettings({ rate: target, volume: settings.volume });
+      return;
+    }
+
+    const context = getAudioContext();
+    if (!context) return;
+
+    const token = playbackToken + 1;
+    playbackToken = token;
+    const wasPaused = playbackState === "paused";
+    const fraction = activeSpeechDuration > 0 ? getCurrentSpeechSec() / activeSpeechDuration : 0;
+    const { engine, voice, rawGenerate } = resolveKokoro(settings);
+    const text = normalizeSpeakableText(activeItem);
+    setPlaybackState("loading");
+
+    let generated = null;
+    try {
+      generated = await getAudio(
+        backendUrl,
+        { itemId: activeItem.id, engine, voice, speed: plan.genSpeed },
+        () => withGenLock(() => rawGenerate(text, voice, plan.genSpeed))
+      );
+    } catch (error) {
+      if (playbackToken !== token) return;
+      notify(`Could not change speed: ${error.message}`);
+      setPlaybackState(wasPaused ? "paused" : "speaking");
+      return;
+    }
+    if (playbackToken !== token) return;
+
+    const useStretch = canStretch && Math.abs(plan.stretchRate - 1) > 0.001;
+    releaseActiveAudio();
+    try {
+      await installGeneratedBuffer(
+        generated,
+        settings,
+        { genSpeed: plan.genSpeed, stretchRate: plan.stretchRate, useStretch },
+        { offsetFraction: fraction, resume: !wasPaused }
+      );
+      if (wasPaused) {
+        await context.suspend();
+        setPlaybackState("paused");
+      } else {
+        setPlaybackState("speaking");
+      }
+    } catch (error) {
+      releaseActiveAudio();
+      activeItem = null;
+      setPlaybackState("idle");
+      notify(`Speed change failed: ${error.message}`);
     }
   }
 
@@ -679,6 +785,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     replayLatest,
     setMute,
     applyLiveSettings,
+    changeSpeed,
     seek,
     replayCurrent,
     getPlaybackPosition,
@@ -693,6 +800,14 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     },
     get isEnded() {
       return playbackState === "ended";
+    },
+    // True when a buffer is loaded and the play head has reached the end,
+    // regardless of whether the state settled on "ended" (it can linger as
+    // speaking/paused through the stretch tail). Lets the play button restart
+    // from the start instead of resuming silence at the end.
+    get isAtEnd() {
+      if (!activeBuffer || activeSpeechDuration <= 0) return false;
+      return getCurrentSpeechSec() >= activeSpeechDuration - 0.05;
     },
     get isLoading() {
       return playbackState === "loading";

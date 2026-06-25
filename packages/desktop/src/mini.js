@@ -226,6 +226,8 @@ playback = createPlaybackController({
 prevButton.addEventListener("click", () => moveSelection(-1));
 nextButton.addEventListener("click", () => moveSelection(1));
 playPauseButton.addEventListener("click", () => {
+  // Reaching the end restarts from the start instead of resuming at the tail.
+  if ((playback.isEnded || playback.isAtEnd) && playback.replayCurrent()) return;
   if (playback.isSpeaking) return playback.pause();
   if (playback.isPaused) return playback.resume();
   playSelected();
@@ -243,7 +245,13 @@ rate.addEventListener("input", () => {
 });
 rate.addEventListener("change", () => {
   draggingRate = false;
-  saveRate(clampNumber(rate.value, 1, 0.2, 4));
+  const value = clampNumber(rate.value, 1, 0.2, 4);
+  saveRate(value);
+  // Commit: crossing a native-gen speed band regenerates; within a band this is
+  // an instant WSOLA adjust. changeSpeed decides based on the current playback.
+  const settings = { ...(latestState?.settings || {}), rate: value };
+  const result = playback.changeSpeed?.(value, settings);
+  if (result?.catch) result.catch(() => {});
 });
 rate.addEventListener("blur", () => (draggingRate = false));
 openButton.addEventListener("click", () => {

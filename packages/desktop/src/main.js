@@ -107,6 +107,7 @@ let lastLatestId = null;
 let seekDragging = false;
 let lastKokoroVoice;
 let lastEngine;
+let lastRate;
 let voiceTrackInit = false;
 let lastDataSig = null;
 let historyView = { level: "messages", projectKey: null, sessionKey: null };
@@ -1095,6 +1096,7 @@ function renderState({ settings, queue }) {
   if (!voiceTrackInit) {
     lastKokoroVoice = settings.kokoroVoice;
     lastEngine = settings.engine;
+    lastRate = settings.rate;
     voiceTrackInit = true;
   }
   const items = speakableItems(queue);
@@ -1178,6 +1180,9 @@ function showError(error) {
   lastButton.disabled = true;
 }
 
+// Returns the id moved to (truthy) or false. Note renderState's playback-follow
+// can snap selectedItemId back to the playing item while audio is live, so
+// callers that act on the move must re-assert the returned id.
 function moveSelection(delta) {
   if (!latestState) return false;
   const items = sessionScopedItems(speakableItems(latestState.queue), selectedItemId);
@@ -1187,7 +1192,7 @@ function moveSelection(delta) {
   if (!next) return false;
   selectedItemId = next.id;
   renderState(latestState);
-  return true;
+  return next.id;
 }
 
 function jumpSelection(edge) {
@@ -1198,7 +1203,7 @@ function jumpSelection(edge) {
   if (!target || target.id === selectedItemId) return false;
   selectedItemId = target.id;
   renderState(latestState);
-  return true;
+  return target.id;
 }
 
 function playSelected() {
@@ -1598,12 +1603,23 @@ settingsUi = initSettingsUi({
   backendUrl: targetUrl,
   onLivePreview: (partial) => playback?.applyLiveSettings(partial),
   onSettingsChanged: (settings) => {
-    playback?.applyLiveSettings(settings);
     if (settings?.mute && (playback?.isSpeaking || playback?.isPaused)) {
       playback.stop("User muted playback.").catch(showError);
     } else {
+      const voiceChanged =
+        settings.kokoroVoice !== lastKokoroVoice || settings.engine !== lastEngine;
       maybeRestartForVoiceChange(settings);
+      // A rate change may cross a native-gen band (needs regen) or stay within
+      // one (live WSOLA adjust); changeSpeed decides. Voice/engine changes already
+      // restart playback above, so skip rate handling then to avoid a double regen.
+      if (!voiceChanged && settings.rate !== lastRate) {
+        const result = playback?.changeSpeed?.(settings.rate, settings);
+        if (result?.catch) result.catch(showError);
+      } else if (!voiceChanged) {
+        playback?.applyLiveSettings(settings);
+      }
     }
+    lastRate = settings?.rate;
     refreshPanel(targetUrl, { quiet: true }).catch(showError);
   }
 });
@@ -1624,19 +1640,32 @@ wireNav(navChats, "chats");
 wireNav(navStorage, "storage");
 wireNav(navSettings, "settings");
 setupManageTab();
-function navAndFollow(moved) {
-  if (moved && playbackActive()) playSelectedOn("preview");
+function navAndFollow(targetId) {
+  if (!targetId || !playbackActive()) return;
+  // Re-assert past the render's playback-follow revert so we play the item the
+  // user navigated to, not the one currently playing.
+  selectedItemId = targetId;
+  playSelectedOn("preview");
 }
 firstButton.addEventListener("click", () => navAndFollow(jumpSelection("first")));
 prevButton.addEventListener("click", () => navAndFollow(moveSelection(-1)));
 nextButton.addEventListener("click", () => navAndFollow(moveSelection(1)));
 lastButton.addEventListener("click", () => navAndFollow(jumpSelection("last")));
 playPauseButton.addEventListener("click", () => {
+  // Reaching the end takes precedence over pause/resume: restart from the start
+  // instead of resuming silence at the tail.
+  if (playback.isEnded || playback.isAtEnd) {
+    highlightSurface = "preview";
+    resetInactiveHighlightSurfaces(
+      "preview",
+      findSelected(speakableItems(latestState?.queue || {}))
+    );
+    if (playback.replayCurrent()) return;
+  }
   if (playback.isSpeaking) return playback.pause();
   if (playback.isPaused) return playback.resume();
   highlightSurface = "preview";
   resetInactiveHighlightSurfaces("preview", findSelected(speakableItems(latestState?.queue || {})));
-  if (playback.isEnded && playback.replayCurrent()) return;
   playSelectedOn("preview");
 });
 muteButton.addEventListener("click", () => {
@@ -1679,7 +1708,9 @@ el("collapse-all")?.addEventListener("click", () => setAllBubblesExpanded(false)
 
 // ---- Modal wiring ----------------------------------------------------------
 function modalMove(delta) {
-  if (!moveSelection(delta)) return;
+  const targetId = moveSelection(delta);
+  if (!targetId) return;
+  selectedItemId = targetId; // re-assert past the render's playback-follow revert
   const item = modalItem();
   if (!item) return;
   markItemRead(item.id);
@@ -1696,11 +1727,15 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && isModalOpen()) closeModal();
 });
 modalPlay?.addEventListener("click", () => {
+  if (playback.isEnded || playback.isAtEnd) {
+    highlightSurface = "modal";
+    resetInactiveHighlightSurfaces("modal", findSelected(speakableItems(latestState?.queue || {})));
+    if (playback.replayCurrent()) return;
+  }
   if (playback.isSpeaking) return playback.pause();
   if (playback.isPaused) return playback.resume();
   highlightSurface = "modal";
   resetInactiveHighlightSurfaces("modal", findSelected(speakableItems(latestState?.queue || {})));
-  if (playback.isEnded && playback.replayCurrent()) return;
   playSelectedOn("modal");
 });
 modalPrev?.addEventListener("click", () => modalMove(-1));

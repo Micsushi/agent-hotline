@@ -1,8 +1,8 @@
 ﻿const MEM_MAX_ENTRIES = 16;
 const memCache = new Map();
 
-function memKey(itemId, engine, voice) {
-  return `${itemId}__${engine}__${voice}`;
+function memKey(itemId, engine, voice, speed = 1) {
+  return `${itemId}__${engine}__${voice}__${Number(speed).toFixed(2)}`;
 }
 
 function memGet(key) {
@@ -165,28 +165,38 @@ export async function storeCached(backendUrl, { itemId, engine, voice }, generat
 
 const inFlight = new Map();
 
-export async function getAudio(backendUrl, { itemId, engine, voice }, generate) {
-  const key = memKey(itemId, engine, voice);
+export async function getAudio(backendUrl, { itemId, engine, voice, speed = 1 }, generate) {
+  const key = memKey(itemId, engine, voice, speed);
 
   const cachedMem = memGet(key);
   if (cachedMem) return cachedMem;
 
   if (inFlight.has(key)) return inFlight.get(key);
 
+  // Only the canonical 1x render is persisted to the backend cache. Sped-up
+  // variants (generated natively for high playback rates) differ in samples and
+  // segment timing, so they live in the in-memory LRU only and regenerate on
+  // demand when a speed band is re-entered.
+  const persistable = Number(speed) === 1;
+
   const promise = (async () => {
-    try {
-      const fromBackend = await fetchBackendCached(backendUrl, itemId, engine, voice);
-      if (fromBackend) {
-        memSet(key, fromBackend);
-        return fromBackend;
-      }
-    } catch {}
+    if (persistable) {
+      try {
+        const fromBackend = await fetchBackendCached(backendUrl, itemId, engine, voice);
+        if (fromBackend) {
+          memSet(key, fromBackend);
+          return fromBackend;
+        }
+      } catch {}
+    }
 
     const generated = await generate();
     memSet(key, generated);
-    try {
-      await storeCached(backendUrl, { itemId, engine, voice }, generated);
-    } catch {}
+    if (persistable) {
+      try {
+        await storeCached(backendUrl, { itemId, engine, voice }, generated);
+      } catch {}
+    }
     return generated;
   })();
 
