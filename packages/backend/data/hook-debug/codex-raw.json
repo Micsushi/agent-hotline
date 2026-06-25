@@ -1,14 +1,9 @@
-﻿{
+{
   "type": "agent-turn-complete",
-  "thread-id": "019efb1c-b77c-7f21-889e-dda25d584996",
-  "turn-id": "019efb37-777f-7bf2-910e-147f4e8126dc",
-  "cwd": "C:\\Users\\sushi\\Documents\\Github\\agent-hotline",
+  "thread-id": "debug-thread",
+  "turn-id": "debug-turn",
+  "cwd": "C:\\Users\\example\\Documents\\Github\\agent-hotline",
   "client": "Codex Desktop",
-  "input-messages": [
-    "this top bar looks out of place can we change the colour and make it better suited coz it kinda duplicates what we already have below it \n",
-    "after your change the top bar buttons does not seem to be working anymore\n",
-    "do the full restart for me\n",
-    "can we make it so the app open to full screen when we click the open\n"
-  ],
-  "last-assistant-message": "Done. The “Open” path now maximizes the main Agent Hotline window when it opens.\n\nChanged:\n- [main.rs](C:/Users/sushi/Documents/Github/agent-hotline/packages/desktop/src-tauri/src/main.rs)\n\nVerified:\n- `cargo check --manifest-path packages/desktop/src-tauri/Cargo.toml`\n- `npm --workspace @agent-hotline/desktop run build:ui`\n\nI also restarted the dev app. Current desktop process is running, with backend/UI listening on `4777` and `4778`."
+  "input-messages": ["Test Agent Hotline hook parsing."],
+  "last-assistant-message": "Spoken:\nAgent Hotline received a sample Codex response.\n\nDisplayed:\nDebug fixture only."
 }

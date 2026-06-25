@@ -2,6 +2,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { createPlaybackController } from "./playback.js";
+import { projectKeyOf, sessionKeyOf } from "./grouping.js";
 
 const DEFAULT_BACKEND_URL = "http://127.0.0.1:4777";
 const QUEUE_POLL_INTERVAL_MS = 1000;
@@ -87,13 +88,28 @@ function selectedItem() {
   return items.find((item) => item.id === selectedId) || items[items.length - 1] || null;
 }
 
+function sessionScopedItems(items, anchorId) {
+  const anchor = items.find((item) => item.id === anchorId);
+  if (!anchor) return items;
+  const projectKey = projectKeyOf(anchor);
+  const sessionKey = sessionKeyOf(anchor);
+  return items.filter(
+    (item) => projectKeyOf(item) === projectKey && sessionKeyOf(item) === sessionKey
+  );
+}
+
+function playbackActive() {
+  return Boolean(playback && (playback.isSpeaking || playback.isPaused || playback.isLoading));
+}
+
 function moveSelection(delta) {
-  const items = speakableItems(latestState?.queue);
+  const items = sessionScopedItems(speakableItems(latestState?.queue), selectedId);
   const index = items.findIndex((item) => item.id === selectedId);
   const next = items[index + delta];
   if (!next) return;
   selectedId = next.id;
   if (latestState) render(latestState);
+  if (playbackActive()) playSelected();
 }
 
 function setStatus(kind) {
@@ -132,9 +148,10 @@ function render(state) {
 
   setStatus(deriveStatus(settings, queue));
 
-  const index = items.findIndex((item) => item.id === (selected && selected.id));
+  const scoped = sessionScopedItems(items, selected && selected.id);
+  const index = scoped.findIndex((item) => item.id === (selected && selected.id));
   prevButton.disabled = index <= 0;
-  nextButton.disabled = index < 0 || index >= items.length - 1;
+  nextButton.disabled = index < 0 || index >= scoped.length - 1;
 
   const speaking = playback?.isSpeaking;
   const paused = playback?.isPaused;

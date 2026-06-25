@@ -52,13 +52,20 @@ export function sessionKeyOf(rec) {
   return rec.sessionKey || rec.threadId || `app:${rec.sourceApp}`;
 }
 
+export function sessionPartsOf(rec) {
+  const hasThread = Boolean(rec.threadId);
+  const id = hasThread ? rec.threadId.slice(0, 8) : "direct";
+  const title = rec.sessionName || (hasThread ? "" : rec.sourceApp || "Direct");
+  return { title, id };
+}
+
 // A session is shown as its chat name followed by the short thread id, so two
 // chats with the same name stay distinguishable.
 export function sessionLabelOf(rec) {
   const id = rec.threadId ? rec.threadId.slice(0, 8) : "";
-  const name = rec.sessionName || "";
-  if (name && id) return `${name} · ${id}`;
-  if (name) return name;
+  const title = rec.sessionName || "";
+  if (title && id) return `${title} · ${id}`;
+  if (title) return title;
   if (id) return id;
   return `${rec.sourceApp} · direct`;
 }
@@ -122,10 +129,16 @@ export function groupByProjectSession(records, { sortBy = "recent", dropUnnamed 
 
     const sessionKey = sessionKeyOf(rec);
     if (!project.sessions.has(sessionKey)) {
-      project.sessions.set(sessionKey, { key: sessionKey, label: sessionLabelOf(rec), items: [] });
+      project.sessions.set(sessionKey, {
+        key: sessionKey,
+        label: sessionLabelOf(rec),
+        parts: sessionPartsOf(rec),
+        items: []
+      });
     }
     const session = project.sessions.get(sessionKey);
     session.label = sessionLabelOf(rec);
+    session.parts = sessionPartsOf(rec);
     session.items.push(rec);
   }
 

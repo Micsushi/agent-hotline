@@ -13,9 +13,10 @@ import {
   deleteCacheProject,
   deleteCacheItem
 } from "./audio-cache.js";
-import { groupByProjectSession, latestCreatedAt } from "./grouping.js";
-import { applyProjectColor, applyOwnerColor } from "./project-colors.js";
+import { groupByProjectSession, latestCreatedAt, projectKeyOf, sessionKeyOf } from "./grouping.js";
+import { applyProjectColor, applyOwnerColor, ownerSolidColor } from "./project-colors.js";
 import { openColorMenu } from "./color-menu.js";
+import { initColumnResize } from "./column-resize.js";
 
 const isTauri = Boolean(window.__TAURI_INTERNALS__);
 
@@ -54,6 +55,7 @@ const itemTime = el("item-time");
 const itemStatus = el("item-status");
 const previewText = el("preview-text");
 const previewMeta = el("preview-meta");
+const nowBar = previewText.closest(".now-bar");
 const seekBar = el("seek-bar");
 const seekCurrent = el("seek-current");
 const seekTotal = el("seek-total");
@@ -200,6 +202,18 @@ const OWNER_CLASS = {
   Mixed: "owner-mixed",
   Unknown: "owner-unknown"
 };
+
+const OWNER_CHIP_TEXT = {
+  Codex: "#5a93cc",
+  Claude: "#f0a98a",
+  Antigravity: "#c9a2f7",
+  Mixed: "#95a0b5",
+  Unknown: "#95a0b5"
+};
+
+function ownerChipTextColor(owner) {
+  return OWNER_CHIP_TEXT[owner] || OWNER_CHIP_TEXT.Unknown;
+}
 
 function ownerBadge(owner, { compact = false } = {}) {
   const span = document.createElement("span");
@@ -377,6 +391,20 @@ function findSelected(items) {
   return items.find((item) => item.id === selectedItemId) || null;
 }
 
+function sessionScopedItems(items, anchorId) {
+  const anchor = items.find((item) => item.id === anchorId);
+  if (!anchor) return items;
+  const projectKey = projectKeyOf(anchor);
+  const sessionKey = sessionKeyOf(anchor);
+  return items.filter(
+    (item) => projectKeyOf(item) === projectKey && sessionKeyOf(item) === sessionKey
+  );
+}
+
+function playbackActive() {
+  return Boolean(playback && (playback.isSpeaking || playback.isPaused || playback.isLoading));
+}
+
 function formatTime(iso) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
@@ -399,6 +427,35 @@ function threadLabel(item) {
   return `${item.sourceApp}  -  direct`;
 }
 
+function sessionTitleParts(session) {
+  const title = session?.parts?.title || session?.label || "Messages";
+  const id = session?.parts?.id || "";
+  return { title, id };
+}
+
+function itemSessionTitleParts(item) {
+  const title = item?.sessionName || item?.sourceApp || "Direct";
+  const id = item?.threadId ? item.threadId.slice(0, 8) : "direct";
+  return { title, id };
+}
+
+function appendSessionTitleParts(parent, { title, id }, { header = false } = {}) {
+  const titleEl = document.createElement("span");
+  titleEl.className = "session-title-text";
+  titleEl.textContent = title;
+  parent.append(titleEl);
+  if (id) {
+    const idEl = document.createElement("span");
+    idEl.className = header ? "session-title-id is-header" : "session-title-id";
+    idEl.textContent = id;
+    parent.append(idEl);
+  }
+}
+
+function appendSessionTitle(parent, session, options = {}) {
+  appendSessionTitleParts(parent, sessionTitleParts(session), options);
+}
+
 function deriveStatus(settings, playerState, selected) {
   if (settings.mute) return "muted";
   if (playerState === "loading") return "loading";
@@ -411,24 +468,49 @@ function deriveStatus(settings, playerState, selected) {
   return "idle";
 }
 
-function renderNowCard(selected) {
+function renderNowCard(selected, statusKind = selected?.status || "idle") {
   if (!selected) {
     sourceApp.className = `owner-badge ${OWNER_CLASS.Unknown}`;
     sourceApp.textContent = "None";
     itemTime.textContent = "";
+    itemTime.className = "now-time";
     itemStatus.textContent = "none";
+    itemStatus.className = "now-status is-idle";
     previewText.textContent = "No speakable text yet.";
+    previewMeta.className = "now-meta";
     previewMeta.textContent = "Waiting for Codex or Claude output.";
+    previewText.style.removeProperty("--owner-color");
+    nowBar?.style.removeProperty("--owner-color");
+    nowBar?.style.removeProperty("--owner-chip-text");
+    delete previewText.dataset.itemId;
     return;
   }
   sourceApp.className = `owner-badge ${OWNER_CLASS[selected.sourceApp] || OWNER_CLASS.Unknown}`;
   sourceApp.textContent = selected.sourceApp;
   itemTime.textContent = formatTime(selected.timestamps?.createdAt);
-  itemStatus.textContent = selected.status;
-  previewText.textContent = selected.speakableText;
-  previewMeta.textContent = selected.replayOf
-    ? "Replay of an earlier item."
-    : threadLabel(selected);
+  itemTime.className = "now-time has-value";
+  itemStatus.textContent = STATUS_LABELS[statusKind] || selected.status || "Idle";
+  itemStatus.className = `now-status is-${statusKind}`;
+  const ownerColor = ownerSolidColor(selected.sourceApp);
+  previewText.style.setProperty("--owner-color", ownerColor);
+  nowBar?.style.setProperty("--owner-color", ownerColor);
+  nowBar?.style.setProperty("--owner-chip-text", ownerChipTextColor(selected.sourceApp));
+  // Keep the active text nodes stable while progress highlighting is mounted.
+  const liveHighlight =
+    previewText.dataset.itemId === selected.id && previewText.querySelector(".spoken-cursor");
+  if (!liveHighlight) {
+    previewText.dataset.itemId = selected.id;
+    previewText.textContent = selected.speakableText;
+  }
+  previewMeta.className = "now-meta session-title now-session-title";
+  previewMeta.replaceChildren();
+  appendSessionTitleParts(previewMeta, itemSessionTitleParts(selected));
+  if (selected.replayOf) {
+    const replay = document.createElement("span");
+    replay.className = "h-badge";
+    replay.textContent = "Replay";
+    previewMeta.append(replay);
+  }
 }
 
 // History groups newest-first; Storage groups largest-first. Both run through
@@ -483,6 +565,7 @@ function buildUserBubble(text, createdAt) {
 function buildAssistantBubble(item) {
   const row = document.createElement("div");
   row.className = "convo-row is-assistant";
+  row.style.setProperty("--owner-color", ownerSolidColor(item.sourceApp));
 
   const bubble = document.createElement("div");
   const classes = ["bubble", "bubble-assistant"];
@@ -491,7 +574,6 @@ function buildAssistantBubble(item) {
   if (isUnread(item)) classes.push("is-unread");
   bubble.className = classes.join(" ");
   bubble.dataset.id = item.id;
-
   const play = document.createElement("button");
   play.type = "button";
   play.className = "bubble-play";
@@ -505,7 +587,7 @@ function buildAssistantBubble(item) {
   body.className = "bubble-body";
   body.textContent = item.speakableText;
 
-  bubble.append(buildBubbleTail(), play, body);
+  bubble.append(buildBubbleTail(), play, body, buildNowPlayingIcon());
   row.append(bubble);
 
   const extras = [];
@@ -518,6 +600,55 @@ function buildAssistantBubble(item) {
   if (isUnread(item)) extras.push(unreadDot(1));
   row.append(buildTimeOut(item.timestamps?.createdAt, extras));
   return row;
+}
+
+function buildNowPlayingIcon() {
+  const icon = document.createElement("span");
+  icon.className = "now-playing-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = ICON_SPEAKER;
+  return icon;
+}
+
+function nowPlayingItem() {
+  if (!playback) return null;
+  if (!playback.isSpeaking && !playback.isLoading) return null;
+  const id = playback.activeItemId;
+  if (!id) return null;
+  return speakableItems(latestState?.queue || {}).find((item) => item.id === id) || null;
+}
+
+function updateNowPlayingIndicators() {
+  const item = nowPlayingItem();
+  const projectKey = item ? projectKeyOf(item) : null;
+  const sessionKey = item ? sessionKeyOf(item) : null;
+  const ownerColor = item ? ownerSolidColor(item.sourceApp) : null;
+  const paintIcon = (el, on) => {
+    const icon = el.querySelector(".now-playing-icon");
+    if (icon) icon.style.color = on ? ownerColor : "";
+  };
+  for (const btn of projectsList.querySelectorAll(".tree-item")) {
+    const on = Boolean(projectKey) && btn.dataset.project === projectKey;
+    btn.classList.toggle("is-playing", on);
+    paintIcon(btn, on);
+  }
+  for (const btn of sessionsList.querySelectorAll(".tree-item")) {
+    const on = Boolean(sessionKey) && btn.dataset.session === sessionKey;
+    btn.classList.toggle("is-playing", on);
+    paintIcon(btn, on);
+  }
+  for (const bubble of historyList.querySelectorAll(".bubble-assistant")) {
+    bubble.classList.toggle("is-playing", Boolean(item) && bubble.dataset.id === item.id);
+  }
+}
+
+function activateInlineSurfaceForOpenPlayback(session) {
+  const item = nowPlayingItem();
+  if (!session || !item) return false;
+  if (!session.items.some((entry) => entry.id === item.id)) return false;
+  selectedItemId = item.id;
+  if (!isModalOpen()) highlightSurface = "inline";
+  return highlightSurface === "inline";
 }
 
 function isActivePlaybackItem(item) {
@@ -614,7 +745,7 @@ function renderProjectsList(projects) {
     const title = document.createElement("span");
     title.className = "tree-item-title";
     title.textContent = project.label;
-    titleRow.append(title);
+    titleRow.append(title, buildNowPlayingIcon());
     let unread = unreadCount(project.items);
     const openSession = project.sessions.find((s) => isSessionOpen(s));
     if (openSession) unread = Math.max(0, unread - unreadCount(openSession.items));
@@ -642,8 +773,6 @@ function renderSessionsList(project) {
     return;
   }
   sessionsPane.hidden = false;
-  const pt = el("current-project-title");
-  if (pt) pt.textContent = project.label;
   sessionsList.replaceChildren();
   for (const session of project.sessions) {
     const btn = document.createElement("button");
@@ -653,9 +782,9 @@ function renderSessionsList(project) {
     const titleRow = document.createElement("span");
     titleRow.className = "tree-item-head";
     const title = document.createElement("span");
-    title.className = "tree-item-title";
-    title.textContent = session.label;
-    titleRow.append(ownerBadge(session.owner), title);
+    title.className = "tree-item-title session-title";
+    appendSessionTitle(title, session);
+    titleRow.append(ownerBadge(session.owner), title, buildNowPlayingIcon());
     const unread = isSessionOpen(session) ? 0 : unreadCount(session.items);
     if (unread > 0) titleRow.append(unreadDot(unread));
     const meta = document.createElement("span");
@@ -677,9 +806,16 @@ function renderMessagesDetail(session) {
     historyList.replaceChildren();
     return;
   }
+  const inlinePlaybackVisible = activateInlineSurfaceForOpenPlayback(session);
   if (messagesPane) messagesPane.hidden = false;
   const st = el("current-session-title");
-  if (st) st.textContent = session.label;
+  if (st) {
+    const chipText = ownerChipTextColor(session.owner);
+    st.closest(".column-head")?.style.setProperty("--owner-chip-text", chipText);
+    st.style.setProperty("--owner-chip-text", chipText);
+    st.replaceChildren();
+    appendSessionTitle(st, session, { header: true });
+  }
 
   // Harness identity shows once at the top of the thread (chat-app style) rather
   // than on every bubble.
@@ -703,6 +839,18 @@ function renderMessagesDetail(session) {
   }
   historyList.replaceChildren(fragment);
   markClampedBubbles();
+  if (inlinePlaybackVisible && selectedItemId) {
+    const bubble = historyList.querySelector(
+      `.bubble-assistant[data-id="${CSS.escape(selectedItemId)}"]`
+    );
+    if (bubble) {
+      historyList.scrollTop = Math.max(
+        0,
+        bubble.offsetTop - historyList.clientHeight / 2 + bubble.clientHeight / 2
+      );
+      return;
+    }
+  }
   historyList.scrollTop = historyList.scrollHeight;
 }
 
@@ -723,9 +871,8 @@ function modalItem() {
   return findSelected(speakableItems(latestState.queue));
 }
 
-// Refresh the modal chrome (owner, time, transport). Body text is only reset
-// when the displayed item changes, so an in-progress karaoke highlight (painted
-// by updatePlaybackUi) is not stomped on every poll.
+// Reset body text only when the displayed item changes, so progress highlighting
+// can keep its DOM nodes between polling refreshes.
 function updateModal() {
   if (!isModalOpen()) return;
   const item = modalItem();
@@ -737,6 +884,7 @@ function updateModal() {
     modalOwner.className = `owner-badge ${OWNER_CLASS[item.sourceApp] || "owner-unknown"}`;
     modalOwner.textContent = item.sourceApp || "Unknown";
   }
+  if (modalBody) modalBody.style.setProperty("--owner-color", ownerSolidColor(item.sourceApp));
   if (modalTime) modalTime.textContent = formatTime(item.timestamps?.createdAt);
   if (modalMeta) {
     modalMeta.textContent = item.replayOf ? "Replay of an earlier item." : threadLabel(item);
@@ -796,12 +944,7 @@ function snapToWordEnd(full, count) {
   return i;
 }
 
-// Render karaoke-style highlight into a target element: spoken text gets the
-// "spoken-done" class, a zero-width cursor marks the reading head, and the rest
-// trails. scrollMode keeps the cursor in view: "line" pins the current line to
-// the top (bottom-bar single-line window smooth-scrolls up as we read); "center" keeps the
-// cursor centred (full-message modal).
-function renderHighlight(target, currentSec, segments, wordAccurate, scrollMode) {
+function renderHighlight(target, currentSec, segments, wordAccurate, scrollMode, colored = true) {
   if (!target || !Array.isArray(segments) || segments.length === 0) return;
   let activeIdx = segments.findIndex((seg) => currentSec < seg.endSec);
   if (activeIdx === -1) activeIdx = segments.length - 1;
@@ -825,32 +968,42 @@ function renderHighlight(target, currentSec, segments, wordAccurate, scrollMode)
   highlightChars = Math.min(full.length, Math.max(0, highlightChars));
   if (!wordAccurate) highlightChars = snapToWordEnd(full, highlightChars);
   const done = document.createElement("span");
-  done.className = "spoken-done";
+  if (colored) done.className = "spoken-done";
   done.textContent = full.slice(0, highlightChars);
   const cursor = document.createElement("span");
   cursor.className = "spoken-cursor";
   const rest = document.createElement("span");
+  if (colored) rest.className = "spoken-rest";
   rest.textContent = full.slice(highlightChars);
   target.replaceChildren(done, cursor, rest);
 
-  if (scrollMode === "line") {
-    target.scrollTop = Math.max(0, cursor.offsetTop);
+  if (scrollMode === "pair") {
+    const lineHeight = Number.parseFloat(getComputedStyle(target).lineHeight) || 1;
+    const currentLine = Math.floor(cursor.offsetTop / lineHeight);
+    const pairStartLine = Math.floor(currentLine / 2) * 2;
+    target.scrollTop = Math.max(0, pairStartLine * lineHeight);
   } else if (scrollMode === "center") {
     target.scrollTop = Math.max(0, cursor.offsetTop - target.clientHeight / 2);
   }
 }
 
-function renderHighlightAt(currentSec, segments, wordAccurate) {
-  const bubbleBody = selectedInlineBubbleBody();
-  if (highlightSurface === "inline" && bubbleBody) {
-    renderHighlight(bubbleBody, currentSec, segments, wordAccurate, "center");
-    return;
+function renderHighlightAt(currentSec, segments, wordAccurate, colored = true) {
+  // The bottom preview always follows progress. Inline and modal highlights get
+  // the colored treatment only when that surface is active.
+  if (colored) {
+    const bubbleBody = selectedInlineBubbleBody();
+    if (highlightSurface === "inline" && bubbleBody) {
+      renderHighlight(bubbleBody, currentSec, segments, wordAccurate, "center", true);
+      renderHighlight(previewText, currentSec, segments, wordAccurate, "pair", false);
+      return;
+    }
+    if (highlightSurface === "modal" && isModalOpen()) {
+      renderHighlight(modalBody, currentSec, segments, wordAccurate, "center", true);
+      renderHighlight(previewText, currentSec, segments, wordAccurate, "pair", false);
+      return;
+    }
   }
-  if (highlightSurface === "modal" && isModalOpen()) {
-    renderHighlight(modalBody, currentSec, segments, wordAccurate, "center");
-    return;
-  }
-  renderHighlight(previewText, currentSec, segments, wordAccurate, "line");
+  renderHighlight(previewText, currentSec, segments, wordAccurate, "pair", colored);
 }
 
 function selectedInlineBubbleBody() {
@@ -864,12 +1017,17 @@ function selectedInlineBubbleBody() {
 
 function updatePlaybackUi() {
   updateInlinePlaybackButtons();
+  updateNowPlayingIndicators();
   const pos = playback?.getPlaybackPosition?.();
   if (!pos) {
     seekBar.disabled = true;
     if (!seekDragging) seekBar.value = "0";
     if (seekCurrent) seekCurrent.textContent = "0:00";
     if (seekTotal) seekTotal.textContent = "0:00";
+    // Flatten any leftover highlight back to plain text once playback stops.
+    if (previewText.querySelector(".spoken-cursor")) {
+      previewText.replaceChildren(document.createTextNode(previewText.textContent));
+    }
     return;
   }
   seekBar.disabled = false;
@@ -880,18 +1038,18 @@ function updatePlaybackUi() {
   }
   if (!seekDragging) {
     seekBar.value = String(Math.round(pos.fraction * 1000));
-    if (latestState?.settings?.highlightSpokenText) {
-      renderHighlightAt(pos.currentSec, pos.segments, pos.wordAccurate);
-    }
+    const colored = Boolean(latestState?.settings?.highlightSpokenText);
+    renderHighlightAt(pos.currentSec, pos.segments, pos.wordAccurate, colored);
   }
 }
 
 function updateControls(settings, items, selected) {
-  const index = items.findIndex((item) => item.id === selectedItemId);
+  const scoped = sessionScopedItems(items, selectedItemId);
+  const index = scoped.findIndex((item) => item.id === selectedItemId);
   prevButton.disabled = index <= 0;
-  nextButton.disabled = index < 0 || index >= items.length - 1;
+  nextButton.disabled = index < 0 || index >= scoped.length - 1;
   firstButton.disabled = index <= 0;
-  lastButton.disabled = index < 0 || index >= items.length - 1;
+  lastButton.disabled = index < 0 || index >= scoped.length - 1;
 
   const loading = playback?.isLoading;
   const speaking = playback?.isSpeaking;
@@ -959,9 +1117,11 @@ function renderState({ settings, queue }) {
   if (!findSelected(items)) selectedItemId = latest ? latest.id : null;
 
   const selected = findSelected(items);
-  setStatus(deriveStatus(settings, playback?.state, selected));
-  renderNowCard(selected);
+  const statusKind = deriveStatus(settings, playback?.state, selected);
+  setStatus(statusKind);
+  renderNowCard(selected, statusKind);
   renderHistory(items);
+  updateNowPlayingIndicators();
   updateControls(settings, items, selected);
   updateModal();
   settingsUi?.render(settings);
@@ -1019,24 +1179,26 @@ function showError(error) {
 }
 
 function moveSelection(delta) {
-  if (!latestState) return;
-  const items = speakableItems(latestState.queue);
+  if (!latestState) return false;
+  const items = sessionScopedItems(speakableItems(latestState.queue), selectedItemId);
   const index = items.findIndex((item) => item.id === selectedItemId);
-  if (index < 0) return;
+  if (index < 0) return false;
   const next = items[index + delta];
-  if (!next) return;
+  if (!next) return false;
   selectedItemId = next.id;
   renderState(latestState);
+  return true;
 }
 
 function jumpSelection(edge) {
-  if (!latestState) return;
-  const items = speakableItems(latestState.queue);
-  if (!items.length) return;
+  if (!latestState) return false;
+  const items = sessionScopedItems(speakableItems(latestState.queue), selectedItemId);
+  if (!items.length) return false;
   const target = edge === "first" ? items[0] : items[items.length - 1];
-  if (!target || target.id === selectedItemId) return;
+  if (!target || target.id === selectedItemId) return false;
   selectedItemId = target.id;
   renderState(latestState);
+  return true;
 }
 
 function playSelected() {
@@ -1166,7 +1328,7 @@ function renderStorageSessions(project) {
     return;
   }
   if (pane) pane.hidden = false;
-  if (title) title.textContent = project.label;
+  if (title) title.textContent = "Sessions";
   col.replaceChildren();
   for (const session of project.sessions) {
     col.append(
@@ -1426,6 +1588,8 @@ function setupManageTab() {
   });
 }
 
+initColumnResize();
+
 const config = await loadRuntimeConfig();
 const targetUrl = config.backendUrl || DEFAULT_BACKEND_URL;
 backendUrl.textContent = targetUrl;
@@ -1460,10 +1624,13 @@ wireNav(navChats, "chats");
 wireNav(navStorage, "storage");
 wireNav(navSettings, "settings");
 setupManageTab();
-firstButton.addEventListener("click", () => jumpSelection("first"));
-prevButton.addEventListener("click", () => moveSelection(-1));
-nextButton.addEventListener("click", () => moveSelection(1));
-lastButton.addEventListener("click", () => jumpSelection("last"));
+function navAndFollow(moved) {
+  if (moved && playbackActive()) playSelectedOn("preview");
+}
+firstButton.addEventListener("click", () => navAndFollow(jumpSelection("first")));
+prevButton.addEventListener("click", () => navAndFollow(moveSelection(-1)));
+nextButton.addEventListener("click", () => navAndFollow(moveSelection(1)));
+lastButton.addEventListener("click", () => navAndFollow(jumpSelection("last")));
 playPauseButton.addEventListener("click", () => {
   if (playback.isSpeaking) return playback.pause();
   if (playback.isPaused) return playback.resume();
@@ -1484,14 +1651,16 @@ seekBar.addEventListener("input", () => {
   if (dragPos && seekCurrent) {
     seekCurrent.textContent = formatClock((Number(seekBar.value) / 1000) * dragPos.totalSec);
   }
-  if (!latestState?.settings?.highlightSpokenText) return;
   const pos = playback?.getPlaybackPosition?.();
-  if (pos)
+  if (pos) {
+    const colored = Boolean(latestState?.settings?.highlightSpokenText);
     renderHighlightAt(
       (Number(seekBar.value) / 1000) * pos.totalSec,
       pos.segments,
-      pos.wordAccurate
+      pos.wordAccurate,
+      colored
     );
+  }
 });
 seekBar.addEventListener("change", () => {
   seekDragging = false;
@@ -1510,7 +1679,7 @@ el("collapse-all")?.addEventListener("click", () => setAllBubblesExpanded(false)
 
 // ---- Modal wiring ----------------------------------------------------------
 function modalMove(delta) {
-  moveSelection(delta);
+  if (!moveSelection(delta)) return;
   const item = modalItem();
   if (!item) return;
   markItemRead(item.id);

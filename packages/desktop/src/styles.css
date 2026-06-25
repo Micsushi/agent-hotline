@@ -1,21 +1,32 @@
 :root {
   color-scheme: dark;
-  --bg: #0d1117;
-  --sidebar-1: #101720;
-  --sidebar-2: #161d2b;
-  --surface: #1d2738;
-  --border: #2b3850;
-  --text: #e7ecf3;
-  --text-dim: #9fb0c8;
-  --text-muted: #718195;
-  --accent: #3b82f6;
-  --accent-hover: #60a5fa;
-  --on-accent: #07101f;
-  --accent-soft: rgba(59, 130, 246, 0.12);
-  --shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  --bg: #060912;
+  --bg-messages: #03050b;
+  --sidebar-1: #0a0f1c;
+  --sidebar-2: #111a2e;
+  --surface: #18233d;
+  --border: #25324e;
+  --border-strong: #3a4d70;
+  --text: #e6eaf2;
+  --text-dim: #95a0b5;
+  --text-muted: #5c6680;
+  --accent: #004ba8;
+  --accent-hover: #3e78b2;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(0, 75, 168, 0.22);
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  --transport-enabled: #53524f;
+  --transport-disabled: #262625;
   --nav-width: 200px;
   --col-width: 264px;
-  --bar-height: 104px;
+  --col-projects-width: 264px;
+  --col-sessions-width: 264px;
+  --col-min-width: 180px;
+  --col-max-width: 520px;
+  --col-head-height: 46px;
+  --list-edge-gap: 8px;
+  --tree-card-height: 50px;
+  --bar-height: 84px;
   --spinner-speed: 0.9s;
 }
 
@@ -28,7 +39,7 @@
 
 body {
   margin: 0;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);
 }
@@ -53,7 +64,7 @@ button {
   display: flex;
   align-items: stretch;
   justify-content: flex-end;
-  background: var(--bg);
+  background: var(--sidebar-2);
   border-bottom: 1px solid rgba(43, 56, 80, 0.68);
   user-select: none;
 }
@@ -115,7 +126,10 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 16px;
+  height: var(--col-head-height);
+  padding: 0 16px;
+  flex: 0 0 auto;
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
   color: var(--accent-hover);
 }
@@ -127,7 +141,7 @@ button {
 
 .nav-items {
   flex: 1;
-  padding: 10px;
+  padding: var(--list-edge-gap);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -138,11 +152,12 @@ button {
   align-items: center;
   gap: 12px;
   width: 100%;
+  height: var(--tree-card-height);
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 0 12px;
   color: var(--text-dim);
   font-size: 14px;
   font-weight: 600;
@@ -157,7 +172,7 @@ button {
 }
 .nav-item.is-active {
   background: var(--accent-soft);
-  border-color: rgba(59, 130, 246, 0.35);
+  border-color: rgba(62, 120, 178, 0.35);
   color: var(--accent-hover);
 }
 
@@ -195,29 +210,57 @@ button {
   align-items: stretch;
 }
 .column {
+  position: relative;
   flex: 0 0 var(--col-width);
   width: var(--col-width);
   min-width: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
-  background: var(--sidebar-2);
-}
-.col-projects {
   background: var(--sidebar-1);
 }
-/* The final messages column grows to fill remaining space. */
+.col-projects {
+  flex: 0 0 var(--col-projects-width);
+  width: var(--col-projects-width);
+}
+.col-sessions {
+  flex: 0 0 var(--col-sessions-width);
+  width: var(--col-sessions-width);
+}
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  z-index: 5;
+  cursor: col-resize;
+  background: transparent;
+}
+.col-resizer:hover,
+.col-resizer.is-dragging {
+  background: var(--accent);
+}
+body.is-col-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
 .col-messages {
   flex: 1;
   width: auto;
-  background: var(--bg);
+  background: var(--bg-messages);
   border-right: none;
 }
 .column-head {
   margin: 0;
-  padding: 14px 16px;
+  height: var(--col-head-height);
+  padding: 0 16px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -229,7 +272,7 @@ button {
 .column-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: var(--list-edge-gap);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -238,16 +281,18 @@ button {
 /* ----- Tree items (project / session rows in Chats) ----- */
 .tree-item {
   width: 100%;
+  height: var(--tree-card-height);
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 2px 12px;
   color: var(--text-dim);
   font-size: 13px;
   font-weight: 600;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
 }
 .tree-item:hover {
@@ -256,7 +301,7 @@ button {
 }
 .tree-item.is-selected {
   background: var(--accent-soft);
-  border-color: rgba(59, 130, 246, 0.35);
+  border-color: rgba(62, 120, 178, 0.35);
   color: var(--accent-hover);
 }
 .tree-item-title {
@@ -264,9 +309,37 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.session-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+.session-title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  color: var(--text);
+  letter-spacing: 0.03em;
+}
+.now-session-title .session-title-text {
+  color: var(--owner-chip-text, var(--text-dim));
+}
+.session-title-id {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, #ffffff 68%, var(--text-muted));
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.session-title-id::before {
+  content: "#";
+  opacity: 0.72;
+}
 
-/* Per-project colour: a left accent stripe plus a leading swatch dot. The
-   stripe rides the row's left edge via the inline --project-stripe value. */
 .tree-item.has-project-color {
   position: relative;
   padding-left: 16px;
@@ -275,14 +348,16 @@ button {
   content: "";
   position: absolute;
   left: 4px;
-  top: 8px;
-  bottom: 8px;
+  top: 9px;
+  bottom: 9px;
   width: 3px;
   border-radius: 2px;
   background: var(--project-stripe, var(--project-color, transparent));
 }
 .tree-item.has-project-color.is-selected {
   border-color: color-mix(in srgb, var(--project-color, var(--accent)) 55%, transparent);
+  background: color-mix(in srgb, var(--project-color, var(--accent)) 10%, transparent);
+  color: var(--project-color, var(--accent-hover));
 }
 .tree-item-meta {
   font-size: 11px;
@@ -330,7 +405,7 @@ button {
   box-shadow: 0 0 0 1px var(--accent);
 }
 .history-item.is-unread {
-  border-color: rgba(59, 130, 246, 0.45);
+  border-color: rgba(62, 120, 178, 0.45);
 }
 .h-head {
   display: flex;
@@ -366,31 +441,36 @@ button {
 .col-messages .column-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 14px;
   overflow: visible;
+  height: var(--col-head-height);
+  padding: 0 16px;
 }
 .convo-actions {
   display: flex;
-  gap: 4px;
+  gap: 8px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 .text-button {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
+  background: color-mix(in srgb, var(--owner-chip-text, var(--accent-hover)) 12%, var(--surface));
+  border: 1px solid
+    color-mix(in srgb, var(--owner-chip-text, var(--accent-hover)) 34%, var(--border));
+  color: color-mix(in srgb, var(--owner-chip-text, var(--accent-hover)) 62%, #ffffff);
   font: inherit;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 750;
   text-transform: none;
   letter-spacing: 0;
-  padding: 3px 8px;
+  padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
 }
 .text-button:hover {
-  border-color: var(--accent);
-  color: var(--accent-hover);
+  background: color-mix(in srgb, var(--owner-chip-text, var(--accent-hover)) 22%, var(--surface));
+  border-color: color-mix(in srgb, var(--owner-chip-text, var(--accent-hover)) 55%, var(--border));
+  color: #ffffff;
 }
 .convo-head-left {
   display: flex;
@@ -398,11 +478,25 @@ button {
   gap: 8px;
   min-width: 0;
   overflow: hidden;
+  flex: 1 1 auto;
 }
 .convo-head-left #current-session-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+.convo-head-left #current-session-title .session-title-text {
+  color: var(--owner-chip-text, var(--text));
+  flex: 0 1 auto;
+}
+.convo-head-left #current-session-title .session-title-id {
+  font-size: 11px;
+  margin-left: 3px;
 }
 /* Each turn stacks the bubble over its outside timestamp, aligned to the side
    that bubble sits on (user right, assistant left). */
@@ -432,6 +526,12 @@ button {
   color: var(--text);
   background: var(--bubble-bg);
 }
+.bubble.is-clamped {
+  padding-right: 38px;
+}
+.bubble-assistant.is-clamped {
+  padding-right: 34px;
+}
 .bubble-user {
   --bubble-bg: var(--accent-soft);
   border-top-right-radius: 0;
@@ -439,9 +539,10 @@ button {
 /* Assistant bubble lays its inline play button beside the text, like a
    voice-note row. */
 .bubble-assistant {
+  --bubble-bg: color-mix(in srgb, var(--owner-color, var(--accent)) 28%, var(--surface));
   border-top-left-radius: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
 }
 /* The tail is a bubble-colored right triangle clipped out of a small box at the
@@ -468,13 +569,16 @@ button {
    the filter hugs the bubble AND the tail as one silhouette -- no ring crossing
    the tail, no double-thickness seam. */
 .bubble-assistant.is-selected {
-  filter: drop-shadow(1.5px 0 0 var(--accent)) drop-shadow(-1.5px 0 0 var(--accent))
-    drop-shadow(0 1.5px 0 var(--accent)) drop-shadow(0 -1.5px 0 var(--accent));
+  filter: drop-shadow(1.5px 0 0 var(--owner-color, var(--accent)))
+    drop-shadow(-1.5px 0 0 var(--owner-color, var(--accent)))
+    drop-shadow(0 1.5px 0 var(--owner-color, var(--accent)))
+    drop-shadow(0 -1.5px 0 var(--owner-color, var(--accent)));
 }
 .bubble-assistant.is-unread {
-  filter: drop-shadow(1.5px 0 0 rgba(59, 130, 246, 0.6))
-    drop-shadow(-1.5px 0 0 rgba(59, 130, 246, 0.6)) drop-shadow(0 1.5px 0 rgba(59, 130, 246, 0.6))
-    drop-shadow(0 -1.5px 0 rgba(59, 130, 246, 0.6));
+  filter: drop-shadow(1.5px 0 0 var(--owner-color, var(--accent)))
+    drop-shadow(-1.5px 0 0 var(--owner-color, var(--accent)))
+    drop-shadow(0 1.5px 0 var(--owner-color, var(--accent)))
+    drop-shadow(0 -1.5px 0 var(--owner-color, var(--accent)));
 }
 /* Outside-the-box timestamp (and any inline extras like Replay / unread dot). */
 .bubble-time-out {
@@ -483,7 +587,12 @@ button {
   gap: 6px;
   margin: 3px 6px 0;
   font-size: 11px;
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--owner-color, var(--accent-hover)) 58%, #ffffff);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.convo-row.is-user .bubble-time-out {
+  color: #ffffff;
 }
 .bubble-play {
   flex: 0 0 auto;
@@ -495,12 +604,12 @@ button {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--owner-color, var(--accent));
   color: var(--on-accent);
   cursor: pointer;
 }
 .bubble-play:hover {
-  background: var(--accent-hover);
+  filter: brightness(1.15);
 }
 .bubble-play svg {
   width: 14px;
@@ -528,21 +637,22 @@ button {
   cursor: pointer;
 }
 .bubble.is-clamped::after {
-  content: "More";
+  content: "\25BE";
   position: absolute;
-  right: 10px;
+  right: 11px;
   bottom: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: inherit;
-  padding-left: 6px;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--text);
+  background: transparent;
+  padding-left: 0;
 }
 .bubble.is-expanded.is-clamped {
   cursor: pointer;
 }
 .bubble.is-expanded.is-clamped::after {
-  content: "Less";
+  content: "\25B4";
 }
 
 /* ---- Harness owner badges ---- */
@@ -564,22 +674,26 @@ button {
   padding: 2px 5px;
 }
 .owner-codex {
-  color: #5bd6a6;
-  background: rgba(46, 160, 67, 0.16);
-  border-color: rgba(46, 160, 67, 0.4);
+  --owner-chip-text: #5a93cc;
+  color: #5a93cc;
+  background: rgba(62, 120, 178, 0.16);
+  border-color: rgba(62, 120, 178, 0.4);
 }
 .owner-claude {
+  --owner-chip-text: #f0a98a;
   color: #f0a98a;
   background: rgba(217, 119, 87, 0.16);
   border-color: rgba(217, 119, 87, 0.4);
 }
 .owner-antigravity {
+  --owner-chip-text: #c9a2f7;
   color: #c9a2f7;
   background: rgba(168, 85, 247, 0.16);
   border-color: rgba(168, 85, 247, 0.4);
 }
 .owner-mixed,
 .owner-unknown {
+  --owner-chip-text: var(--text-dim);
   color: var(--text-dim);
   background: rgba(255, 255, 255, 0.06);
   border-color: var(--border);
@@ -594,13 +708,50 @@ button {
 .tree-item-head .tree-item-title {
   flex: 1;
 }
+/* ---- Now-playing speaker indicator ---- */
+.now-playing-icon {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--owner-color, var(--accent));
+}
+.now-playing-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+.tree-item.is-playing .now-playing-icon,
+.bubble-assistant.is-playing .now-playing-icon {
+  display: inline-flex;
+  animation: now-playing-pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tree-item.is-playing .now-playing-icon,
+  .bubble-assistant.is-playing .now-playing-icon {
+    animation: none;
+  }
+}
+@keyframes now-playing-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
 .unread-dot {
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 0 0 2px rgba(62, 120, 178, 0.25);
 }
 .unread-badge {
   flex: 0 0 auto;
@@ -923,10 +1074,13 @@ button {
   grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr);
   align-items: center;
   gap: 20px;
-  padding: 12px 20px;
+  padding: 8px 20px;
 }
 .now-info {
   min-width: 0;
+  align-self: center;
+  box-sizing: border-box;
+  padding: 0 36px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -946,23 +1100,38 @@ button {
   color: var(--text-muted);
   flex: 0 0 auto;
 }
-/* Karaoke window: fixed single-line height; renderHighlight smooth-scrolls the
-   current reading line to the top so finished lines slide up out of view. */
+.now-time.has-value,
+.now-status {
+  color: color-mix(in srgb, #ffffff 68%, var(--text-muted));
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.now-status {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.now-status.is-pending,
+.now-status.is-speaking,
+.now-status.is-loading {
+  color: color-mix(in srgb, #ffffff 72%, var(--text-muted));
+}
 .now-text {
   margin: 0;
   font-size: 13px;
   line-height: 1.5em;
-  height: 1.5em;
+  height: 3em;
   color: var(--text);
   position: relative;
   overflow: hidden;
   overflow-wrap: anywhere;
   scroll-behavior: smooth;
 }
-/* Colour only, never weight: a weight change re-measures glyphs and reflows the
-   line width as the highlight advances. Keep metrics identical to the rest. */
 .spoken-done {
-  color: var(--accent-hover);
+  color: color-mix(in srgb, var(--owner-color, var(--accent-hover)) 14%, #ffffff);
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.7);
+}
+.spoken-rest {
+  color: color-mix(in srgb, #ffffff 55%, transparent);
 }
 .spoken-cursor {
   display: inline;
@@ -982,11 +1151,11 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  gap: 8px;
+  background: color-mix(in srgb, var(--owner-color, var(--accent)) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--owner-color, var(--accent)) 45%, var(--border));
   border-radius: 14px;
-  padding: 14px 18px;
+  padding: 8px 18px;
   box-shadow: var(--shadow);
 }
 .transport-primary {
@@ -998,24 +1167,34 @@ button {
   width: 44px;
   height: 40px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--owner-color, var(--accent)) 35%, var(--border));
+  background: color-mix(in srgb, var(--owner-color, var(--accent)) 26%, var(--transport-enabled));
   color: var(--text);
   display: grid;
   place-items: center;
 }
 .transport-primary button:disabled {
-  opacity: 0.45;
+  background: var(--transport-disabled);
+  color: var(--text-muted);
+  border-color: var(--border);
+  cursor: default;
 }
 .transport-primary button.primary {
   width: 52px;
-  background: var(--accent);
+  background: var(--owner-color, var(--accent));
   color: var(--on-accent);
-  border-color: var(--accent);
+  border-color: var(--owner-color, var(--accent));
+}
+.transport-primary button.primary:disabled {
+  background: var(--owner-color, var(--accent));
+  color: var(--on-accent);
+  border-color: var(--owner-color, var(--accent));
+  opacity: 0.45;
 }
 .transport-primary button.primary.is-loading {
   background: var(--surface);
-  color: var(--accent-hover);
+  color: var(--owner-color, var(--accent-hover));
+  border-color: color-mix(in srgb, var(--owner-color, var(--accent)) 40%, var(--border));
 }
 .spinner {
   display: inline-block;
@@ -1052,6 +1231,7 @@ button {
 .seek-bar {
   width: 320px;
   max-width: 40vw;
+  accent-color: var(--owner-color, var(--accent));
 }
 
 .now-extra {
@@ -1074,10 +1254,11 @@ button {
 .speed-icon {
   display: inline-flex;
   align-items: center;
-  color: var(--accent-hover);
+  color: var(--owner-color, var(--accent-hover));
 }
 .speed-field input {
   width: 120px;
+  accent-color: var(--owner-color, var(--accent));
 }
 .speed-field output {
   width: 5ch;
@@ -1134,8 +1315,8 @@ button {
   padding: 8px;
 }
 
-/* ============================ PROJECT COLOUR MENU ========== */
-/* Right-click a project row to recolour it. Floating menu, positioned at the
+/* ============================ PROJECT COLOR MENU =========== */
+/* Right-click a project row to recolor it. Floating menu, positioned at the
    cursor in color-menu.js, clamped to the viewport. */
 .color-menu {
   position: fixed;

@@ -1,4 +1,4 @@
-// Floating "pick a colour" menu shown on right-clicking a project row. One menu
+// Floating "pick a color" menu shown on right-clicking a project row. One menu
 // element is reused; it closes on outside click, Escape, scroll, or selection.
 import {
   SWATCHES,
