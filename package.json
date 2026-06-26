@@ -1,6 +1,6 @@
 {
   "name": "agent-hotline",
-  "version": "0.1.0",
+  "version": "0.5.1",
   "description": "Local read-aloud hooks and tray app for AI coding agents.",
   "bin": {
     "ah": "packages/backend/bin/agent-hotline.js",
@@ -50,5 +50,13 @@
     "eslint": "^10.5.0",
     "globals": "^17.6.0",
     "prettier": "^3.8.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Micsushi/agent-hotline.git"
+  },
+  "homepage": "https://github.com/Micsushi/agent-hotline#readme",
+  "bugs": {
+    "url": "https://github.com/Micsushi/agent-hotline/issues"
   }
 }
