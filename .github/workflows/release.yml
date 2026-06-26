@@ -49,4 +49,4 @@ jobs:
 
       - name: Publish To Npm
         if: ${{ github.event.inputs.publish_npm == 'true' }}
-        run: npm publish --access public --provenance
+        run: npm publish --access public
