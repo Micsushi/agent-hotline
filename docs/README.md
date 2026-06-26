@@ -1,31 +1,30 @@
-﻿# Agent Hotline Docs
+# Agent Hotline Docs
 
-These docs are for people installing, running, or reviewing Agent Hotline.
+Short setup notes for people using or hacking on Agent Hotline.
 
 ## Setup
 
-- [Spoken / Displayed output setup](integrations/spoken-output.md)
-- [Codex read-aloud setup](integrations/codex.md)
-- [Claude Code read-aloud setup](integrations/claude-code.md)
-- [Antigravity read-aloud setup](integrations/antigravity.md)
+- [Codex](integrations/codex.md)
+- [Claude Code](integrations/claude-code.md)
+- [Antigravity](integrations/antigravity.md)
+- [Spoken output](integrations/spoken-output.md)
 
-Local development installers:
+## Common Commands
 
 ```powershell
 npm run install:tts
 npm run install-hotline -- --harness all --skill all
-npm run install-hook -- --harness codex --scope repo
-npm run install-skill -- --target all
+npm run dev:backend
+npm run dev:desktop
 ```
 
-`npm install` runs `install:tts` automatically for the desktop workspace. It
-copies HeadTTS package files and downloads Kokoro voice packs into the ignored
-`packages/desktop/public/headtts/` runtime asset folder.
+From npm:
 
-## Review
-
-- [Stage 1 manual review](stage-1-manual-review.md)
+```powershell
+npx --yes agent-hotline install --harness all --skill all
+npx --yes agent-hotline hook
+```
 
 ## Notes
 
-Agent Hotline read-aloud does not require model, speech-to-text, or text-to-speech provider API keys. It talks to the local backend and uses browser/WebView text-to-speech for playback.
+Read-aloud playback is local. Agent Hotline talks to its local backend and uses browser/WebView text-to-speech.

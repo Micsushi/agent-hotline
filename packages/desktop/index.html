@@ -179,8 +179,8 @@
           <section id="view-storage" class="view view-storage" hidden>
             <div class="storage-bar">
               <h2 id="manage-title">Storage</h2>
-              <p id="audio-summary" class="now-meta">Loading saved audio...</p>
-              <label class="field-row" for="audio-limit">
+              <p id="audio-summary" class="storage-summary">Loading saved audio...</p>
+              <label class="field-row storage-limit" for="audio-limit">
                 <span>Limit (MB)</span>
                 <input
                   id="audio-limit"
@@ -235,8 +235,10 @@
             </div>
 
             <div class="settings-grid">
-              <section class="card">
-                <p class="card-title">Queue behavior</p>
+              <section class="card settings-group">
+                <div class="settings-group-head">
+                  <p class="card-title">Queue behavior</p>
+                </div>
                 <div class="segmented-control" role="radiogroup" aria-label="Read behavior">
                   <label title="Replies are saved, but only read when you press play.">
                     <input type="radio" name="read-behavior" value="manual" />
@@ -249,8 +251,10 @@
                 </div>
               </section>
 
-              <section class="card">
-                <p class="card-title">Voice</p>
+              <section class="card settings-group">
+                <div class="settings-group-head">
+                  <p class="card-title">Voice</p>
+                </div>
                 <div class="field-grid">
                   <label class="field-row" for="setting-engine">
                     <span>Engine</span>
@@ -275,8 +279,10 @@
                 </div>
               </section>
 
-              <section class="card">
-                <p class="card-title">Sources</p>
+              <section class="card settings-group">
+                <div class="settings-group-head">
+                  <p class="card-title">Sources</p>
+                </div>
                 <div class="toggle-grid">
                   <label class="toggle-row"
                     ><input id="setting-mute" type="checkbox" /> <span>Mute</span></label
@@ -290,8 +296,10 @@
                 </div>
               </section>
 
-              <section class="card">
-                <p class="card-title">Notifications</p>
+              <section class="card settings-group">
+                <div class="settings-group-head">
+                  <p class="card-title">Notifications</p>
+                </div>
                 <div class="field-grid">
                   <label class="toggle-row"
                     ><input id="setting-notify" type="checkbox" />
@@ -307,8 +315,10 @@
                 </div>
               </section>
 
-              <section class="card">
-                <p class="card-title">Reading detail</p>
+              <section class="card settings-group">
+                <div class="settings-group-head">
+                  <p class="card-title">Reading detail</p>
+                </div>
                 <div class="field-grid">
                   <label class="toggle-row"
                     ><input id="setting-highlight" type="checkbox" />

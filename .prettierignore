@@ -1,5 +1,7 @@
 node_modules/
 package-lock.json
+.worktrees/
+.logs/
 
 # Runtime data + debug captures (rewritten unformatted at runtime)
 packages/backend/data/
@@ -11,3 +13,4 @@ packages/desktop/src-tauri/target/
 packages/desktop/src-tauri/Cargo.lock
 
 *.ico
+*.patch

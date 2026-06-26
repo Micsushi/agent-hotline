@@ -5,6 +5,8 @@
   UNKNOWN: "Unknown"
 });
 
+const MAX_CODEX_SESSION_FILES = 3000;
+
 function parseHookInput(text, deps = {}) {
   if (typeof text !== "string") {
     return skipResult("invalid_input", "Hook input must be a string.");
@@ -54,7 +56,7 @@ function parseHookInput(text, deps = {}) {
       sessionName: extractSessionName(payload),
       projectPath: project.projectPath,
       projectName: project.projectName,
-      userMessages: extractUserMessages(payload),
+      userMessages: extractUserMessages(payload, deps, extracted.text),
       payload
     };
   } catch (error) {
@@ -81,7 +83,7 @@ function extractThread(payload, sourceApp, deps = {}) {
       payload.threadId
     ) || undefined;
 
-  const cwd = firstString(payload.cwd, payload.workspace, payload.project_dir);
+  const cwd = resolveCwd(payload, deps);
   const folder = cwd ? pathBasename(resolveProjectRoot(cwd, deps)) : "";
   const shortId = threadId ? threadId.slice(0, 8) : "";
   const labelParts = [folder || sourceApp];
@@ -132,11 +134,66 @@ function resolveProjectRoot(cwd, deps = {}) {
   return normalized;
 }
 
+// Resolve the working directory used for project/session grouping. Order:
+//   1. inline payload field (normal Codex/Claude CLI Stop hooks ship this)
+//   2. the transcript's own per-line `cwd` (Claude Code writes the real cwd on
+//      every JSONL entry, so SDK/editor-extension hooks that omit the top-level
+//      cwd can still be grouped -- and because this is the exact path, it merges
+//      with that project's CLI items instead of spawning a separate bucket)
+//   3. the encoded ".../projects/<dir>/<sid>.jsonl" segment as a last-resort
+//      stable identity when the transcript can't be read.
+// Returning "" here is what makes grouping.js fall back to `direct:<sourceApp>`
+// (the "Claude" catch-all bucket), so we exhaust every signal before that.
+function resolveCwd(payload, deps = {}) {
+  const direct = firstString(payload.cwd, payload.workspace, payload.project_dir);
+  if (direct) return direct;
+  const fromTranscript = cwdFromTranscript(payload, deps);
+  if (fromTranscript) return fromTranscript;
+  return projectDirFromTranscriptPath(payload);
+}
+
+function cwdFromTranscript(payload, deps = {}) {
+  const transcriptPath = firstString(payload.transcript_path, payload.transcriptPath);
+  if (!transcriptPath) return "";
+  const readFileSync = deps.readFileSync || require("fs").readFileSync;
+  let raw;
+  try {
+    raw = readFileSync(transcriptPath, "utf8");
+  } catch {
+    return "";
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+      const cwd = firstString(obj.cwd, obj.workspace);
+      if (cwd) return cwd;
+    } catch {
+      // Skip non-JSON lines; keep scanning for the first entry that carries cwd.
+    }
+  }
+  return "";
+}
+
+// Claude Code stores transcripts at "<home>/.claude/projects/<encoded>/<sid>.jsonl"
+// where <encoded> is the cwd with separators/colon replaced by '-'. The encoding
+// is lossy (a literal '-' in a folder name is indistinguishable from a separator),
+// so we can't reconstruct the exact path -- but the encoded segment is stable, so
+// using it verbatim still groups every item from that project together under one
+// bucket instead of scattering into the generic harness catch-all.
+function projectDirFromTranscriptPath(payload) {
+  const transcriptPath = firstString(payload.transcript_path, payload.transcriptPath);
+  if (!transcriptPath) return "";
+  const normalized = String(transcriptPath).replace(/\\/g, "/");
+  const match = normalized.match(/\/projects\/([^/]+)\/[^/]*$/i);
+  return match ? match[1] : "";
+}
+
 function extractProject(payload, deps = {}) {
   if (!isPlainObject(payload)) {
     return { projectPath: undefined, projectName: undefined };
   }
-  const cwd = firstString(payload.cwd, payload.workspace, payload.project_dir);
+  const cwd = resolveCwd(payload, deps);
   if (!cwd) {
     return { projectPath: undefined, projectName: undefined };
   }
@@ -153,7 +210,7 @@ function extractSessionName(payload) {
 // the prompts inline as "input-messages"; Claude's Stop hook only points at a
 // transcript file, so we read the trailing run of user turns from it. Best-effort:
 // any failure yields [] so a missing/locked transcript never blocks playback.
-function extractUserMessages(payload, deps = {}) {
+function extractUserMessages(payload, deps = {}, assistantText = "") {
   try {
     if (!isPlainObject(payload)) return [];
 
@@ -170,6 +227,9 @@ function extractUserMessages(payload, deps = {}) {
       payload.user_prompt,
       payload.userPrompt,
       payload.user_message,
+      payload.userMessage,
+      payload.last_user_message,
+      payload.lastUserMessage,
       payload.input
     );
     if (prompt) return [prompt];
@@ -179,10 +239,142 @@ function extractUserMessages(payload, deps = {}) {
       return readUserMessagesFromTranscript(transcriptPath, deps);
     }
 
+    if (detectSourceApp(payload) === SOURCE_APPS.CODEX) {
+      return readUserMessagesFromCodexSession(payload, assistantText, deps);
+    }
+
     return [];
   } catch {
     return [];
   }
+}
+
+function readUserMessagesFromCodexSession(payload, assistantText, deps = {}) {
+  const threadId = firstString(
+    payload.session_id,
+    payload.sessionId,
+    payload.conversation_id,
+    payload.conversationId,
+    payload.thread_id,
+    payload.threadId
+  );
+  if (!threadId) return [];
+
+  const filePath = findCodexSessionFile(threadId, deps);
+  if (!filePath) return [];
+
+  const readFileSync = deps.readFileSync || require("fs").readFileSync;
+  let raw;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch {
+    return [];
+  }
+
+  const turns = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const turn = codexMessageTurn(obj);
+    if (turn) turns.push(turn);
+  }
+
+  const assistantIndex = findAssistantTurnIndex(turns, assistantText);
+  if (assistantIndex <= 0) return [];
+
+  for (let i = assistantIndex - 1; i >= 0; i -= 1) {
+    if (turns[i].role === "user" && turns[i].text) return [turns[i].text];
+  }
+  return [];
+}
+
+function findAssistantTurnIndex(turns, assistantText) {
+  const target = normalizeForMatch(assistantText);
+  if (target) {
+    for (let i = turns.length - 1; i >= 0; i -= 1) {
+      if (turns[i].role !== "assistant") continue;
+      const candidate = normalizeForMatch(turns[i].text);
+      if (candidate === target || candidate.includes(target) || target.includes(candidate)) {
+        return i;
+      }
+    }
+  }
+  return turns.map((turn) => turn.role).lastIndexOf("assistant");
+}
+
+function codexMessageTurn(obj) {
+  if (!isPlainObject(obj) || obj.type !== "response_item" || !isPlainObject(obj.payload)) {
+    return null;
+  }
+  const payload = obj.payload;
+  if (payload.type !== "message" || !["user", "assistant"].includes(payload.role)) return null;
+  const text = extractCodexMessageText(payload.content);
+  return text ? { role: payload.role, text } : null;
+}
+
+function extractCodexMessageText(content) {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  const parts = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part.trim());
+      continue;
+    }
+    if (!isPlainObject(part)) continue;
+    if (typeof part.text === "string") parts.push(part.text.trim());
+    if (typeof part.output_text === "string") parts.push(part.output_text.trim());
+  }
+  return parts.filter(Boolean).join("\n\n").trim();
+}
+
+function findCodexSessionFile(threadId, deps = {}) {
+  if (deps.codexSessionFile) return deps.codexSessionFile;
+
+  const fs = deps.fs || require("fs");
+  const path = deps.path || require("path");
+  const roots = [];
+  if (deps.codexSessionsDir) roots.push(deps.codexSessionsDir);
+  const codexHome =
+    deps.codexHome ||
+    process.env.CODEX_HOME ||
+    path.join(process.env.USERPROFILE || require("os").homedir(), ".codex");
+  roots.push(path.join(codexHome, "sessions"));
+
+  for (const root of roots) {
+    let found = "";
+    let seen = 0;
+    const visit = (dir) => {
+      if (found || seen > MAX_CODEX_SESSION_FILES) return;
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (found || seen > MAX_CODEX_SESSION_FILES) return;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          visit(full);
+        } else if (entry.isFile()) {
+          seen += 1;
+          if (entry.name.includes(threadId) && entry.name.endsWith(".jsonl")) {
+            found = full;
+            return;
+          }
+        }
+      }
+    };
+    visit(root);
+    if (found) return found;
+  }
+  return "";
 }
 
 function readUserMessagesFromTranscript(transcriptPath, deps = {}) {
@@ -313,6 +505,12 @@ function firstString(...values) {
     if (typeof value === "string" && value.trim() !== "") return value.trim();
   }
   return "";
+}
+
+function normalizeForMatch(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function detectSourceApp(payload) {

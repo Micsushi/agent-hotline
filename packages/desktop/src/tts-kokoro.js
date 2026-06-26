@@ -1,8 +1,8 @@
 ﻿const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 export const DEFAULT_KOKORO_VOICE = "af_heart";
+export const KOKORO_CHUNK_GAP_SEC = 0.08;
 
 const MAX_CHARS_PER_CHUNK = 300;
-const CHUNK_GAP_SEC = 0.08;
 
 function chunkText(text, maxChars) {
   const sentences = text.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) || [text];
@@ -30,6 +30,10 @@ function chunkText(text, maxChars) {
   }
   flush();
   return chunks;
+}
+
+export function getKokoroChunks(text) {
+  return chunkText(String(text || ""), MAX_CHARS_PER_CHUNK);
 }
 
 function concatSamples(buffers, gapSamples) {
@@ -93,18 +97,22 @@ export function isKokoroReady() {
   return Boolean(loadedDevice);
 }
 
-export async function generateKokoroAudio(text, voice, speed, preferredDevice) {
+export async function generateKokoroChunk(text, voice, speed, preferredDevice) {
   const tts = await warmKokoro(preferredDevice);
   const useVoice = cachedVoices?.includes(voice) ? voice : DEFAULT_KOKORO_VOICE;
   const useSpeed = Number.isFinite(speed) ? speed : 1;
+  const result = await tts.generate(text, { voice: useVoice, speed: useSpeed });
+  return { samples: result.audio, sampleRate: result.sampling_rate };
+}
 
-  const chunks = chunkText(text, MAX_CHARS_PER_CHUNK);
+export async function generateKokoroAudio(text, voice, speed, preferredDevice) {
+  const chunks = getKokoroChunks(text);
   if (chunks.length <= 1) {
-    const result = await tts.generate(text, { voice: useVoice, speed: useSpeed });
-    const endSec = result.audio.length / result.sampling_rate;
+    const result = await generateKokoroChunk(text, voice, speed, preferredDevice);
+    const endSec = result.samples.length / result.sampleRate;
     return {
-      samples: result.audio,
-      sampleRate: result.sampling_rate,
+      samples: result.samples,
+      sampleRate: result.sampleRate,
       segments: [{ text: text.trim(), startSec: 0, endSec }]
     };
   }
@@ -112,12 +120,12 @@ export async function generateKokoroAudio(text, voice, speed, preferredDevice) {
   const buffers = [];
   let sampleRate = 24000;
   for (const chunk of chunks) {
-    const result = await tts.generate(chunk, { voice: useVoice, speed: useSpeed });
-    buffers.push(result.audio);
-    sampleRate = result.sampling_rate;
+    const result = await generateKokoroChunk(chunk, voice, speed, preferredDevice);
+    buffers.push(result.samples);
+    sampleRate = result.sampleRate;
   }
 
-  const gapSamples = Math.round(sampleRate * CHUNK_GAP_SEC);
+  const gapSamples = Math.round(sampleRate * KOKORO_CHUNK_GAP_SEC);
   const segments = [];
   let cursor = 0;
   for (let i = 0; i < buffers.length; i += 1) {

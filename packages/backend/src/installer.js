@@ -5,6 +5,9 @@ const path = require("path");
 const SKILL_NAME = "agent-hotline-spoken";
 const MANAGED_BLOCK_START = "<!-- AGENT_HOTLINE_SPOKEN_START -->";
 const MANAGED_BLOCK_END = "<!-- AGENT_HOTLINE_SPOKEN_END -->";
+const VALID_HARNESSES = ["antigravity", "claude-code", "codex", "all"];
+const VALID_SCOPES = ["global", "repo"];
+const NPX_HOOK_COMMAND = "npx --yes agent-hotline hook";
 
 function packageRoot() {
   return path.resolve(__dirname, "..");
@@ -20,6 +23,10 @@ function defaultHome() {
 
 function defaultHookCommand() {
   return `node "${path.join(packageRoot(), "bin", "agent-hotline.js")}" hook`;
+}
+
+function npxHookCommand() {
+  return NPX_HOOK_COMMAND;
 }
 
 // Embed an arbitrary string into the generated .ps1 as a PowerShell single-quoted
@@ -66,6 +73,12 @@ function normalizeHarness(value) {
   if (key === "claude") return "claude-code";
   if (key === "all") return "all";
   return key;
+}
+
+function validateChoice(name, value, validValues) {
+  if (!validValues.includes(value)) {
+    throw new Error(`Invalid ${name} "${value}". Use one of: ${validValues.join(", ")}.`);
+  }
 }
 
 function harnessDefinitions(home = defaultHome()) {
@@ -117,6 +130,9 @@ function buildPs1({ source, schema, hookCommand = defaultHookCommand() }) {
     `  $payload = $inputJson | ConvertFrom-Json`,
     `  $assistantText = $payload.last_assistant_message`,
     `  $transcriptPath = $payload.transcript_path`,
+    `  $inputMessages = $payload.'input-messages'`,
+    `  if ($null -eq $inputMessages) { $inputMessages = $payload.input_messages }`,
+    `  if ($null -eq $inputMessages) { $inputMessages = $payload.inputMessages }`,
     // Codex hands us the reply text inline (last_assistant_message); Claude Code's
     // Stop hook only points at a transcript file, so the Node parser reads the
     // last assistant turn from transcript_path. Bail only when we have neither.
@@ -126,6 +142,17 @@ function buildPs1({ source, schema, hookCommand = defaultHookCommand() }) {
     `    source = "${source}"`,
     `    hook_event_name = "Stop"`,
     `    ${responseKey} = @{ text = $assistantText }`,
+    `    "input-messages" = $inputMessages`,
+    `    input_messages = $payload.input_messages`,
+    `    inputMessages = $payload.inputMessages`,
+    `    prompt = $payload.prompt`,
+    `    user_prompt = $payload.user_prompt`,
+    `    userPrompt = $payload.userPrompt`,
+    `    user_message = $payload.user_message`,
+    `    userMessage = $payload.userMessage`,
+    `    last_user_message = $payload.last_user_message`,
+    `    lastUserMessage = $payload.lastUserMessage`,
+    `    input = $payload.input`,
     `    transcript_path = $transcriptPath`,
     `    session_id = $payload.session_id`,
     `    thread_id = $payload.thread_id`,
@@ -194,9 +221,13 @@ function mergeStopHook(existing, newEntry, flavor) {
 function installOneHook({ harnessKey, scope = "global", home, repo = process.cwd(), hookCommand }) {
   const definitions = harnessDefinitions(home);
   const harness = definitions[harnessKey];
-  if (!harness) throw new Error(`Unknown harness "${harnessKey}"`);
+  if (!harness) {
+    throw new Error(`Invalid harness "${harnessKey}". Use one of: ${VALID_HARNESSES.join(", ")}.`);
+  }
   if (!harness.scopes.includes(scope)) {
-    throw new Error(`Scope "${scope}" not valid for ${harness.label}`);
+    throw new Error(
+      `Scope "${scope}" is not valid for ${harness.label}. Valid scopes: ${harness.scopes.join(", ")}.`
+    );
   }
 
   const isRepo = scope === "repo";
@@ -231,10 +262,13 @@ function installHooks(options = {}) {
   const hookCommand = options.hookCommand || defaultHookCommand();
   const scope = options.scope || "global";
 
+  validateChoice("harness", harness, VALID_HARNESSES);
+  validateChoice("scope", scope, VALID_SCOPES);
+
   if (harness === "all") {
-    return ["antigravity", "claude-code", "codex"].map((key) =>
-      installOneHook({ harnessKey: key, scope: "global", home, repo, hookCommand })
-    );
+    const keys =
+      scope === "repo" ? ["claude-code", "codex"] : ["antigravity", "claude-code", "codex"];
+    return keys.map((key) => installOneHook({ harnessKey: key, scope, home, repo, hookCommand }));
   }
 
   return [installOneHook({ harnessKey: harness, scope, home, repo, hookCommand })];
@@ -305,7 +339,7 @@ function installOneSkill({
     return { target, scope, path: filePath, mode: "instructions" };
   }
 
-  throw new Error(`Unknown skill target "${target}"`);
+  throw new Error(`Invalid skill target "${target}". Use one of: ${VALID_HARNESSES.join(", ")}.`);
 }
 
 function installSkills(options = {}) {
@@ -315,10 +349,13 @@ function installSkills(options = {}) {
   const scope = options.scope || "global";
   const sourcePath = options.sourcePath || skillSourcePath();
 
+  validateChoice("target", target, VALID_HARNESSES);
+  validateChoice("scope", scope, VALID_SCOPES);
+
   if (target === "all") {
-    return ["antigravity", "claude-code", "codex"].map((key) =>
-      installOneSkill({ target: key, scope: "global", home, repo, sourcePath })
-    );
+    const keys =
+      scope === "repo" ? ["claude-code", "codex"] : ["antigravity", "claude-code", "codex"];
+    return keys.map((key) => installOneSkill({ target: key, scope, home, repo, sourcePath }));
   }
 
   return [installOneSkill({ target, scope, home, repo, sourcePath })];
@@ -354,6 +391,7 @@ module.exports = {
   installSkills,
   managedInstructionBlock,
   normalizeHarness,
+  npxHookCommand,
   parseArgs,
   repoRoot,
   skillSourcePath,

@@ -1,6 +1,11 @@
-﻿import { generateKokoroAudio } from "./tts-kokoro.js";
+import {
+  generateKokoroAudio,
+  generateKokoroChunk,
+  getKokoroChunks,
+  KOKORO_CHUNK_GAP_SEC
+} from "./tts-kokoro.js";
 import { generateKokoroTimestampedAudio } from "./tts-kokoro-timestamped.js";
-import { getAudio, withGenLock } from "./audio-cache.js";
+import { cacheGeneratedAudio, getAudio, getCachedAudio, withGenLock } from "./audio-cache.js";
 
 const RATE_MIN = 0.25;
 const RATE_MAX = 4;
@@ -149,7 +154,15 @@ function getSkipReason(item) {
   return "";
 }
 
-export function createPlaybackController({ backendUrl, onUpdate, onStateChanged, onItemFinished }) {
+export function createPlaybackController({
+  backendUrl,
+  onUpdate,
+  onStateChanged,
+  onItemFinished,
+  kokoroGenerateAudio = generateKokoroAudio,
+  kokoroGenerateChunk = generateKokoroChunk,
+  kokoroGetChunks = getKokoroChunks
+}) {
   let activeUtterance = null;
   let audioContext = null;
   let activeSource = null;
@@ -169,6 +182,8 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
   let activeWordAccurate = false;
   let activeUseStretch = false;
   let activeStretchRate = 1;
+  let activeStream = null;
+  let activeStreamChunk = null;
   let basePosSec = 0;
   let baseCtxTime = 0;
 
@@ -203,6 +218,34 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     return Boolean(activeSource);
   }
 
+  function concatSamples(buffers, sampleRate) {
+    const gapSamples = Math.round(sampleRate * KOKORO_CHUNK_GAP_SEC);
+    const total =
+      buffers.reduce((sum, b) => sum + b.length, 0) + gapSamples * Math.max(0, buffers.length - 1);
+    const merged = new Float32Array(total);
+    let offset = 0;
+    for (let i = 0; i < buffers.length; i += 1) {
+      merged.set(buffers[i], offset);
+      offset += buffers[i].length;
+      if (i < buffers.length - 1) offset += gapSamples;
+    }
+    return merged;
+  }
+
+  function createPlaybackBuffer(
+    samples,
+    sampleRate,
+    { leadInSamples = 0, tailSilenceSamples = 0 } = {}
+  ) {
+    const buffer = audioContext.createBuffer(
+      1,
+      leadInSamples + samples.length + tailSilenceSamples,
+      sampleRate
+    );
+    buffer.copyToChannel(samples, 0, leadInSamples);
+    return buffer;
+  }
+
   function teardownSource() {
     if (activeSource) {
       activeSource.onended = null;
@@ -222,7 +265,13 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     activeStretch = null;
   }
 
+  function cancelActiveStream() {
+    if (activeStream) activeStream.cancelled = true;
+    activeStream = null;
+  }
+
   function releaseActiveAudio() {
+    cancelActiveStream();
     teardownSource();
     if (activeGain) {
       try {
@@ -236,10 +285,13 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     activeWordAccurate = false;
     activeSpeechDuration = 0;
     activeLeadInSec = 0;
+    activeStreamChunk = null;
+    basePosSec = 0;
+    baseCtxTime = 0;
   }
 
   function getCurrentSpeechSec() {
-    if (!activeBuffer || !audioContext) return 0;
+    if ((!activeBuffer && !activeStream) || !audioContext) return 0;
     const rate = activeUseStretch ? activeStretchRate : 1;
     const elapsed = (audioContext.currentTime - baseCtxTime) * rate;
     return Math.min(activeSpeechDuration, Math.max(0, basePosSec + elapsed));
@@ -332,6 +384,176 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     );
     const includeLeadIn = offsetSec <= 0.0001;
     connectSourceFrom(includeLeadIn ? 0 : offsetSec, includeLeadIn);
+  }
+
+  function connectStreamSource(stream, chunkResult, offsetWithinChunkSec = 0) {
+    const source = audioContext.createBufferSource();
+    source.buffer = chunkResult.buffer;
+
+    if (activeUseStretch && StretchNodeClass) {
+      const stretch = new StretchNodeClass({ context: audioContext, outputChannelCount: 1 });
+      if (typeof stretch.setStretchParameters === "function") {
+        stretch.setStretchParameters(SPEECH_STRETCH_PARAMS);
+      }
+      source.playbackRate.value = activeStretchRate;
+      stretch.playbackRate.value = activeStretchRate;
+      source.connect(stretch);
+      stretch.connect(activeGain);
+      activeStretch = stretch;
+    } else {
+      source.playbackRate.value = 1;
+      source.connect(activeGain);
+    }
+
+    source.onended = async () => {
+      if (playbackToken !== stream.token || stream.cancelled) return;
+      teardownSource();
+      baseCtxTime = audioContext ? audioContext.currentTime : 0;
+
+      if (chunkResult.index < stream.chunks.length - 1) {
+        if (!stream.results[chunkResult.index + 1]) {
+          setPlaybackState("loading");
+          notify("Buffering next Kokoro chunk...");
+        }
+        await playStreamChunk(stream, chunkResult.index + 1);
+        return;
+      }
+
+      activeStream = null;
+      setPlaybackState("ended");
+      if (typeof onItemFinished === "function" && stream.playingItem) {
+        onItemFinished(stream.playingItem.id);
+      }
+      try {
+        await markPlayed(stream.playingItem);
+        notify("Read aloud finished.");
+      } catch (error) {
+        notify(`Playback finished, but queue state could not be saved: ${error.message}`);
+      }
+    };
+
+    activeSource = source;
+    activeStreamChunk = chunkResult;
+    const offsetSec = Math.max(0, Number(offsetWithinChunkSec) || 0);
+    basePosSec =
+      chunkResult.index === 0 && offsetSec <= 0
+        ? -activeLeadInSec
+        : chunkResult.startSec + offsetSec;
+    baseCtxTime = audioContext.currentTime;
+    const bufferOffset =
+      (chunkResult.index === 0 ? activeLeadInSec : 0) +
+      Math.min(chunkResult.endSec - chunkResult.startSec, offsetSec);
+    source.start(0, bufferOffset);
+  }
+
+  async function playStreamChunk(stream, index) {
+    let chunkResult;
+    try {
+      chunkResult = await stream.chunkPromises[index];
+    } catch (error) {
+      if (playbackToken !== stream.token || stream.cancelled) return;
+      activeStream = null;
+      activeItem = null;
+      releaseActiveAudio();
+      setPlaybackState("idle");
+      const reason = `Local Kokoro speech failed: ${error.message}`;
+      await markSkipped(stream.playingItem, reason);
+      notify(`${reason} The speakable preview remains visible.`);
+      return;
+    }
+
+    if (playbackToken !== stream.token || stream.cancelled) return;
+    if (audioContext.state === "suspended") await audioContext.resume();
+    if (playbackToken !== stream.token || stream.cancelled) return;
+
+    activeSpeechDuration = Math.max(activeSpeechDuration, chunkResult.afterGapSec);
+    activeSegments = stream.segments.slice();
+    connectStreamSource(stream, chunkResult);
+    setPlaybackState("speaking");
+    notify(
+      `Reading from ${stream.playingItem.sourceApp} with Kokoro${activeUseStretch ? " (live speed)" : ""}.`
+    );
+  }
+
+  function prepareStream({
+    token,
+    target,
+    playingItem,
+    chunks,
+    voice,
+    genSpeed,
+    useCache,
+    leadInSec
+  }) {
+    const stream = {
+      token,
+      target,
+      playingItem,
+      chunks,
+      cancelled: false,
+      buffers: [],
+      segments: [],
+      sampleRate: 24000,
+      cursorSamples: 0,
+      chunkPromises: [],
+      results: []
+    };
+
+    let tail = Promise.resolve();
+    stream.chunkPromises = chunks.map((chunk, index) => {
+      tail = tail.then(async () => {
+        if (stream.cancelled || playbackToken !== token) throw new Error("Playback was cancelled.");
+        const generated = await withGenLock(() => kokoroGenerateChunk(chunk, voice, genSpeed));
+        if (stream.cancelled || playbackToken !== token) throw new Error("Playback was cancelled.");
+
+        stream.sampleRate = generated.sampleRate;
+        const gapSamples =
+          index < chunks.length - 1 ? Math.round(generated.sampleRate * KOKORO_CHUNK_GAP_SEC) : 0;
+        const startSec = stream.cursorSamples / generated.sampleRate;
+        stream.cursorSamples += generated.samples.length;
+        const endSec = stream.cursorSamples / generated.sampleRate;
+        stream.segments.push({ text: chunk, startSec, endSec });
+        stream.buffers[index] = generated.samples;
+        stream.cursorSamples += gapSamples;
+
+        const result = {
+          index,
+          samples: generated.samples,
+          sampleRate: generated.sampleRate,
+          startSec,
+          endSec,
+          afterGapSec: stream.cursorSamples / generated.sampleRate,
+          buffer: createPlaybackBuffer(generated.samples, generated.sampleRate, {
+            leadInSamples: index === 0 ? Math.round(generated.sampleRate * leadInSec) : 0,
+            tailSilenceSamples: gapSamples
+          })
+        };
+        stream.results[index] = result;
+        return result;
+      });
+      return tail;
+    });
+
+    stream.finalPromise = tail.then(async () => {
+      if (stream.cancelled || playbackToken !== token) return null;
+      const generated = {
+        samples: concatSamples(stream.buffers, stream.sampleRate),
+        sampleRate: stream.sampleRate,
+        segments: stream.segments.slice(),
+        wordAccurate: false
+      };
+      if (stream.cancelled || playbackToken !== token) return null;
+      activeBuffer = createPlaybackBuffer(generated.samples, generated.sampleRate, {
+        leadInSamples: Math.round(generated.sampleRate * leadInSec)
+      });
+      activeSegments = generated.segments;
+      activeSpeechDuration = generated.samples.length / generated.sampleRate;
+      if (useCache) await cacheGeneratedAudio(backendUrl, target, generated);
+      return generated;
+    });
+    stream.finalPromise.catch(() => {});
+
+    return stream;
   }
 
   function notify(message) {
@@ -448,7 +670,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     const engine = settings.engine === "kokoro-ts" ? "kokoro-ts" : "kokoro";
     const voice = settings.kokoroVoice;
     const rawGenerate =
-      engine === "kokoro-ts" ? generateKokoroTimestampedAudio : generateKokoroAudio;
+      engine === "kokoro-ts" ? generateKokoroTimestampedAudio : kokoroGenerateAudio;
     return { engine, voice, rawGenerate };
   }
 
@@ -479,15 +701,20 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     const text = normalizeSpeakableText(playingItem);
     const { genSpeed, stretchRate } = planSpeed(rate, canStretch);
     let generated = null;
+    let useStreaming = false;
+    const target = { itemId: playingItem.id, engine, voice, speed: genSpeed };
     try {
       notify(
-        `Generating natural Kokoro speech${genSpeed > 1 ? ` at ${genSpeed.toFixed(2)}x` : ""}...`
+        `${engine === "kokoro" ? "Preparing" : "Generating natural"} Kokoro speech${genSpeed > 1 ? ` at ${genSpeed.toFixed(2)}x` : ""}...`
       );
-      generated = await getAudio(
-        backendUrl,
-        { itemId: playingItem.id, engine, voice, speed: genSpeed },
-        () => withGenLock(() => rawGenerate(text, voice, genSpeed))
-      );
+      if (engine === "kokoro") {
+        generated = await getCachedAudio(backendUrl, target).catch(() => null);
+        useStreaming = !generated;
+      } else {
+        generated = await getAudio(backendUrl, target, () =>
+          withGenLock(() => rawGenerate(text, voice, genSpeed))
+        );
+      }
     } catch (error) {
       if (playbackToken !== token) return;
       activeItem = null;
@@ -502,6 +729,41 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     if (playbackToken !== token) return;
 
     try {
+      if (useStreaming) {
+        if (context.state === "suspended") await context.resume();
+        const leadInSec = useStretch && StretchNodeClass ? STRETCH_LEADIN_SEC : 0;
+        const gain = context.createGain();
+        gain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
+        gain.connect(context.destination);
+
+        activeGain = gain;
+        activeGenSpeed = genSpeed;
+        activeUseStretch = Boolean(useStretch && StretchNodeClass);
+        activeStretchRate = activeUseStretch ? stretchRate : 1;
+
+        const chunks = kokoroGetChunks(text);
+        if (chunks.length === 0) throw new Error("No speakable text is available for playback.");
+        const stream = prepareStream({
+          token,
+          target,
+          playingItem,
+          chunks,
+          voice,
+          genSpeed,
+          useCache: genSpeed === 1,
+          leadInSec
+        });
+        activeStream = stream;
+        activeItem = playingItem;
+        activeLeadInSec = leadInSec;
+        activeSpeechDuration = 0;
+        activeSegments = [];
+        activeWordAccurate = false;
+        notify("Generating first Kokoro chunk...");
+        await playStreamChunk(stream, 0);
+        return;
+      }
+
       await installGeneratedBuffer(generated, settings, { genSpeed, stretchRate, useStretch });
       setPlaybackState("speaking");
       notify(
@@ -536,7 +798,23 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
 
   function applyLiveSettings(settings) {
     if (!settings) return;
-    if (activeStretch && activeSource && Number.isFinite(Number(settings.rate))) {
+    if (activeStream && !activeBuffer && activeSource && Number.isFinite(Number(settings.rate))) {
+      const target = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
+      const chunk = activeStreamChunk;
+      if (chunk) {
+        const currentSec = getCurrentSpeechSec();
+        const chunkOffset = Math.min(
+          chunk.endSec - chunk.startSec,
+          Math.max(0, currentSec - chunk.startSec)
+        );
+        const residual = clampNumber(target / (activeGenSpeed || 1), 1, RATE_MIN, RATE_MAX);
+        const nextUseStretch = Boolean(StretchNodeClass && Math.abs(residual - 1) > 0.001);
+        activeUseStretch = nextUseStretch;
+        activeStretchRate = nextUseStretch ? residual : 1;
+        teardownSource();
+        connectStreamSource(activeStream, chunk, chunkOffset);
+      }
+    } else if (activeStretch && activeSource && Number.isFinite(Number(settings.rate))) {
       const target = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
       const residual = clampNumber(target / (activeGenSpeed || 1), 1, RATE_MIN, RATE_MAX);
       basePosSec = getCurrentSpeechSec();
@@ -555,12 +833,17 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
   // the audio at the new native Kokoro speed; that is done here while preserving
   // the current position and play/pause state. Call on slider release, not drag.
   async function changeSpeed(rate, settings = {}) {
-    if (!activeBuffer || !activeItem) return;
+    if (!activeBuffer && !activeStream) return;
     const target = clampNumber(Number(rate), 1, RATE_MIN, RATE_MAX);
     const canStretch = Boolean(StretchNodeClass);
     const plan = planSpeed(target, canStretch);
 
     if (Math.abs(plan.genSpeed - activeGenSpeed) < 0.001) {
+      applyLiveSettings({ rate: target, volume: settings.volume });
+      return;
+    }
+
+    if (activeStream && !activeBuffer) {
       applyLiveSettings({ rate: target, volume: settings.volume });
       return;
     }
@@ -615,7 +898,7 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
   }
 
   function getPlaybackPosition() {
-    if (!activeBuffer) return null;
+    if (!activeBuffer && !activeStream) return null;
     const currentSec = getCurrentSpeechSec();
     const totalSec = activeSpeechDuration;
     let segmentIndex = activeSegments.findIndex(
@@ -634,12 +917,37 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
     };
   }
 
+  function findGeneratedStreamChunk(targetSec) {
+    if (!activeStream) return null;
+    return (
+      activeStream.results.find(
+        (result) => result && targetSec >= result.startSec && targetSec < result.endSec
+      ) ||
+      activeStream.results.find(
+        (result) => result && Math.abs(targetSec - result.endSec) <= KOKORO_CHUNK_GAP_SEC
+      ) ||
+      null
+    );
+  }
+
   function seek(fraction) {
-    if (!activeBuffer || !audioContext) return;
+    if ((!activeBuffer && !activeStream) || !audioContext) return;
     const target = Math.min(
       activeSpeechDuration,
       Math.max(0, Number(fraction) * activeSpeechDuration)
     );
+    if (activeStream && !activeBuffer) {
+      const chunk = findGeneratedStreamChunk(target);
+      if (!chunk) {
+        notify("That part is still generating.");
+        return;
+      }
+      teardownSource();
+      if (audioContext.state === "suspended") audioContext.resume();
+      connectStreamSource(activeStream, chunk, Math.max(0, target - chunk.startSec));
+      setPlaybackState("speaking");
+      return;
+    }
     teardownSource();
     if (audioContext.state === "suspended") audioContext.resume();
     connectSourceFrom(target, false);
@@ -647,7 +955,20 @@ export function createPlaybackController({ backendUrl, onUpdate, onStateChanged,
   }
 
   function replayCurrent() {
-    if (!activeBuffer || !audioContext) return false;
+    if ((!activeBuffer && !activeStream) || !audioContext) return false;
+    if (activeStream && !activeBuffer) {
+      const firstChunk = activeStream.results[0];
+      if (!firstChunk) {
+        notify("The first audio chunk is still generating.");
+        return false;
+      }
+      teardownSource();
+      if (audioContext.state === "suspended") audioContext.resume();
+      connectStreamSource(activeStream, firstChunk, 0);
+      setPlaybackState("speaking");
+      notify("Replaying from the start.");
+      return true;
+    }
     teardownSource();
     if (audioContext.state === "suspended") audioContext.resume();
     connectSourceFrom(0, true);

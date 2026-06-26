@@ -4,7 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as notification from "@tauri-apps/plugin-notification";
 import { createPlaybackController } from "./playback.js";
-import { shouldAutoReadPending, getNextPendingItem } from "./read-mode.js";
+import {
+  describeQueueArrivalNotice,
+  getStartupAutoReadAttemptIds,
+  shouldAutoReadPending,
+  getNextPendingItem,
+  selectItemIdForQueueUpdate
+} from "./read-mode.js";
 import { initSettingsUi } from "./settings-ui.js";
 import {
   listCache,
@@ -113,7 +119,12 @@ let lastDataSig = null;
 let historyView = { level: "messages", projectKey: null, sessionKey: null };
 let storageView = { projectKey: null, sessionKey: null };
 let autoReadAttemptedItemIds = loadAutoReadAttempted();
+let autoReadSeeded = false;
 let highlightSurface = "preview";
+const noticedQueueItemIds = new Set();
+const NOTICED_QUEUE_ITEM_LIMIT = 200;
+let queueNotice = null;
+let queueNoticeEl = null;
 
 // ---- Unread tracking -------------------------------------------------------
 // An item is "unread" until the user opens it or playback of it finishes. The
@@ -245,14 +256,27 @@ function loadAutoReadAttempted() {
   }
 }
 
-function rememberAutoReadAttempt(itemId) {
-  if (!itemId) return;
-  autoReadAttemptedItemIds.add(itemId);
+function persistAutoReadAttempts() {
   const recent = Array.from(autoReadAttemptedItemIds).slice(-100);
   autoReadAttemptedItemIds = new Set(recent);
   try {
     window.sessionStorage.setItem(AUTO_READ_STORAGE_KEY, JSON.stringify(recent));
   } catch {}
+}
+
+function seedAutoReadAttempts(queue) {
+  if (autoReadSeeded) return;
+  for (const itemId of getStartupAutoReadAttemptIds(queue)) {
+    autoReadAttemptedItemIds.add(itemId);
+  }
+  autoReadSeeded = true;
+  persistAutoReadAttempts();
+}
+
+function rememberAutoReadAttempt(itemId) {
+  if (!itemId) return;
+  autoReadAttemptedItemIds.add(itemId);
+  persistAutoReadAttempts();
 }
 
 let pregenSeenIds = loadPregenSeen();
@@ -359,6 +383,17 @@ function notify(message) {
   actionHint.textContent = message;
 }
 
+function queueNoticeContainer() {
+  if (queueNoticeEl) return queueNoticeEl;
+  queueNoticeEl = document.createElement("div");
+  queueNoticeEl.className = "queue-notice";
+  queueNoticeEl.hidden = true;
+  queueNoticeEl.setAttribute("role", "status");
+  queueNoticeEl.setAttribute("aria-live", "polite");
+  document.querySelector(".app-shell")?.append(queueNoticeEl);
+  return queueNoticeEl;
+}
+
 async function ensureNotifyPermission() {
   try {
     let granted = await notification.isPermissionGranted();
@@ -406,10 +441,27 @@ function playbackActive() {
   return Boolean(playback && (playback.isSpeaking || playback.isPaused || playback.isLoading));
 }
 
+function isSameDay(a, b) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
 function formatTime(iso) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  if (isSameDay(date, now)) return time;
+  // Older than today: prefix the date so "11pm yesterday" never reads as now.
+  // Drop the year while it matches the current year to keep the stamp short.
+  const dateOpts =
+    date.getFullYear() === now.getFullYear()
+      ? { month: "short", day: "numeric" }
+      : { year: "numeric", month: "short", day: "numeric" };
+  return `${date.toLocaleDateString([], dateOpts)}, ${time}`;
 }
 
 // Clock for the seek bar: speech-time seconds (base 1x timeline), so it never
@@ -611,12 +663,12 @@ function buildNowPlayingIcon() {
   return icon;
 }
 
-function nowPlayingItem() {
+function nowPlayingItem(items = speakableItems(latestState?.queue || {})) {
   if (!playback) return null;
-  if (!playback.isSpeaking && !playback.isLoading) return null;
+  if (!playback.isSpeaking && !playback.isLoading && !playback.isPaused) return null;
   const id = playback.activeItemId;
   if (!id) return null;
-  return speakableItems(latestState?.queue || {}).find((item) => item.id === id) || null;
+  return items.find((item) => item.id === id) || null;
 }
 
 function updateNowPlayingIndicators() {
@@ -624,6 +676,7 @@ function updateNowPlayingIndicators() {
   const projectKey = item ? projectKeyOf(item) : null;
   const sessionKey = item ? sessionKeyOf(item) : null;
   const ownerColor = item ? ownerSolidColor(item.sourceApp) : null;
+  const paused = Boolean(item && playback?.isPaused);
   const paintIcon = (el, on) => {
     const icon = el.querySelector(".now-playing-icon");
     if (icon) icon.style.color = on ? ownerColor : "";
@@ -631,15 +684,19 @@ function updateNowPlayingIndicators() {
   for (const btn of projectsList.querySelectorAll(".tree-item")) {
     const on = Boolean(projectKey) && btn.dataset.project === projectKey;
     btn.classList.toggle("is-playing", on);
+    btn.classList.toggle("is-paused", on && paused);
     paintIcon(btn, on);
   }
   for (const btn of sessionsList.querySelectorAll(".tree-item")) {
     const on = Boolean(sessionKey) && btn.dataset.session === sessionKey;
     btn.classList.toggle("is-playing", on);
+    btn.classList.toggle("is-paused", on && paused);
     paintIcon(btn, on);
   }
   for (const bubble of historyList.querySelectorAll(".bubble-assistant")) {
-    bubble.classList.toggle("is-playing", Boolean(item) && bubble.dataset.id === item.id);
+    const on = Boolean(item) && bubble.dataset.id === item.id;
+    bubble.classList.toggle("is-playing", on);
+    bubble.classList.toggle("is-paused", on && paused);
   }
 }
 
@@ -935,6 +992,67 @@ function renderHistory(items) {
   renderMessagesDetail(session);
 }
 
+function dismissQueueNotice() {
+  queueNotice = null;
+  renderQueueNotice();
+}
+
+function jumpToQueueNotice(itemId) {
+  const item = speakableItems(latestState?.queue || {}).find((entry) => entry.id === itemId);
+  if (!item) {
+    dismissQueueNotice();
+    return;
+  }
+  selectedItemId = item.id;
+  historyView = {
+    level: "messages",
+    projectKey: projectKeyOf(item),
+    sessionKey: sessionKeyOf(item)
+  };
+  setView("chats");
+  markItemRead(item.id, { render: false });
+  dismissQueueNotice();
+  renderState(latestState);
+}
+
+function renderQueueNotice() {
+  const container = queueNoticeContainer();
+  if (!queueNotice) {
+    container.hidden = true;
+    container.replaceChildren();
+    return;
+  }
+
+  container.hidden = false;
+  container.className = `queue-notice is-${queueNotice.prominence}`;
+
+  const copy = document.createElement("div");
+  copy.className = "queue-notice-copy";
+  const title = document.createElement("strong");
+  title.textContent =
+    queueNotice.kind === "other-session" ? "Queued from another chat" : "Queued in this chat";
+  const detail = document.createElement("span");
+  detail.textContent = `${queueNotice.source} - ${queueNotice.project} - ${queueNotice.session}`;
+  copy.append(title, detail);
+
+  const jump = document.createElement("button");
+  jump.type = "button";
+  jump.className = "queue-notice-action";
+  jump.textContent = "Jump";
+  jump.addEventListener("click", () => jumpToQueueNotice(queueNotice.itemId));
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "queue-notice-close";
+  close.setAttribute("aria-label", "Dismiss");
+  close.title = "Dismiss";
+  close.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  close.addEventListener("click", dismissQueueNotice);
+
+  container.replaceChildren(copy, jump, close);
+}
+
 function snapToWordEnd(full, count) {
   if (count <= 0) return 0;
   if (count >= full.length) return full.length;
@@ -1110,11 +1228,32 @@ function renderState({ settings, queue }) {
   }
 
   const latest = items[items.length - 1] || null;
+  const activeItem = nowPlayingItem(items);
   if (latest && latest.id !== lastLatestId) {
     const firstLoad = lastLatestId === null;
-    selectedItemId = latest.id;
-    lastLatestId = latest.id;
     if (!firstLoad) maybeNotify(latest, settings);
+    if (!firstLoad) {
+      const notice = describeQueueArrivalNotice({
+        item: latest,
+        activeItem,
+        playbackActive: playbackActive(),
+        noticedItemIds: noticedQueueItemIds
+      });
+      if (notice) {
+        noticedQueueItemIds.add(notice.itemId);
+        if (noticedQueueItemIds.size > NOTICED_QUEUE_ITEM_LIMIT) {
+          noticedQueueItemIds.delete(noticedQueueItemIds.values().next().value);
+        }
+        queueNotice = notice;
+      }
+    }
+    selectedItemId = selectItemIdForQueueUpdate({
+      currentSelectedId: selectedItemId,
+      latestItem: latest,
+      activeItem,
+      playbackActive: playbackActive()
+    });
+    lastLatestId = latest.id;
   }
   if (!findSelected(items)) selectedItemId = latest ? latest.id : null;
 
@@ -1123,10 +1262,12 @@ function renderState({ settings, queue }) {
   setStatus(statusKind);
   renderNowCard(selected, statusKind);
   renderHistory(items);
+  renderQueueNotice();
   updateNowPlayingIndicators();
   updateControls(settings, items, selected);
   updateModal();
   settingsUi?.render(settings);
+  seedAutoReadAttempts(queue);
   runAutoRead(settings, queue);
   schedulePregen(settings, items);
 }

@@ -12,6 +12,7 @@ packages/desktop/src-tauri/gen/
 # Runtime-generated local config
 packages/desktop/public/config.json
 packages/backend/data/*.json
+packages/backend/data/hook-debug/
 
 # Local agent configuration and generated hooks
 .claude/
@@ -26,6 +27,7 @@ packages/desktop/public/headtts/
 .env
 .env.*
 *.log
+.logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

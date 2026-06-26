@@ -2,27 +2,20 @@
 
 Local HTTP backend for Agent Hotline.
 
-This package owns:
-
-- Hook input parsing.
-- Speakable-text filtering.
-- Speech queue storage.
-- Settings storage.
-- Local API endpoints used by the desktop app.
-- The `agent-hotline-hook` command used by Codex and Claude Code hooks.
+This package owns hook parsing, text filtering, the speech queue, settings, local API routes, and the `agent-hotline hook` command.
 
 ## Run
 
-From the repo root:
+Background mode:
+
+```powershell
+ah run
+```
+
+Dev mode:
 
 ```powershell
 npm run dev:backend
-```
-
-From this package:
-
-```powershell
-npm start
 ```
 
 Default URL:
@@ -31,17 +24,13 @@ Default URL:
 http://127.0.0.1:4777
 ```
 
-Override the port with `AGENT_HOTLINE_PORT`.
+Use `AGENT_HOTLINE_PORT` to change the port.
 
-## Local Data
-
-Runtime settings and speech queue state are stored in:
+Runtime data lives in:
 
 ```text
 %APPDATA%\Agent Hotline\
 ```
-
-Development question queue data, if created by old prototype routes, is local-only and ignored by git.
 
 ## Checks
 

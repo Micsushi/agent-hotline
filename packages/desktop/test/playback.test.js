@@ -60,6 +60,100 @@ function installFetch(handler) {
   return calls;
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function withTimeout(promise, ms, message) {
+  let timeout;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeout));
+}
+
+function installAudioWindow() {
+  const { synth } = installWindow();
+  const sources = [];
+
+  class FakeAudioBuffer {
+    constructor(length, sampleRate) {
+      this.length = length;
+      this.sampleRate = sampleRate;
+      this.duration = length / sampleRate;
+      this.data = new Float32Array(length);
+    }
+
+    copyToChannel(samples, _channel, offset = 0) {
+      this.data.set(samples, offset);
+    }
+  }
+
+  class FakeSource {
+    constructor() {
+      this.buffer = null;
+      this.playbackRate = { value: 1 };
+      this.onended = null;
+      this.stopped = false;
+      this.startOffset = 0;
+    }
+
+    connect() {}
+
+    disconnect() {}
+
+    start(_when = 0, offset = 0) {
+      this.startOffset = offset;
+      sources.push(this);
+    }
+
+    stop() {
+      this.stopped = true;
+    }
+  }
+
+  class FakeAudioContext {
+    constructor() {
+      this.currentTime = 0;
+      this.state = "running";
+      this.destination = {};
+    }
+
+    createBuffer(_channels, length, sampleRate) {
+      return new FakeAudioBuffer(length, sampleRate);
+    }
+
+    createBufferSource() {
+      return new FakeSource();
+    }
+
+    createGain() {
+      return {
+        gain: { value: 1 },
+        connect() {},
+        disconnect() {}
+      };
+    }
+
+    async resume() {
+      this.state = "running";
+    }
+
+    suspend() {
+      this.state = "suspended";
+    }
+  }
+
+  globalThis.window.AudioContext = FakeAudioContext;
+  return { synth, sources };
+}
+
 test("playback skips code-heavy speakable text before browser speech starts", async () => {
   const { spoken } = installWindow();
   const calls = installFetch(async (url, options) => {
@@ -240,4 +334,303 @@ test("pause resume stop and mute control active browser speech", async () => {
   assert.equal(controller.state, "idle");
   assert.equal(calls.at(-2).body.reason, "User muted playback.");
   assert.equal(new URL(calls.at(-1).url).pathname, "/api/mute");
+});
+
+test("kokoro cache miss starts playback after the first generated chunk", async () => {
+  const { sources } = installAudioWindow();
+  const chunkA = deferred();
+  const chunkB = deferred();
+  const generatedChunks = [];
+  const calls = installFetch(async (url, options) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/queue/stream-1/playing") {
+      return {
+        status: 200,
+        body: {
+          item: {
+            id: "stream-1",
+            sourceApp: "Codex",
+            speakableText: "First sentence. Second sentence."
+          }
+        }
+      };
+    }
+    if (path === "/api/queue/stream-1/audio" && options.method === "POST") {
+      return { status: 201, body: { stored: true } };
+    }
+    if (path === "/api/queue/stream-1/audio") {
+      return { status: 200, body: { cached: false } };
+    }
+    if (path === "/api/queue/stream-1/played") {
+      return { status: 200, body: { item: { id: "stream-1", status: "played" } } };
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+
+  const controller = createPlaybackController({
+    backendUrl: "http://127.0.0.1:4777",
+    kokoroGetChunks: () => ["First sentence.", "Second sentence."],
+    kokoroGenerateChunk: async (chunk) => {
+      generatedChunks.push(chunk);
+      return chunk === "First sentence." ? chunkA.promise : chunkB.promise;
+    }
+  });
+
+  const playPromise = controller.readNextPending({
+    settings: { mute: false, engine: "kokoro", rate: 1, volume: 1 },
+    queue: {
+      pending: [
+        {
+          id: "stream-1",
+          sourceApp: "Codex",
+          speakableText: "First sentence. Second sentence."
+        }
+      ]
+    }
+  });
+
+  await Promise.resolve();
+  assert.equal(sources.length, 0);
+  chunkA.resolve({ samples: new Float32Array([0.1, 0.2, 0.3]), sampleRate: 24000 });
+  await playPromise;
+
+  assert.equal(controller.state, "speaking");
+  assert.equal(sources.length, 1, "first chunk starts playback before chunk two is ready");
+  assert.deepEqual(generatedChunks.slice(0, 1), ["First sentence."]);
+
+  await Promise.resolve();
+  assert.equal(generatedChunks[1], "Second sentence.", "later chunk generation continues");
+  chunkB.resolve({ samples: new Float32Array([0.4, 0.5]), sampleRate: 24000 });
+  await Promise.resolve();
+
+  await sources[0].onended();
+  assert.equal(sources.length, 2, "second chunk starts after first chunk ends");
+  await sources[1].onended();
+
+  assert.equal(controller.state, "ended");
+  assert.deepEqual(
+    calls.map((call) => new URL(call.url).pathname).filter((path) => path.endsWith("/played")),
+    ["/api/queue/stream-1/played"]
+  );
+});
+
+test("kokoro high-speed stream buffers at chunk boundaries until the next chunk is ready", async () => {
+  const { sources } = installAudioWindow();
+  const chunkA = deferred();
+  const chunkB = deferred();
+  let generatedFullMessage = 0;
+  let generatedChunk = 0;
+  installFetch(async (url, options) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/queue/stream-fast/playing") {
+      return {
+        status: 200,
+        body: {
+          item: {
+            id: "stream-fast",
+            sourceApp: "Codex",
+            speakableText: "First sentence. Second sentence."
+          }
+        }
+      };
+    }
+    if (path === "/api/queue/stream-fast/audio") {
+      assert.notEqual(options.method, "POST", "high-speed generated variants stay memory-only");
+      return { status: 200, body: { cached: false } };
+    }
+    if (path === "/api/queue/stream-fast/played") {
+      return { status: 200, body: { item: { id: "stream-fast", status: "played" } } };
+    }
+    if (path === "/api/queue/stream-fast/skipped") {
+      assert.fail(options.body.reason);
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+
+  const controller = createPlaybackController({
+    backendUrl: "http://127.0.0.1:4777",
+    kokoroGetChunks: () => ["First sentence.", "Second sentence."],
+    kokoroGenerateChunk: async () => {
+      generatedChunk += 1;
+      return generatedChunk === 1 ? chunkA.promise : chunkB.promise;
+    },
+    kokoroGenerateAudio: async () => {
+      generatedFullMessage += 1;
+      return {
+        samples: new Float32Array([0.1, 0.2, 0.3, 0.4]),
+        sampleRate: 24000,
+        segments: [],
+        wordAccurate: false
+      };
+    }
+  });
+
+  const playPromise = controller.playItem(
+    {
+      id: "stream-fast",
+      sourceApp: "Codex",
+      speakableText: "First sentence. Second sentence."
+    },
+    { mute: false, engine: "kokoro", rate: 4, volume: 1 }
+  );
+
+  await Promise.resolve();
+  chunkA.resolve({ samples: new Float32Array([0.1]), sampleRate: 24000 });
+  await withTimeout(playPromise, 1000, "first high-speed chunk did not start");
+
+  assert.equal(controller.state, "speaking");
+  assert.equal(sources.length, 1);
+  assert.equal(generatedFullMessage, 0);
+  assert.equal(generatedChunk, 2, "chunk two generation starts in the background");
+
+  const boundaryPromise = sources[0].onended();
+  await Promise.resolve();
+  assert.equal(controller.state, "loading");
+  assert.equal(sources.length, 1, "no second source starts before chunk two is ready");
+
+  chunkB.resolve({ samples: new Float32Array([0.2]), sampleRate: 24000 });
+  await withTimeout(boundaryPromise, 1000, "second high-speed chunk did not resume");
+  assert.equal(controller.state, "speaking");
+  assert.equal(sources.length, 2, "playback resumes when chunk two finishes generating");
+
+  await sources[1].onended();
+  assert.equal(controller.state, "ended");
+  assert.equal(generatedChunk, 2);
+});
+
+test("kokoro streaming stop cancels later chunks without storing stale cache", async () => {
+  const { sources } = installAudioWindow();
+  const chunkA = deferred();
+  const chunkB = deferred();
+  const calls = installFetch(async (url, options) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/queue/stream-stop/playing") {
+      return {
+        status: 200,
+        body: {
+          item: {
+            id: "stream-stop",
+            sourceApp: "Codex",
+            speakableText: "First sentence. Second sentence."
+          }
+        }
+      };
+    }
+    if (path === "/api/queue/stream-stop/audio" && options.method === "POST") {
+      return { status: 201, body: { stored: true } };
+    }
+    if (path === "/api/queue/stream-stop/audio") {
+      return { status: 200, body: { cached: false } };
+    }
+    if (path === "/api/queue/stream-stop/skipped") {
+      return {
+        status: 200,
+        body: { item: { id: "stream-stop", status: "skipped", skipReason: options.body.reason } }
+      };
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+
+  const controller = createPlaybackController({
+    backendUrl: "http://127.0.0.1:4777",
+    kokoroGetChunks: () => ["First sentence.", "Second sentence."],
+    kokoroGenerateChunk: async (chunk) =>
+      chunk === "First sentence." ? chunkA.promise : chunkB.promise
+  });
+
+  const playPromise = controller.playItem(
+    {
+      id: "stream-stop",
+      sourceApp: "Codex",
+      speakableText: "First sentence. Second sentence."
+    },
+    { mute: false, engine: "kokoro", rate: 1, volume: 1 }
+  );
+
+  await Promise.resolve();
+  chunkA.resolve({ samples: new Float32Array([0.1, 0.2]), sampleRate: 24000 });
+  await playPromise;
+  assert.equal(sources.length, 1);
+
+  await controller.stop("User stopped playback.");
+  chunkB.resolve({ samples: new Float32Array([0.3, 0.4]), sampleRate: 24000 });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(controller.state, "idle");
+  assert.equal(sources.length, 1, "cancelled chunk never starts a second source");
+  assert.equal(
+    calls.some(
+      (call) => new URL(call.url).pathname.endsWith("/audio") && call.options.method === "POST"
+    ),
+    false,
+    "cancelled streaming generation does not write a completed cache entry"
+  );
+});
+
+test("kokoro streaming seek and replay use generated chunks before final buffer is ready", async () => {
+  const { sources } = installAudioWindow();
+  const chunkA = deferred();
+  const chunkB = deferred();
+  const updates = [];
+  installFetch(async (url, options) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/queue/stream-seek/playing") {
+      return {
+        status: 200,
+        body: {
+          item: {
+            id: "stream-seek",
+            sourceApp: "Codex",
+            speakableText: "First sentence. Second sentence."
+          }
+        }
+      };
+    }
+    if (path === "/api/queue/stream-seek/audio" && options.method === "POST") {
+      return { status: 201, body: { stored: true } };
+    }
+    if (path === "/api/queue/stream-seek/audio") {
+      return { status: 200, body: { cached: false } };
+    }
+    if (path === "/api/queue/stream-seek/played") {
+      return { status: 200, body: { item: { id: "stream-seek", status: "played" } } };
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+
+  const controller = createPlaybackController({
+    backendUrl: "http://127.0.0.1:4777",
+    onUpdate: (message) => updates.push(message),
+    kokoroGetChunks: () => ["First sentence.", "Second sentence."],
+    kokoroGenerateChunk: async (chunk) =>
+      chunk === "First sentence." ? chunkA.promise : chunkB.promise
+  });
+
+  const playPromise = controller.playItem(
+    {
+      id: "stream-seek",
+      sourceApp: "Codex",
+      speakableText: "First sentence. Second sentence."
+    },
+    { mute: false, engine: "kokoro", rate: 1, volume: 1 }
+  );
+
+  await Promise.resolve();
+  chunkA.resolve({ samples: new Float32Array(24_000), sampleRate: 24_000 });
+  await playPromise;
+  assert.equal(sources.length, 1);
+
+  controller.seek(0.5);
+  assert.equal(sources.length, 2, "seek starts a replacement source for the generated chunk");
+  assert.ok(sources[1].startOffset > 0, "seek starts within the generated chunk");
+
+  assert.equal(controller.replayCurrent(), true);
+  assert.equal(sources.length, 3, "replay starts a replacement source for chunk zero");
+  assert.equal(sources[2].startOffset, 0);
+
+  controller.seek(2);
+  assert.match(updates.at(-1), /still generating/);
+
+  chunkB.resolve({ samples: new Float32Array(24_000), sampleRate: 24_000 });
 });

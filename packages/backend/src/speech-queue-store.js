@@ -73,6 +73,7 @@ function createSpeechQueueStore(options = {}) {
   const idGenerator = options.idGenerator || createDefaultId;
 
   let state = loadState();
+  resetPersistedPlayingItems();
   migrateProjectRoots();
 
   function loadState() {
@@ -96,6 +97,20 @@ function createSpeechQueueStore(options = {}) {
         item.projectName = pathBasename(root);
         changed = true;
       }
+    }
+    if (changed) persist();
+  }
+
+  function resetPersistedPlayingItems() {
+    let changed = false;
+    let timestamp;
+    for (const item of state.items) {
+      if (item.status !== "playing") continue;
+      timestamp ||= now();
+      item.status = "pending";
+      item.timestamps.interruptedAt = timestamp;
+      touch(item, timestamp);
+      changed = true;
     }
     if (changed) persist();
   }

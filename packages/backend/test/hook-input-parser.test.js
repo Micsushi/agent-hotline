@@ -181,6 +181,57 @@ function testCodexInputMessagesBecomeUserMessages() {
   assert.deepEqual(result.userMessages, ["first prompt", "second prompt"]);
 }
 
+function testCodexLastUserMessageBecomesUserMessage() {
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "codex",
+      last_user_message: "explain the uncommitted code",
+      response: { text: "Spoken:\nReply." }
+    })
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.userMessages, ["explain the uncommitted code"]);
+}
+
+function testCodexUserMessageRecoveredFromSessionFile() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ah-codex-session-"));
+  const threadId = "019f020f-9b5c-7053-9c2e-f1564e13e14a";
+  const sessionPath = path.join(dir, `rollout-test-${threadId}.jsonl`);
+  const lines = [
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "restore my prompts" }]
+      }
+    },
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Spoken:\nRecovered." }]
+      }
+    }
+  ];
+  fs.writeFileSync(sessionPath, lines.map((l) => JSON.stringify(l)).join("\n"), "utf8");
+
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "codex",
+      session_id: threadId,
+      response: { text: "Spoken:\nRecovered." }
+    }),
+    { codexSessionFile: sessionPath }
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.userMessages, ["restore my prompts"]);
+}
+
 function testClaudeUserMessagesReadFromTranscript() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ah-transcript-"));
   const transcriptPath = path.join(dir, "session.jsonl");
@@ -251,11 +302,74 @@ function testProjectFallsBackToCwdBasenameWithoutMarker() {
   assert.equal(result.projectPath, subdir);
 }
 
+function testProjectRecoveredFromTranscriptCwdWhenPayloadOmitsIt() {
+  // SDK / editor-extension Stop hooks omit the top-level cwd, but Claude writes
+  // the real cwd on every transcript line -- recover it so the item groups under
+  // its real project instead of the "Claude" catch-all.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ah-transcript-"));
+  const transcriptPath = path.join(dir, "session.jsonl");
+  const repoRoot = "C:\\Users\\me\\Documents\\Github\\agent-hotline";
+  const lines = [
+    { type: "queue-operation", operation: "enqueue" },
+    { type: "user", cwd: repoRoot, message: { role: "user", content: "hi" } },
+    { type: "assistant", message: { role: "assistant", content: "Done." } }
+  ];
+  fs.writeFileSync(transcriptPath, lines.map((l) => JSON.stringify(l)).join("\n"), "utf8");
+  const gitMarker = path.join(repoRoot, ".git");
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "claude",
+      session_id: "abcdef12-3456-7890",
+      transcript_path: transcriptPath,
+      assistant_response: { text: "Done." }
+    }),
+    { existsSync: (p) => p === gitMarker }
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.projectName, "agent-hotline");
+  assert.equal(result.projectPath, repoRoot);
+  assert.equal(result.threadLabel, "agent-hotline  -  abcdef12");
+}
+
+function testProjectFallsBackToEncodedTranscriptDirWhenNoCwdAnywhere() {
+  // No inline cwd and the transcript carries no cwd line: decode the stable
+  // ".../projects/<encoded>/<sid>.jsonl" segment so items still group together.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ah-transcript-"));
+  const encoded = "c--Users-me-Documents-Github-agent-hotline";
+  const projectsDir = path.join(dir, "projects", encoded);
+  fs.mkdirSync(projectsDir, { recursive: true });
+  const transcriptPath = path.join(projectsDir, "sid.jsonl");
+  fs.writeFileSync(
+    transcriptPath,
+    JSON.stringify({ type: "assistant", message: { role: "assistant", content: "Done." } }),
+    "utf8"
+  );
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "claude",
+      transcript_path: transcriptPath,
+      assistant_response: { text: "Done." }
+    }),
+    { existsSync: () => false }
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.projectPath, encoded);
+  assert.equal(result.projectName, encoded);
+}
+
 const tests = [
   testProjectResolvesToRepoRootFromSubdir,
   testProjectFallsBackToCwdBasenameWithoutMarker,
+  testProjectRecoveredFromTranscriptCwdWhenPayloadOmitsIt,
+  testProjectFallsBackToEncodedTranscriptDirWhenNoCwdAnywhere,
   testCodexFixturesParseAssistantText,
   testCodexInputMessagesBecomeUserMessages,
+  testCodexLastUserMessageBecomesUserMessage,
+  testCodexUserMessageRecoveredFromSessionFile,
   testClaudeUserMessagesReadFromTranscript,
   testMissingTranscriptYieldsNoUserMessages,
   testClaudeFixturesParseAssistantText,

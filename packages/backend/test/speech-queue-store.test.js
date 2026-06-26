@@ -103,6 +103,31 @@ function testPersistenceAndReplayAfterRestart() {
   );
 }
 
+function testPlayingItemsResetAfterRestart() {
+  const filePath = createTempFile();
+  const firstStore = createSpeechQueueStore({
+    filePath,
+    now: createClock(),
+    idGenerator: createIds(["interrupted"])
+  });
+
+  firstStore.enqueue(sampleItem({ sourceApp: "Claude" }));
+  firstStore.markPlaying("interrupted");
+  assert.equal(firstStore.getCurrent().id, "interrupted");
+
+  const restartedStore = createSpeechQueueStore({
+    filePath,
+    now: createClock()
+  });
+
+  assert.equal(restartedStore.getCurrent(), null);
+  assert.deepEqual(
+    restartedStore.getPending().map((item) => item.id),
+    ["interrupted"]
+  );
+  assert.equal(restartedStore.getPending()[0].timestamps.interruptedAt, "2026-06-20T00:00:01.000Z");
+}
+
 function testSkippedItemsRecordReason() {
   const store = createSpeechQueueStore({
     filePath: createTempFile(),
@@ -205,6 +230,7 @@ const tests = [
   testDefaultRuntimeFile,
   testQueueLifecycle,
   testPersistenceAndReplayAfterRestart,
+  testPlayingItemsResetAfterRestart,
   testSkippedItemsRecordReason,
   testReplayIgnoresSkippedLatest,
   testThreadFieldsStoredAndReplayedById,

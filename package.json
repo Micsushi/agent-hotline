@@ -1,8 +1,26 @@
 {
   "name": "agent-hotline",
   "version": "0.1.0",
-  "private": true,
-  "description": "Local human-in-the-loop question channel for AI coding agents.",
+  "description": "Local read-aloud hooks and tray app for AI coding agents.",
+  "bin": {
+    "ah": "packages/backend/bin/agent-hotline.js",
+    "agent-hotline": "packages/backend/bin/agent-hotline.js",
+    "agent-hotline-hook": "packages/backend/bin/agent-hotline-hook.js"
+  },
+  "files": [
+    "README.md",
+    "docs/",
+    "packages/backend/bin/",
+    "packages/backend/src/",
+    "packages/backend/skills/",
+    "packages/backend/package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "workspaces": [
     "packages/*"
   ],
@@ -32,8 +50,5 @@
     "eslint": "^10.5.0",
     "globals": "^17.6.0",
     "prettier": "^3.8.4"
-  },
-  "dependencies": {
-    "@met4citizen/headtts": "^1.3.0"
   }
 }

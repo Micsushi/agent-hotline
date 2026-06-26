@@ -10,10 +10,12 @@ const {
   installHooks,
   installSkills,
   managedInstructionBlock,
+  npxHookCommand,
   parseArgs,
   toPowerShellSingleQuoted,
   upsertManagedBlock
 } = require("../src/installer");
+const { main: cliMain } = require("../bin/agent-hotline");
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "agent-hotline-installer-"));
@@ -78,6 +80,15 @@ test("buildPs1 embeds the hook command as a parseable PowerShell literal", () =>
   assert.equal(match[1].replace(/''/g, "'"), cmd);
 });
 
+test("buildPs1 forwards user prompt fields for chat display", () => {
+  const ps1 = buildPs1({ source: "codex", schema: "response" });
+
+  assert.match(ps1, /\$inputMessages = \$payload\.'input-messages'/);
+  assert.match(ps1, /"input-messages" = \$inputMessages/);
+  assert.match(ps1, /last_user_message = \$payload\.last_user_message/);
+  assert.match(ps1, /lastUserMessage = \$payload\.lastUserMessage/);
+});
+
 test("toPowerShellSingleQuoted escapes embedded single quotes by doubling", () => {
   assert.equal(toPowerShellSingleQuoted("plain"), "'plain'");
   assert.equal(toPowerShellSingleQuoted(`a'b`), "'a''b'");
@@ -104,6 +115,70 @@ test("installHooks supports repo scope for Codex and Claude Code", () => {
 
   assert.equal(fs.existsSync(path.join(repo, ".codex", "hooks.json")), true);
   assert.equal(fs.existsSync(path.join(repo, ".claude", "settings.local.json")), true);
+});
+
+test("installHooks with all and repo scope installs only repo-capable harnesses", () => {
+  const home = tempDir();
+  const repo = tempDir();
+
+  const results = installHooks({ harness: "all", scope: "repo", home, repo });
+
+  assert.deepEqual(
+    results.map((result) => result.harness),
+    ["claude-code", "codex"]
+  );
+  assert.equal(fs.existsSync(path.join(repo, ".claude", "settings.local.json")), true);
+  assert.equal(fs.existsSync(path.join(repo, ".codex", "hooks.json")), true);
+  assert.equal(fs.existsSync(path.join(home, ".gemini", "config", "hooks.json")), false);
+});
+
+test("installHooks reports valid values for invalid harness and scope", () => {
+  assert.throws(
+    () => installHooks({ harness: "nope", home: tempDir() }),
+    /Invalid harness "nope".*antigravity, claude-code, codex, all/
+  );
+  assert.throws(
+    () => installHooks({ harness: "codex", scope: "machine", home: tempDir() }),
+    /Invalid scope "machine".*global, repo/
+  );
+});
+
+test("CLI can write durable npx hook commands", async () => {
+  const home = tempDir();
+
+  const code = await cliMain([
+    "install-hooks",
+    "--harness",
+    "codex",
+    "--home",
+    home,
+    "--use-npx-hook"
+  ]);
+
+  assert.equal(code, 0);
+  const ps1 = readText(path.join(home, ".codex", "hooks", "agent-hotline-stop.ps1"));
+  assert.match(ps1, /npx --yes agent-hotline hook/);
+});
+
+test("CLI uses durable npx hook command when launched by npm exec", async () => {
+  const home = tempDir();
+  const oldNpmCommand = process.env.npm_command;
+  process.env.npm_command = "exec";
+
+  try {
+    const code = await cliMain(["install-hooks", "--harness", "codex", "--home", home]);
+    assert.equal(code, 0);
+  } finally {
+    if (oldNpmCommand === undefined) {
+      delete process.env.npm_command;
+    } else {
+      process.env.npm_command = oldNpmCommand;
+    }
+  }
+
+  const ps1 = readText(path.join(home, ".codex", "hooks", "agent-hotline-stop.ps1"));
+  assert.equal(npxHookCommand(), "npx --yes agent-hotline hook");
+  assert.match(ps1, /npx --yes agent-hotline hook/);
 });
 
 test("installSkills installs Antigravity skill and managed global instructions", () => {
