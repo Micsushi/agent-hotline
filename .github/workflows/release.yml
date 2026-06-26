@@ -36,6 +36,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Update Npm
+        run: npm install -g npm@latest
+
       - name: Install Dependencies
         run: npm ci
 
