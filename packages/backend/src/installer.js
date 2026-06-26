@@ -7,7 +7,8 @@ const MANAGED_BLOCK_START = "<!-- AGENT_HOTLINE_SPOKEN_START -->";
 const MANAGED_BLOCK_END = "<!-- AGENT_HOTLINE_SPOKEN_END -->";
 const VALID_HARNESSES = ["antigravity", "claude-code", "codex", "all"];
 const VALID_SCOPES = ["global", "repo"];
-const NPX_HOOK_COMMAND = "npx --yes agent-hotline hook";
+const NPX_PACKAGE_NAME = "@micsushi/agent-hotline";
+const NPX_HOOK_COMMAND = `npx --yes ${NPX_PACKAGE_NAME} hook`;
 
 function packageRoot() {
   return path.resolve(__dirname, "..");
@@ -391,6 +392,7 @@ module.exports = {
   installSkills,
   managedInstructionBlock,
   normalizeHarness,
+  NPX_PACKAGE_NAME,
   npxHookCommand,
   parseArgs,
   repoRoot,

@@ -15,7 +15,7 @@ npm run dev:desktop
 Then install the Claude Code hook and spoken-output instructions:
 
 ```powershell
-npx --yes agent-hotline install --harness claude-code --skill claude-code --scope global
+npx --yes @micsushi/agent-hotline install --harness claude-code --skill claude-code --scope global
 ```
 
 From a local checkout:

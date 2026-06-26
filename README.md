@@ -37,7 +37,7 @@ Still missing:
 Use this on a normal machine that should not clone this repo:
 
 ```powershell
-npx --yes agent-hotline install --harness all --skill all
+npx --yes @micsushi/agent-hotline install --harness all --skill all
 ```
 
 That one command downloads the Agent Hotline npm package and installs both parts:
@@ -48,19 +48,19 @@ That one command downloads the Agent Hotline npm package and installs both parts
 Start the local backend:
 
 ```powershell
-npx --yes agent-hotline run
+npx --yes @micsushi/agent-hotline run
 ```
 
 For one repo only:
 
 ```powershell
-npx --yes agent-hotline install --harness all --skill all --scope repo --repo C:\path\to\repo
+npx --yes @micsushi/agent-hotline install --harness all --skill all --scope repo --repo C:\path\to\repo
 ```
 
 Optional: install once globally so you can use shorter commands:
 
 ```powershell
-npm install -g agent-hotline
+npm install -g @micsushi/agent-hotline
 agent-hotline install --harness all --skill all
 agent-hotline run
 ```
@@ -68,9 +68,9 @@ agent-hotline run
 Useful separate commands:
 
 ```powershell
-npx --yes agent-hotline install-hooks --harness all
-npx --yes agent-hotline install-skill --target all
-npx --yes agent-hotline hook
+npx --yes @micsushi/agent-hotline install-hooks --harness all
+npx --yes @micsushi/agent-hotline install-skill --target all
+npx --yes @micsushi/agent-hotline hook
 ```
 
 ### Local checkout install
@@ -105,7 +105,7 @@ ah run
 From `npx`, start the backend:
 
 ```powershell
-npx --yes agent-hotline run
+npx --yes @micsushi/agent-hotline run
 ```
 
 From a local checkout, run it in the foreground while developing:
@@ -131,7 +131,7 @@ http://127.0.0.1:4777
 With the backend running, test the npm-installed hook:
 
 ```powershell
-'{"source":"codex","response":{"text":"Spoken:`nAgent Hotline is ready to read this aloud.`n`nDisplayed:`nSmoke test complete."}}' | npx --yes agent-hotline hook
+'{"source":"codex","response":{"text":"Spoken:`nAgent Hotline is ready to read this aloud.`n`nDisplayed:`nSmoke test complete."}}' | npx --yes @micsushi/agent-hotline hook
 ```
 
 From a local checkout, test the local hook:

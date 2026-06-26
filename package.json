@@ -1,5 +1,5 @@
 {
-  "name": "agent-hotline",
+  "name": "@micsushi/agent-hotline",
   "version": "0.5.1",
   "description": "Local read-aloud hooks and tray app for AI coding agents.",
   "bin": {

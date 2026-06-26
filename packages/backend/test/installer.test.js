@@ -157,7 +157,7 @@ test("CLI can write durable npx hook commands", async () => {
 
   assert.equal(code, 0);
   const ps1 = readText(path.join(home, ".codex", "hooks", "agent-hotline-stop.ps1"));
-  assert.match(ps1, /npx --yes agent-hotline hook/);
+  assert.match(ps1, /npx --yes @micsushi\/agent-hotline hook/);
 });
 
 test("CLI uses durable npx hook command when launched by npm exec", async () => {
@@ -177,8 +177,8 @@ test("CLI uses durable npx hook command when launched by npm exec", async () => 
   }
 
   const ps1 = readText(path.join(home, ".codex", "hooks", "agent-hotline-stop.ps1"));
-  assert.equal(npxHookCommand(), "npx --yes agent-hotline hook");
-  assert.match(ps1, /npx --yes agent-hotline hook/);
+  assert.equal(npxHookCommand(), "npx --yes @micsushi/agent-hotline hook");
+  assert.match(ps1, /npx --yes @micsushi\/agent-hotline hook/);
 });
 
 test("installSkills installs Antigravity skill and managed global instructions", () => {

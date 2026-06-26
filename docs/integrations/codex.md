@@ -15,7 +15,7 @@ npm run dev:desktop
 Then install the Codex hook and spoken-output instructions:
 
 ```powershell
-npx --yes agent-hotline install --harness codex --skill codex --scope global
+npx --yes @micsushi/agent-hotline install --harness codex --skill codex --scope global
 ```
 
 From a local checkout:

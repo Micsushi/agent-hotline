@@ -24,7 +24,7 @@ Options:
   --home <path>
   --hook-command <command>
   --port <port>       Backend port for "run" (default: 4777)
-  --use-npx-hook    Write hooks that call "npx --yes agent-hotline hook"
+  --use-npx-hook    Write hooks that call "npx --yes @micsushi/agent-hotline hook"
 `);
 }
 

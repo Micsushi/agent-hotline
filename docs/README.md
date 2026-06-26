@@ -21,8 +21,8 @@ npm run dev:desktop
 From npm:
 
 ```powershell
-npx --yes agent-hotline install --harness all --skill all
-npx --yes agent-hotline hook
+npx --yes @micsushi/agent-hotline install --harness all --skill all
+npx --yes @micsushi/agent-hotline hook
 ```
 
 ## Notes
