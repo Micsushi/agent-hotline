@@ -686,6 +686,116 @@ function playbackActive() {
   return Boolean(playback && (playback.isSpeaking || playback.isPaused || playback.isLoading));
 }
 
+const STARTUP_MIN_MS = 2100;
+const STARTUP_SPLASH_MAX_MS = 9000;
+const STARTUP_AUDIO_SURFACE_WAIT_MS = 1500;
+let startupJingleAudio = null;
+
+function revealAppShell() {
+  document.querySelector(".app-shell")?.removeAttribute("hidden");
+}
+
+function hideStartupSplash(splash) {
+  if (!splash || splash.dataset.hiding) return;
+  revealAppShell();
+  splash.dataset.hiding = "1";
+  splash.classList.add("is-hiding");
+  splash.addEventListener("transitionend", () => splash.remove(), { once: true });
+  window.setTimeout(() => splash.remove(), 600);
+}
+
+function startupAudioSurfaceReady() {
+  if (!isTauri) return true;
+  return document.visibilityState !== "hidden" && document.hasFocus();
+}
+
+async function waitForStartupAudioSurface() {
+  if (startupAudioSurfaceReady()) return;
+
+  await new Promise((resolve) => {
+    let timeoutId = 0;
+    const finish = () => {
+      window.clearTimeout(timeoutId);
+      window.removeEventListener("focus", onReady);
+      window.removeEventListener("pageshow", onReady);
+      document.removeEventListener("visibilitychange", onReady);
+      resolve();
+    };
+    const onReady = () => {
+      if (startupAudioSurfaceReady()) finish();
+    };
+
+    window.addEventListener("focus", onReady);
+    window.addEventListener("pageshow", onReady);
+    document.addEventListener("visibilitychange", onReady);
+    timeoutId = window.setTimeout(finish, STARTUP_AUDIO_SURFACE_WAIT_MS);
+  });
+}
+
+async function applyStartupAudioSettings(audio, settings) {
+  audio.volume = Number.isFinite(settings.volume) ? Math.min(1, Math.max(0, settings.volume)) : 1;
+
+  const sinkId = String(settings.audioOutputDeviceId || "");
+  if (sinkId && typeof audio.setSinkId === "function") {
+    await audio.setSinkId(sinkId).catch(() => {});
+  }
+}
+
+function armStartupJingleFallback() {
+  const playOnce = () => {
+    window.removeEventListener("pointerdown", playOnce);
+    window.removeEventListener("keydown", playOnce);
+    startupJingleAudio?.play().catch(() => {});
+  };
+  window.addEventListener("pointerdown", playOnce, { once: true });
+  window.addEventListener("keydown", playOnce, { once: true });
+}
+
+async function playStartupJingle(settings) {
+  if (settings.startupJingle === false || settings.mute) return;
+
+  await waitForStartupAudioSurface();
+
+  startupJingleAudio = new Audio("/hotline-bling.mp3");
+  startupJingleAudio.preload = "auto";
+  await applyStartupAudioSettings(startupJingleAudio, settings);
+
+  try {
+    await startupJingleAudio.play();
+  } catch {
+    armStartupJingleFallback();
+  }
+}
+
+async function runStartupExperience() {
+  const splash = document.getElementById("startup-splash");
+  if (splash) splash.hidden = false;
+  const startedAt = Date.now();
+
+  let settings = {};
+  try {
+    const data = await fetchJson(`${targetUrl}/api/settings`);
+    settings = data?.settings || {};
+  } catch {}
+
+  const keepSplash = Boolean(splash) && settings.startupSplash !== false;
+  if (splash && !keepSplash) {
+    revealAppShell();
+    splash.remove();
+  }
+
+  await playStartupJingle(settings);
+
+  await refreshPanel(targetUrl).catch(() => {});
+  if (!keepSplash) {
+    revealAppShell();
+    return;
+  }
+  const remaining = Math.max(0, STARTUP_MIN_MS - (Date.now() - startedAt));
+  window.setTimeout(() => hideStartupSplash(splash), remaining);
+  window.setTimeout(() => hideStartupSplash(splash), STARTUP_SPLASH_MAX_MS);
+}
+
 function isSameDay(a, b) {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -4179,7 +4289,11 @@ function subscribeTrayEvents() {
 setView("blank");
 initWindowChrome();
 subscribeTrayEvents();
-refreshPanel(targetUrl).catch(showError);
+runStartupExperience().catch((error) => {
+  revealAppShell();
+  hideStartupSplash(document.getElementById("startup-splash"));
+  showError(error);
+});
 window.setInterval(
   () => refreshPanel(targetUrl, { quiet: true }).catch(showError),
   QUEUE_POLL_INTERVAL_MS

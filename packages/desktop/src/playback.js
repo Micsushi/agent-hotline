@@ -9,6 +9,7 @@ import { cacheGeneratedAudio, getAudio, getCachedAudio, withGenLock } from "./au
 
 const RATE_MIN = 0.25;
 const RATE_MAX = 4;
+const DEFAULT_RATE = 0.9;
 
 const KOKORO_SAFE_SPEED = 1.5;
 
@@ -638,7 +639,7 @@ export function createPlaybackController({
     const voice = selectVoice(voices, settings.voice);
 
     if (voice) utterance.voice = voice;
-    utterance.rate = clampNumber(Number(settings.rate), 0.92, 0.1, 10);
+    utterance.rate = clampNumber(Number(settings.rate), DEFAULT_RATE, 0.1, 10);
     utterance.volume = clampNumber(Number(settings.volume), 1, 0, 1);
 
     activeUtterance = utterance;

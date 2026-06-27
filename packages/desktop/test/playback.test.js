@@ -289,7 +289,7 @@ test("playback chooses a natural installed voice when no manual voice is selecte
   });
 
   assert.equal(spoken[0].voice, naturalVoice);
-  assert.equal(spoken[0].rate, 0.92);
+  assert.equal(spoken[0].rate, 0.9);
 });
 
 test("pause resume stop and mute control active browser speech", async () => {

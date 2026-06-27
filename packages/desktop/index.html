@@ -22,10 +22,30 @@
           Arial,
           sans-serif;
       }
+      #startup-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(14, 13, 11, 0.92);
+        opacity: 1;
+      }
+      #startup-splash .startup-image {
+        max-width: min(70vw, 460px);
+        max-height: 80vh;
+        height: auto;
+        border-radius: 12px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+      }
     </style>
   </head>
   <body>
-    <div class="app-shell">
+    <div id="startup-splash" class="startup-splash">
+      <img class="startup-image" src="/startup-image.png" alt="Agent Hotline" />
+    </div>
+    <div class="app-shell" hidden>
       <header class="window-titlebar">
         <div class="window-drag-region" data-tauri-drag-region></div>
         <div class="window-controls" aria-label="Window controls">
@@ -453,6 +473,20 @@
                       </label>
                     </div>
                   </div>
+                  <label class="settings-row">
+                    <span class="settings-copy">
+                      <strong>Startup splash</strong>
+                      <span>Show the launch image when Agent Hotline opens.</span>
+                    </span>
+                    <input id="setting-startup-splash" type="checkbox" />
+                  </label>
+                  <label class="settings-row">
+                    <span class="settings-copy">
+                      <strong>Startup jingle</strong>
+                      <span>Play the Hotline Bling clip when Agent Hotline opens.</span>
+                    </span>
+                    <input id="setting-startup-jingle" type="checkbox" />
+                  </label>
                 </section>
 
                 <section

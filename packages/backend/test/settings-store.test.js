@@ -66,7 +66,9 @@ test("settings persist after edit and reload", () => {
     notifyOnNewReply: false,
     notificationOpens: "full",
     highlightSpokenText: false,
-    audioCacheLimitMb: 1024
+    audioCacheLimitMb: 1024,
+    startupSplash: true,
+    startupJingle: true
   });
 });
 
@@ -102,6 +104,21 @@ test("legacy ask-every-time settings fall back to manual", () => {
   );
 
   assert.equal(loadSettings({ dataDir }).readBehavior, "manual");
+});
+
+test("legacy default rate snaps to slider step", () => {
+  const dataDir = tempDir();
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dataDir, "settings.json"),
+    JSON.stringify({
+      ...DEFAULT_SETTINGS,
+      rate: 0.92
+    }),
+    "utf8"
+  );
+
+  assert.equal(loadSettings({ dataDir }).rate, 0.9);
 });
 
 test("invalid settings file falls back safely", () => {

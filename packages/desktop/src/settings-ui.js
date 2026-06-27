@@ -22,6 +22,8 @@ const KOKORO_VOICES = [
   "bm_lewis"
 ];
 
+const DEFAULT_RATE = 0.9;
+
 const DEFAULT_SETTINGS = {
   readBehavior: "manual",
   mute: false,
@@ -29,7 +31,7 @@ const DEFAULT_SETTINGS = {
   voice: "",
   audioOutputDeviceId: "",
   kokoroVoice: "af_heart",
-  rate: 0.92,
+  rate: DEFAULT_RATE,
   volume: 1,
   skipRules: {
     codeBlocks: true,
@@ -43,7 +45,9 @@ const DEFAULT_SETTINGS = {
   claudeEnabled: true,
   notifyOnNewReply: false,
   notificationOpens: "full",
-  highlightSpokenText: false
+  highlightSpokenText: false,
+  startupSplash: true,
+  startupJingle: true
 };
 
 function getSpeechVoices() {
@@ -55,6 +59,11 @@ function clampNumber(value, fallback, min, max) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
+}
+
+function normalizeRate(value, fallback = DEFAULT_RATE) {
+  const rate = clampNumber(value, fallback, 0.1, 10);
+  return rate === 0.92 ? DEFAULT_RATE : rate;
 }
 
 function normalizeSettings(settings) {
@@ -75,7 +84,7 @@ function normalizeSettings(settings) {
         : DEFAULT_SETTINGS.audioOutputDeviceId,
     kokoroVoice:
       typeof source.kokoroVoice === "string" ? source.kokoroVoice : DEFAULT_SETTINGS.kokoroVoice,
-    rate: clampNumber(source.rate, DEFAULT_SETTINGS.rate, 0.1, 10),
+    rate: normalizeRate(source.rate, DEFAULT_SETTINGS.rate),
     volume: clampNumber(source.volume, DEFAULT_SETTINGS.volume, 0, 1),
     skipRules: Object.fromEntries(
       SKIP_RULES.map((key) => [
@@ -101,7 +110,15 @@ function normalizeSettings(settings) {
     highlightSpokenText:
       typeof source.highlightSpokenText === "boolean"
         ? source.highlightSpokenText
-        : DEFAULT_SETTINGS.highlightSpokenText
+        : DEFAULT_SETTINGS.highlightSpokenText,
+    startupSplash:
+      typeof source.startupSplash === "boolean"
+        ? source.startupSplash
+        : DEFAULT_SETTINGS.startupSplash,
+    startupJingle:
+      typeof source.startupJingle === "boolean"
+        ? source.startupJingle
+        : DEFAULT_SETTINGS.startupJingle
   };
 }
 
@@ -226,6 +243,8 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   const notifyOpens = document.querySelector("#setting-notify-opens");
   const highlight = document.querySelector("#setting-highlight");
   const highlightWarn = document.querySelector("#highlight-warn");
+  const startupSplash = document.querySelector("#setting-startup-splash");
+  const startupJingle = document.querySelector("#setting-startup-jingle");
   const engine = document.querySelector("#setting-engine");
   const voice = document.querySelector("#setting-voice");
   const outputDevice = document.querySelector("#setting-output-device");
@@ -280,6 +299,8 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
     if (notifyOpensRow) notifyOpensRow.hidden = !currentSettings.notifyOnNewReply;
     if (highlight) highlight.checked = currentSettings.highlightSpokenText;
     if (highlightWarn) highlightWarn.hidden = !currentSettings.highlightSpokenText;
+    if (startupSplash) startupSplash.checked = currentSettings.startupSplash;
+    if (startupJingle) startupJingle.checked = currentSettings.startupJingle;
     engine.value = currentSettings.engine;
     setSelectOptions(voice, currentSettings);
     setAudioOutputOptions(outputDevice, currentSettings);
@@ -355,6 +376,16 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   if (highlight) {
     highlight.addEventListener("change", () =>
       savePatch({ highlightSpokenText: highlight.checked })
+    );
+  }
+  if (startupSplash) {
+    startupSplash.addEventListener("change", () =>
+      savePatch({ startupSplash: startupSplash.checked })
+    );
+  }
+  if (startupJingle) {
+    startupJingle.addEventListener("change", () =>
+      savePatch({ startupJingle: startupJingle.checked })
     );
   }
   engine.addEventListener("change", () => savePatch({ engine: engine.value }));

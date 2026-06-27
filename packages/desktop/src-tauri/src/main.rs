@@ -299,7 +299,9 @@ fn main() {
             if let Some(child) = spawn_backend(data_dir.as_deref()) {
                 app.manage(BackendProcess(Mutex::new(Some(child))));
             }
-            setup_tray(app)
+            setup_tray(app)?;
+            open_panel(app.handle());
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             backend_status,

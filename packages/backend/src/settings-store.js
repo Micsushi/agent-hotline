@@ -8,6 +8,7 @@ const READ_BEHAVIORS = new Set(["manual", "auto"]);
 const TTS_ENGINES = new Set(["webview", "kokoro", "kokoro-ts"]);
 const NOTIFICATION_OPENS = new Set(["full", "mini"]);
 const AUDIO_CACHE_LIMIT_MAX_MB = 100000;
+const DEFAULT_RATE = 0.9;
 
 const DEFAULT_SETTINGS = Object.freeze({
   readBehavior: "manual",
@@ -16,7 +17,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   voice: "",
   audioOutputDeviceId: "",
   kokoroVoice: "af_heart",
-  rate: 0.92,
+  rate: DEFAULT_RATE,
   volume: 1,
   skipRules: Object.freeze({
     codeBlocks: true,
@@ -32,7 +33,9 @@ const DEFAULT_SETTINGS = Object.freeze({
   notifyOnNewReply: false,
   notificationOpens: "full",
   highlightSpokenText: false,
-  audioCacheLimitMb: 1024
+  audioCacheLimitMb: 1024,
+  startupSplash: true,
+  startupJingle: true
 });
 
 function getDefaultDataDir(env = process.env, platform = process.platform) {
@@ -79,6 +82,11 @@ function numberInRangeOrDefault(value, fallback, min, max) {
   return number >= min && number <= max ? number : fallback;
 }
 
+function normalizeRate(value, fallback) {
+  const rate = numberInRangeOrDefault(value, fallback, 0.1, 10);
+  return rate === 0.92 ? DEFAULT_RATE : rate;
+}
+
 function normalizeSettings(input) {
   const source = isPlainObject(input) ? input : {};
   const defaults = DEFAULT_SETTINGS;
@@ -93,7 +101,7 @@ function normalizeSettings(input) {
     voice: stringOrDefault(source.voice, defaults.voice),
     audioOutputDeviceId: stringOrDefault(source.audioOutputDeviceId, defaults.audioOutputDeviceId),
     kokoroVoice: stringOrDefault(source.kokoroVoice, defaults.kokoroVoice),
-    rate: numberInRangeOrDefault(source.rate, defaults.rate, 0.1, 10),
+    rate: normalizeRate(source.rate, defaults.rate),
     volume: numberInRangeOrDefault(source.volume, defaults.volume, 0, 1),
     skipRules: {
       codeBlocks: booleanOrDefault(sourceSkipRules.codeBlocks, defaults.skipRules.codeBlocks),
@@ -119,7 +127,9 @@ function normalizeSettings(input) {
       defaults.audioCacheLimitMb,
       10,
       AUDIO_CACHE_LIMIT_MAX_MB
-    )
+    ),
+    startupSplash: booleanOrDefault(source.startupSplash, defaults.startupSplash),
+    startupJingle: booleanOrDefault(source.startupJingle, defaults.startupJingle)
   };
 }
 
