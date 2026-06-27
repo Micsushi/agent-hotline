@@ -15,7 +15,7 @@ const { createAudioCacheStore } = require("./audio-cache-store");
 const PORT = Number(process.env.AGENT_HOTLINE_PORT || process.env.VOICE_QUESTION_LOOP_PORT || 4777);
 const HOST = "127.0.0.1";
 const ROOT = path.resolve(__dirname, "..");
-const DATA_DIR = path.join(ROOT, "data");
+const DATA_DIR = process.env.AGENT_HOTLINE_DATA_DIR || path.join(ROOT, "data");
 const QUESTIONS_FILE = process.env.QUESTION_FILE || path.join(DATA_DIR, "questions.json");
 const REQUEST_LIMIT_BYTES = 1_000_000;
 const AUDIO_BODY_LIMIT_BYTES = 96 * 1024 * 1024;
@@ -646,22 +646,23 @@ function page() {
 }
 
 function createServer(options = {}) {
+  const dataDir = options.dataDir || DATA_DIR;
   const settingsStore =
     options.settingsStore ||
     createSettingsStore({
-      dataDir: options.dataDir,
+      dataDir,
       settingsPath: options.settingsPath
     });
   const queueStore =
     options.queueStore ||
     createSpeechQueueStore({
-      dataDir: options.dataDir,
+      dataDir,
       filePath: options.queuePath
     });
   const questionStore =
     options.questionStore ||
     createQuestionStore({
-      dataDir: options.questionDataDir || options.dataDir,
+      dataDir: options.questionDataDir || dataDir,
       questionsFile: options.questionsFile,
       answersFile: options.answersFile,
       ensureFiles: options.ensureQuestionFiles
@@ -670,7 +671,7 @@ function createServer(options = {}) {
   const audioCacheStore =
     options.audioCacheStore ||
     createAudioCacheStore({
-      dataDir: options.dataDir,
+      dataDir,
       cacheDir: options.audioCacheDir,
       maxBytes: options.audioMaxBytes,
       getMaxBytes: options.audioMaxBytes
@@ -679,8 +680,7 @@ function createServer(options = {}) {
     });
 
   const spoolStore =
-    options.spoolStore ||
-    createSpoolStore({ dataDir: options.dataDir, filePath: options.spoolPath });
+    options.spoolStore || createSpoolStore({ dataDir, filePath: options.spoolPath });
   try {
     spoolStore.drain((item) => queueStore.enqueue(item));
   } catch {}

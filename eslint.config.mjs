@@ -9,6 +9,8 @@ export default [
   {
     ignores: [
       "node_modules/**",
+      "packages/backend/web/**",
+      "packages/backend/build/**",
       "packages/desktop/dist/**",
       "packages/desktop/public/config.json",
       "packages/desktop/public/headtts/**",

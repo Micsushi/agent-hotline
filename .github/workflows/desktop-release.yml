@@ -1,0 +1,77 @@
+name: Desktop Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Upload the installer to a GitHub Release after it builds
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  installer:
+    name: Windows Installer
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Sync Desktop Version
+        run: npm run sync-desktop-version
+
+      - name: Build Self-Contained Backend
+        run: npm run build:backend-sea
+
+      - name: Build Installer
+        run: npm --workspace @agent-hotline/desktop run tauri -- build --config src-tauri/tauri.installer.conf.json
+
+      - name: Read Version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Locate Installer
+        id: installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem packages/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe |
+            Select-Object -First 1
+          if (-not $exe) { throw "No NSIS installer found." }
+          "path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Installer: $($exe.FullName)"
+
+      - name: Upload Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-hotline-windows-installer
+          path: ${{ steps.installer.outputs.path }}
+
+      - name: Publish To GitHub Release
+        if: ${{ github.event.inputs.publish_release == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Agent Hotline v${{ steps.version.outputs.version }}
+          files: ${{ steps.installer.outputs.path }}
+          fail_on_unmatched_files: true

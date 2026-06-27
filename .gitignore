@@ -10,6 +10,10 @@ target/
 packages/desktop/src-tauri/target/
 packages/desktop/src-tauri/gen/
 
+# Self-contained backend build (Node SEA) and bundled sidecar binary
+packages/backend/build/
+packages/desktop/src-tauri/binaries/
+
 # Runtime-generated local config
 packages/desktop/public/config.json
 packages/backend/data/*.json

@@ -15,12 +15,35 @@ use tauri_plugin_window_state::StateFlags;
 // port is never left occupied after Agent Hotline quits.
 struct BackendProcess(Mutex<Option<Child>>);
 
-fn spawn_backend() -> Option<Child> {
-    // Resolve the backend entry relative to this crate (dev layout). If a backend
-    // is already running, ours hits EADDRINUSE and exits cleanly (see server.js),
-    // so spawning unconditionally is safe.
-    let server = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../backend/src/server.js");
-    Command::new("node").arg(server).spawn().ok()
+// Name of the bundled self-contained backend, placed next to the app binary by
+// Tauri's externalBin (target triple stripped at install time).
+#[cfg(target_os = "windows")]
+const BACKEND_BIN: &str = "agent-hotline-backend.exe";
+#[cfg(not(target_os = "windows"))]
+const BACKEND_BIN: &str = "agent-hotline-backend";
+
+fn spawn_backend(data_dir: Option<&Path>) -> Option<Child> {
+    // Debug builds run the backend source with the system Node (dev layout).
+    // Release builds run the bundled self-contained backend next to the app exe,
+    // so no Node install is required. If a backend is already running, ours hits
+    // EADDRINUSE and exits cleanly (see server.js), so spawning is always safe.
+    let mut command = if cfg!(debug_assertions) {
+        let server = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../backend/src/server.js");
+        let mut node = Command::new("node");
+        node.arg(server);
+        node
+    } else {
+        let sidecar = std::env::current_exe().ok()?.parent()?.join(BACKEND_BIN);
+        Command::new(sidecar)
+    };
+
+    // Keep app data (queue, settings, audio cache) in a writable per-user dir
+    // instead of next to the installed binary.
+    if let Some(dir) = data_dir {
+        command.env("AGENT_HOTLINE_DATA_DIR", dir);
+    }
+
+    command.spawn().ok()
 }
 
 fn kill_backend(app: &tauri::AppHandle) {
@@ -272,7 +295,8 @@ fn main() {
         )
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            if let Some(child) = spawn_backend() {
+            let data_dir = app.path().app_data_dir().ok();
+            if let Some(child) = spawn_backend(data_dir.as_deref()) {
                 app.manage(BackendProcess(Mutex::new(Some(child))));
             }
             setup_tray(app)

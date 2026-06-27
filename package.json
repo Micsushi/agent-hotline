@@ -36,6 +36,8 @@
     "install-hotline": "node packages/backend/bin/agent-hotline.js install",
     "stage-web": "node scripts/stage-web.mjs",
     "prepack": "node scripts/stage-web.mjs",
+    "build:backend-sea": "node scripts/build-backend-sea.mjs",
+    "sync-desktop-version": "node scripts/sync-desktop-version.mjs",
     "test": "npm --prefix packages/backend test && npm --workspace @agent-hotline/desktop run test",
     "lint": "eslint . && npm run rust:clippy",
     "lint:fix": "eslint . --fix",
@@ -51,8 +53,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "esbuild": "^0.28.1",
     "eslint": "^10.5.0",
     "globals": "^17.6.0",
+    "postject": "^1.0.0-alpha.6",
     "prettier": "^3.8.4"
   },
   "repository": {
