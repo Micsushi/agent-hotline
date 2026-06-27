@@ -14,6 +14,7 @@
     "packages/backend/bin/",
     "packages/backend/src/",
     "packages/backend/skills/",
+    "packages/backend/web/",
     "packages/backend/package.json"
   ],
   "publishConfig": {
@@ -33,6 +34,8 @@
     "install-hook": "node scripts/install-hook.js",
     "install-skill": "node scripts/install-skill.js",
     "install-hotline": "node packages/backend/bin/agent-hotline.js install",
+    "stage-web": "node scripts/stage-web.mjs",
+    "prepack": "node scripts/stage-web.mjs",
     "test": "npm --prefix packages/backend test && npm --workspace @agent-hotline/desktop run test",
     "lint": "eslint . && npm run rust:clippy",
     "lint:fix": "eslint . --fix",

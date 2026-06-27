@@ -3,6 +3,7 @@ node_modules/
 # JavaScript build output
 dist/
 packages/desktop/dist/
+packages/backend/web/
 
 # Rust/Tauri build output
 target/

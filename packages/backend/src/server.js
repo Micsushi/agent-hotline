@@ -463,6 +463,68 @@ function getPathname(req) {
   return new URL(req.url, "http://127.0.0.1").pathname;
 }
 
+// Built desktop UI, served so `agent-hotline run` opens the full app in a
+// browser. The npm package ships a pruned copy under web/ (no heavy local-TTS
+// assets); a source checkout uses the full desktop/dist build. Absent in either
+// case, routes fall back to the inline page() console.
+const WEB_CANDIDATES = [
+  path.resolve(__dirname, "../web"),
+  path.resolve(__dirname, "../../desktop/dist")
+];
+
+function webDir() {
+  for (const dir of WEB_CANDIDATES) {
+    try {
+      if (fs.statSync(path.join(dir, "index.html")).isFile()) return dir;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}
+
+const STATIC_CONTENT_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".wasm": "application/wasm",
+  ".map": "application/json; charset=utf-8"
+};
+
+// Resolve a request path to a file inside the active web dir, refusing anything
+// that escapes the directory. Returns the absolute path or null.
+function resolveStaticFile(pathname) {
+  const root = webDir();
+  if (!root) return null;
+  const rel = decodeURIComponent(pathname).replace(/^\/+/, "");
+  const target = path.resolve(root, rel);
+  if (target !== root && !target.startsWith(root + path.sep)) return null;
+  try {
+    if (fs.statSync(target).isFile()) return target;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function serveStaticFile(res, filePath) {
+  const type =
+    STATIC_CONTENT_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+  res.writeHead(200, { "Content-Type": type });
+  fs.createReadStream(filePath).pipe(res);
+}
+
 function page() {
   return `<!doctype html>
 <html lang="en">
@@ -634,8 +696,22 @@ function createServer(options = {}) {
       const pathname = getPathname(req);
 
       if (req.method === "GET" && pathname === "/") {
+        const index = resolveStaticFile("/index.html");
+        if (index) {
+          serveStaticFile(res, index);
+          return;
+        }
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(page());
+        return;
+      }
+
+      // Tell the browser-served UI to call this same origin for the API, so a
+      // custom --port still works. The bundled static config.json (used by the
+      // packaged desktop app) is overridden here only for HTTP requests.
+      if (req.method === "GET" && pathname === "/config.json") {
+        const host = req.headers.host || `${HOST}:${PORT}`;
+        sendJson(res, 200, { backendUrl: `http://${host}` });
         return;
       }
 
@@ -899,6 +975,16 @@ function createServer(options = {}) {
         questionStore.saveAnswer(await readJsonBody(req));
         sendJson(res, 200, { ok: true });
         return;
+      }
+
+      // Static assets for the built UI (JS/CSS/fonts/etc). API paths never reach
+      // here, so this only serves the desktop dist bundle.
+      if (req.method === "GET" && !pathname.startsWith("/api/")) {
+        const file = resolveStaticFile(pathname);
+        if (file) {
+          serveStaticFile(res, file);
+          return;
+        }
       }
 
       throw createHttpError(404, "not_found", "Not found");
