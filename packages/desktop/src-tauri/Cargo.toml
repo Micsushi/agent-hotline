@@ -1,6 +1,6 @@
 [package]
 name = "agent-hotline-desktop"
-version = "1.0.1"
+version = "1.1.0"
 description = "Tauri v2 desktop shell for Agent Hotline"
 authors = ["Agent Hotline contributors"]
 edition = "2021"
