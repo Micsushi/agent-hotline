@@ -1,6 +1,6 @@
 {
   "name": "@micsushi/agent-hotline",
-  "version": "0.5.3",
+  "version": "1.0.0",
   "description": "Local read-aloud hooks and tray app for AI coding agents.",
   "bin": {
     "ah": "packages/backend/bin/agent-hotline.js",
