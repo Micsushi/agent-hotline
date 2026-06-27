@@ -154,6 +154,37 @@ test("audio-cache list joins queue session info", async () => {
   });
 });
 
+test("trashing chats removes associated audio and hides them from storage list", async () => {
+  await withServer(async ({ baseUrl }) => {
+    await enqueue(baseUrl, {
+      id: "item-1",
+      rawSource: "raw",
+      speakableText: "This chat will be trashed.",
+      sourceApp: "Codex",
+      threadId: "thread-a",
+      sessionName: "Session A"
+    });
+    await fetch(`${baseUrl}/api/queue/item-1/audio?engine=kokoro&voice=af_heart`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sampleRate: 24000, durationSec: 1, wav: FAKE_WAV })
+    });
+
+    const trashed = await fetch(`${baseUrl}/api/queue/trash`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionKey: "thread-a" })
+    });
+    const body = await trashed.json();
+    assert.equal(trashed.status, 200);
+    assert.deepEqual(body.trashed, ["item-1"]);
+    assert.equal(body.removedAudio, 1);
+
+    const list = await (await fetch(`${baseUrl}/api/audio-cache`)).json();
+    assert.deepEqual(list.entries, []);
+  });
+});
+
 test("audio-cache deletes a single recording, a session, and everything", async () => {
   await withServer(async ({ baseUrl }) => {
     await enqueue(baseUrl, {

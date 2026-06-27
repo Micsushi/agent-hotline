@@ -7,14 +7,19 @@
   "bin": {
     "ah": "bin/agent-hotline.js",
     "agent-hotline": "bin/agent-hotline.js",
-    "agent-hotline-hook": "bin/agent-hotline-hook.js"
+    "agent-hotline-hook": "bin/agent-hotline-hook.js",
+    "agent-hotline-mcp": "bin/agent-hotline-mcp.js"
   },
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/*.test.js",
-    "check": "node --check src/server.js && node --check src/settings-store.js && node --check src/speech-queue-store.js && node --check src/audio-cache-store.js && node --check src/installer.js && node --check src/hook-input-parser.js && node --check src/hook-command.js && node --check src/run-command.js && node --check src/speakable-filter.js && node --check bin/agent-hotline.js && node --check bin/agent-hotline-hook.js && node --check test/settings-store.test.js && node --check test/speech-queue-store.test.js && node --check test/audio-cache-store.test.js && node --check test/audio-endpoints.test.js && node --check test/installer.test.js && node --check test/run-command.test.js && node --check test/speakable-filter.test.js && node --check test/hook-input-parser.test.js && node --check test/hook-command.test.js && node --check test/server-endpoints.test.js"
+    "test": "node --test test/*.test.js test/*.test.mjs",
+    "check": "node --check src/server.js && node --check src/settings-store.js && node --check src/speech-queue-store.js && node --check src/audio-cache-store.js && node --check src/installer.js && node --check src/hook-input-parser.js && node --check src/hook-command.js && node --check src/run-command.js && node --check src/speakable-filter.js && node --check src/mcp-server.mjs && node --check bin/agent-hotline.js && node --check bin/agent-hotline-hook.js && node --check bin/agent-hotline-mcp.js && node --check test/settings-store.test.js && node --check test/speech-queue-store.test.js && node --check test/audio-cache-store.test.js && node --check test/audio-endpoints.test.js && node --check test/installer.test.js && node --check test/run-command.test.js && node --check test/speakable-filter.test.js && node --check test/hook-input-parser.test.js && node --check test/hook-command.test.js && node --check test/server-endpoints.test.js && node --check test/mcp-server.test.mjs"
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
   }
 }

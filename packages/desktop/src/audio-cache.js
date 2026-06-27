@@ -192,12 +192,17 @@ export async function cacheGeneratedAudio(backendUrl, target, generated) {
 
 const inFlight = new Map();
 
-export async function getAudio(backendUrl, { itemId, engine, voice, speed = 1 }, generate) {
+export async function getAudio(
+  backendUrl,
+  { itemId, engine, voice, speed = 1, onPersistentMiss },
+  generate
+) {
   const target = { itemId, engine, voice, speed };
   const key = memKey(itemId, engine, voice, speed);
 
   const cached = await getCachedAudio(backendUrl, target).catch(() => null);
   if (cached) return cached;
+  if (Number(speed) === 1 && typeof onPersistentMiss === "function") onPersistentMiss();
 
   if (inFlight.has(key)) return inFlight.get(key);
 

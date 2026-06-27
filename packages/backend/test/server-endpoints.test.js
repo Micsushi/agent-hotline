@@ -131,6 +131,7 @@ test("settings can be read, updated, muted, and unmuted without provider credent
       body: JSON.stringify({
         readBehavior: "auto",
         voice: "Local Browser Voice",
+        audioOutputDeviceId: "speaker-1",
         rate: 1.2,
         volume: 0.7,
         skipRules: { tables: false },
@@ -140,6 +141,7 @@ test("settings can be read, updated, muted, and unmuted without provider credent
     assert.equal(updated.response.status, 200);
     assert.equal(updated.body.settings.readBehavior, "auto");
     assert.equal(updated.body.settings.voice, "Local Browser Voice");
+    assert.equal(updated.body.settings.audioOutputDeviceId, "speaker-1");
     assert.equal(updated.body.settings.skipRules.tables, false);
     assert.equal(updated.body.settings.skipRules.codeBlocks, true);
     assert.equal(updated.body.settings.codexEnabled, false);
@@ -208,6 +210,95 @@ test("queue endpoints enqueue, expose state, mark played/skipped, and replay lat
 
     const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "speech-queue.json"), "utf8"));
     assert.equal(persisted.items.length, 2);
+  });
+});
+
+test("queue trash and restore preserve chat records while hiding normal queue state", async () => {
+  await withServer(async ({ baseUrl }) => {
+    await jsonFetch(baseUrl, "/api/queue", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "item-1",
+        rawSource: "Full agent response.",
+        speakableText: "Searchable reply one.",
+        sourceApp: "Codex",
+        threadId: "thread-a"
+      })
+    });
+    await jsonFetch(baseUrl, "/api/queue", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "item-2",
+        rawSource: "Full agent response.",
+        speakableText: "Searchable reply two.",
+        sourceApp: "Codex",
+        threadId: "thread-a"
+      })
+    });
+
+    const trashed = await jsonFetch(baseUrl, "/api/queue/trash", {
+      method: "POST",
+      body: JSON.stringify({ itemIds: ["item-2"] })
+    });
+    assert.equal(trashed.response.status, 200);
+    assert.deepEqual(trashed.body.trashed, ["item-2"]);
+    assert.deepEqual(
+      trashed.body.queue.pending.map((item) => item.id),
+      ["item-1"]
+    );
+    assert.equal(
+      trashed.body.queue.items.find((item) => item.id === "item-2").trashedAt,
+      trashed.body.queue.items.find((item) => item.id === "item-2").timestamps.updatedAt
+    );
+
+    const restored = await jsonFetch(baseUrl, "/api/queue/restore", {
+      method: "POST",
+      body: JSON.stringify({ sessionKey: "thread-a" })
+    });
+    assert.equal(restored.response.status, 200);
+    assert.deepEqual(restored.body.restored, ["item-2"]);
+    assert.deepEqual(
+      restored.body.queue.pending.map((item) => item.id),
+      ["item-1", "item-2"]
+    );
+  });
+});
+
+test("queue trash can target explicit session keys", async () => {
+  await withServer(async ({ baseUrl }) => {
+    await jsonFetch(baseUrl, "/api/queue", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "keyed-1",
+        rawSource: "Full agent response.",
+        speakableText: "Session keyed reply one.",
+        sourceApp: "Codex",
+        sessionKey: "session-a",
+        threadId: "thread-a"
+      })
+    });
+    await jsonFetch(baseUrl, "/api/queue", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "keyed-2",
+        rawSource: "Full agent response.",
+        speakableText: "Session keyed reply two.",
+        sourceApp: "Codex",
+        sessionKey: "session-b",
+        threadId: "thread-a"
+      })
+    });
+
+    const trashed = await jsonFetch(baseUrl, "/api/queue/trash", {
+      method: "POST",
+      body: JSON.stringify({ sessionKey: "session-a" })
+    });
+    assert.equal(trashed.response.status, 200);
+    assert.deepEqual(trashed.body.trashed, ["keyed-1"]);
+    assert.deepEqual(
+      trashed.body.queue.pending.map((item) => item.id),
+      ["keyed-2"]
+    );
   });
 });
 

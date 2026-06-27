@@ -5,15 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kokoro TTS test</title>
     <style>
+      :root {
+        --font-ui:
+          "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+          "Helvetica Neue", Arial, sans-serif;
+        --font-mono:
+          "Cascadia Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+        --type-control: 0.75rem;
+        --type-body: 0.8125rem;
+        --type-page-title: 1.125rem;
+        --weight-semibold: 600;
+      }
       body {
-        font-family: system-ui, sans-serif;
+        font-family: var(--font-ui);
+        font-size: var(--type-body);
         background: #14181c;
         color: #e6edf3;
         margin: 0;
         padding: 24px;
       }
       h1 {
-        font-size: 18px;
+        font-size: var(--type-page-title);
       }
       textarea {
         width: 100%;
@@ -59,12 +71,12 @@
         border-radius: 8px;
         padding: 12px;
         margin-top: 12px;
-        font-family: ui-monospace, monospace;
-        font-size: 12px;
+        font-family: var(--font-mono);
+        font-size: var(--type-control);
         min-height: 80px;
       }
       .pill {
-        font-size: 12px;
+        font-size: var(--type-control);
         padding: 2px 8px;
         border-radius: 999px;
         background: #2a323b;

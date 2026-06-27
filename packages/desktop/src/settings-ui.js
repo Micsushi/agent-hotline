@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS = {
   mute: false,
   engine: "webview",
   voice: "",
+  audioOutputDeviceId: "",
   kokoroVoice: "af_heart",
   rate: 0.92,
   volume: 1,
@@ -68,6 +69,10 @@ function normalizeSettings(settings) {
     mute: typeof source.mute === "boolean" ? source.mute : DEFAULT_SETTINGS.mute,
     engine: TTS_ENGINES.has(source.engine) ? source.engine : DEFAULT_SETTINGS.engine,
     voice: typeof source.voice === "string" ? source.voice : DEFAULT_SETTINGS.voice,
+    audioOutputDeviceId:
+      typeof source.audioOutputDeviceId === "string"
+        ? source.audioOutputDeviceId
+        : DEFAULT_SETTINGS.audioOutputDeviceId,
     kokoroVoice:
       typeof source.kokoroVoice === "string" ? source.kokoroVoice : DEFAULT_SETTINGS.kokoroVoice,
     rate: clampNumber(source.rate, DEFAULT_SETTINGS.rate, 0.1, 10),
@@ -168,6 +173,37 @@ function setKokoroVoiceOptions(select, settings) {
   select.value = current;
 }
 
+async function setAudioOutputOptions(select, settings) {
+  if (!select) return;
+  const current = settings.audioOutputDeviceId || "";
+  const options = [{ value: "", label: "System default" }];
+  const canEnumerate = Boolean(navigator.mediaDevices?.enumerateDevices);
+  if (canEnumerate) {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      for (const device of devices.filter((entry) => entry.kind === "audiooutput")) {
+        options.push({
+          value: device.deviceId,
+          label: device.label || `Output ${options.length}`
+        });
+      }
+    } catch {}
+  }
+  if (current && !options.some((option) => option.value === current)) {
+    options.push({ value: current, label: `${current} (saved)` });
+  }
+  select.replaceChildren(
+    ...options.map((option) => {
+      const element = document.createElement("option");
+      element.value = option.value;
+      element.textContent = option.label;
+      return element;
+    })
+  );
+  select.value = current;
+  select.disabled = !canEnumerate;
+}
+
 function formatRate(value) {
   return `${parseFloat(Number(value).toFixed(2))}x`;
 }
@@ -192,6 +228,7 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   const highlightWarn = document.querySelector("#highlight-warn");
   const engine = document.querySelector("#setting-engine");
   const voice = document.querySelector("#setting-voice");
+  const outputDevice = document.querySelector("#setting-output-device");
   const kokoroVoice = document.querySelector("#setting-kokoro-voice");
   const kokoroVoiceRow = document.querySelector("#kokoro-voice-row");
   const rate = document.querySelector("#setting-rate");
@@ -245,10 +282,11 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
     if (highlightWarn) highlightWarn.hidden = !currentSettings.highlightSpokenText;
     engine.value = currentSettings.engine;
     setSelectOptions(voice, currentSettings);
+    setAudioOutputOptions(outputDevice, currentSettings);
     setKokoroVoiceOptions(kokoroVoice, currentSettings);
 
     const usingKokoro = KOKORO_ENGINES.has(currentSettings.engine);
-    voice.closest(".field-row").hidden = usingKokoro;
+    voice.closest(".settings-row").hidden = usingKokoro;
     kokoroVoiceRow.hidden = !usingKokoro;
 
     if (!draggingRate) {
@@ -321,6 +359,16 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   }
   engine.addEventListener("change", () => savePatch({ engine: engine.value }));
   voice.addEventListener("change", () => savePatch({ voice: voice.value }));
+  outputDevice?.addEventListener("pointerdown", async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      await setAudioOutputOptions(outputDevice, currentSettings);
+    } catch {}
+  });
+  outputDevice?.addEventListener("change", () =>
+    savePatch({ audioOutputDeviceId: outputDevice.value })
+  );
   kokoroVoice.addEventListener("change", () => savePatch({ kokoroVoice: kokoroVoice.value }));
 
   rate.addEventListener("pointerdown", () => (draggingRate = true));

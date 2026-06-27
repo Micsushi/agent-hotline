@@ -280,7 +280,7 @@ function sendBinary(res, status, buffer, contentType) {
 }
 
 function sessionKeyForItem(item) {
-  return item.threadId || `app:${item.sourceApp}`;
+  return item.sessionKey || item.threadId || `app:${item.sourceApp}`;
 }
 
 // Stable project identity from a (possibly inconsistently-shaped) path. Stripping
@@ -305,6 +305,7 @@ function validateSettingsPatch(patch) {
     "mute",
     "engine",
     "voice",
+    "audioOutputDeviceId",
     "kokoroVoice",
     "rate",
     "volume",
@@ -339,6 +340,9 @@ function validateSettingsPatch(patch) {
     errors.push("engine must be webview or kokoro");
   }
   if ("voice" in patch && typeof patch.voice !== "string") errors.push("voice must be string");
+  if ("audioOutputDeviceId" in patch && typeof patch.audioOutputDeviceId !== "string") {
+    errors.push("audioOutputDeviceId must be string");
+  }
   if ("kokoroVoice" in patch && typeof patch.kokoroVoice !== "string") {
     errors.push("kokoroVoice must be string");
   }
@@ -410,6 +414,51 @@ function queueState(queueStore) {
   };
 }
 
+function visibleQueueItems(queueStore) {
+  return queueStore.getState().items.filter((item) => !item.trashedAt);
+}
+
+function trashedQueueItems(queueStore) {
+  return queueStore.getState().items.filter((item) => item.trashedAt);
+}
+
+function queueItemIdsByProject(queueStore, projectKey, { trashed = false } = {}) {
+  const items = trashed ? trashedQueueItems(queueStore) : visibleQueueItems(queueStore);
+  return items.filter((item) => projectKeyForItem(item) === projectKey).map((item) => item.id);
+}
+
+function queueItemIdsBySession(queueStore, sessionKey, { trashed = false } = {}) {
+  const items = trashed ? trashedQueueItems(queueStore) : visibleQueueItems(queueStore);
+  return items.filter((item) => sessionKeyForItem(item) === sessionKey).map((item) => item.id);
+}
+
+function applyQueueTarget(queueStore, body, mode) {
+  requirePlainObject(body, "Queue target must be a JSON object");
+  if (Array.isArray(body.itemIds)) {
+    return mode === "trash"
+      ? queueStore.trashItems(body.itemIds)
+      : queueStore.restoreItems(body.itemIds);
+  }
+  if (typeof body.projectKey === "string" && body.projectKey.trim()) {
+    return mode === "trash"
+      ? queueStore.trashByProject(body.projectKey)
+      : queueStore.restoreByProject(body.projectKey);
+  }
+  if (typeof body.sessionKey === "string" && body.sessionKey.trim()) {
+    return mode === "trash"
+      ? queueStore.trashBySession(body.sessionKey)
+      : queueStore.restoreBySession(body.sessionKey);
+  }
+  if (body.all === true) {
+    return mode === "trash" ? queueStore.trashAll() : queueStore.restoreAll();
+  }
+  throw createHttpError(
+    400,
+    "invalid_request",
+    "Provide itemIds, projectKey, sessionKey, or all=true"
+  );
+}
+
 function getPathname(req) {
   return new URL(req.url, "http://127.0.0.1").pathname;
 }
@@ -422,12 +471,21 @@ function page() {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Agent Hotline</title>
   <style>
-    :root { color-scheme: light dark; font-family: Inter, Segoe UI, system-ui, sans-serif; }
+    :root {
+      color-scheme: light dark;
+      --font-ui: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      --type-body: 0.8125rem;
+      --type-ui: 0.875rem;
+      --type-title: 1.875rem;
+      --line-copy: 1.45;
+      font-family: var(--font-ui);
+    }
+    body { font-size: var(--type-body); }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #101418; color: #eef2f4; }
     main { width: min(860px, calc(100vw - 32px)); }
     .panel { border: 1px solid #2b343c; border-radius: 8px; padding: 24px; background: #171d22; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
-    .stage { color: #8fb7ff; font-size: 14px; margin-bottom: 16px; }
-    h1 { font-size: 30px; line-height: 1.2; margin: 0 0 16px; letter-spacing: 0; }
+    .stage { color: #8fb7ff; font-size: var(--type-ui); margin-bottom: 16px; }
+    h1 { font-size: var(--type-title); line-height: 1.2; margin: 0 0 16px; letter-spacing: 0; }
     .rec { color: #c7d0d8; border-left: 3px solid #58c48d; padding-left: 12px; margin: 18px 0; }
     textarea { width: 100%; min-height: 130px; box-sizing: border-box; border-radius: 6px; border: 1px solid #34404a; background: #0f1418; color: #eef2f4; padding: 12px; font: inherit; resize: vertical; }
     .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; align-items: center; }
@@ -436,7 +494,7 @@ function page() {
     button:disabled { opacity: .5; cursor: not-allowed; }
     a { color: #9fc4ff; text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .meta { color: #9ba8b2; font-size: 13px; margin-top: 16px; }
+    .meta { color: #9ba8b2; font-size: var(--type-body); margin-top: 16px; }
     .done { color: #8ee6b0; }
   </style>
 </head>
@@ -626,6 +684,7 @@ function createServer(options = {}) {
           rawSource: body.rawSource,
           speakableText: body.speakableText,
           sourceApp: body.sourceApp,
+          sessionKey: body.sessionKey,
           threadId: body.threadId,
           threadLabel: body.threadLabel,
           sessionName: body.sessionName,
@@ -667,6 +726,21 @@ function createServer(options = {}) {
           throw createHttpError(404, "not_found", "No replayable queue item exists");
         }
         sendJson(res, 201, { item, queue: queueState(queueStore) });
+        return;
+      }
+
+      if (req.method === "POST" && pathname === "/api/queue/trash") {
+        const body = await readJsonBody(req);
+        const ids = applyQueueTarget(queueStore, body, "trash");
+        const removedAudio = audioCacheStore.removeByItemIds(ids);
+        sendJson(res, 200, { trashed: ids, removedAudio, queue: queueState(queueStore) });
+        return;
+      }
+
+      if (req.method === "POST" && pathname === "/api/queue/restore") {
+        const body = await readJsonBody(req);
+        const ids = applyQueueTarget(queueStore, body, "restore");
+        sendJson(res, 200, { restored: ids, queue: queueState(queueStore) });
         return;
       }
 
@@ -728,33 +802,36 @@ function createServer(options = {}) {
 
       if (req.method === "GET" && pathname === "/api/audio-cache") {
         const { entries, totalBytes, maxBytes } = audioCacheStore.list();
-        const itemsById = new Map(queueStore.getState().items.map((item) => [item.id, item]));
-        const enriched = entries.map((entry) => {
+        const itemsById = new Map(visibleQueueItems(queueStore).map((item) => [item.id, item]));
+        const enriched = entries.flatMap((entry) => {
           const item = itemsById.get(entry.itemId);
-          return {
-            itemId: entry.itemId,
-            engine: entry.engine,
-            voice: entry.voice,
-            bytes: entry.bytes,
-            durationSec: entry.durationSec,
-            wordAccurate: entry.wordAccurate,
-            createdAt: entry.createdAt,
-            lastAccessedAt: entry.lastAccessedAt,
-            sourceApp: item ? item.sourceApp : null,
-            threadId: item ? item.threadId || null : null,
-            sessionName: item ? item.sessionName || item.threadLabel || null : null,
-            sessionKey: item ? sessionKeyForItem(item) : "app:unknown",
-            projectPath: item ? item.projectPath || null : null,
-            projectName: item ? item.projectName || null : null,
-            projectKey: item ? projectKeyForItem(item) : "direct:unknown",
-            itemCreatedAt: item ? item.timestamps && item.timestamps.createdAt : null,
-            preview: item
-              ? String(item.speakableText || "")
-                  .replace(/\s+/g, " ")
-                  .trim()
-                  .slice(0, 80)
-              : ""
-          };
+          if (!item) return [];
+          return [
+            {
+              itemId: entry.itemId,
+              engine: entry.engine,
+              voice: entry.voice,
+              bytes: entry.bytes,
+              durationSec: entry.durationSec,
+              wordAccurate: entry.wordAccurate,
+              createdAt: entry.createdAt,
+              lastAccessedAt: entry.lastAccessedAt,
+              sourceApp: item.sourceApp,
+              threadId: item.threadId || null,
+              sessionName: item.sessionName || item.threadLabel || null,
+              sessionKey: sessionKeyForItem(item),
+              projectPath: item.projectPath || null,
+              projectName: item.projectName || null,
+              projectKey: projectKeyForItem(item),
+              itemCreatedAt: item.timestamps && item.timestamps.createdAt,
+              preview: item
+                ? String(item.speakableText || "")
+                    .replace(/\s+/g, " ")
+                    .trim()
+                    .slice(0, 80)
+                : ""
+            }
+          ];
         });
         sendJson(res, 200, { entries: enriched, totalBytes, maxBytes });
         return;
@@ -777,19 +854,13 @@ function createServer(options = {}) {
         }
         const session = query.get("session");
         if (session) {
-          const ids = queueStore
-            .getState()
-            .items.filter((item) => sessionKeyForItem(item) === session)
-            .map((item) => item.id);
+          const ids = queueItemIdsBySession(queueStore, session);
           sendJson(res, 200, { removed: audioCacheStore.removeByItemIds(ids) });
           return;
         }
         const project = query.get("project");
         if (project) {
-          const ids = queueStore
-            .getState()
-            .items.filter((item) => projectKeyForItem(item) === project)
-            .map((item) => item.id);
+          const ids = queueItemIdsByProject(queueStore, project);
           sendJson(res, 200, { removed: audioCacheStore.removeByItemIds(ids) });
           return;
         }

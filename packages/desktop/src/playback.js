@@ -184,6 +184,7 @@ export function createPlaybackController({
   let activeStretchRate = 1;
   let activeStream = null;
   let activeStreamChunk = null;
+  let activeSinkId = "";
   let basePosSec = 0;
   let baseCtxTime = 0;
 
@@ -193,6 +194,24 @@ export function createPlaybackController({
       audioContext = Ctx ? new Ctx() : null;
     }
     return audioContext;
+  }
+
+  async function applyOutputDevice(settings) {
+    const context = getAudioContext();
+    const sinkId = String(settings?.audioOutputDeviceId || "");
+    if (!context || activeSinkId === sinkId) return;
+    if (typeof context.setSinkId !== "function") {
+      activeSinkId = "";
+      if (sinkId) notify("This WebView cannot choose an output device; using system default.");
+      return;
+    }
+    try {
+      await context.setSinkId(sinkId || "");
+      activeSinkId = sinkId;
+    } catch (error) {
+      activeSinkId = "";
+      notify(`Could not switch output device: ${error.message}`);
+    }
   }
 
   async function ensureStretch(context) {
@@ -689,6 +708,7 @@ export function createPlaybackController({
       notify(reason);
       return;
     }
+    await applyOutputDevice(settings);
 
     const playingItem = await markPlaying(item);
     activeItem = playingItem;
@@ -709,10 +729,16 @@ export function createPlaybackController({
       );
       if (engine === "kokoro") {
         generated = await getCachedAudio(backendUrl, target).catch(() => null);
+        if (!generated) notify("Regenerating audio because the saved copy was deleted.");
         useStreaming = !generated;
       } else {
-        generated = await getAudio(backendUrl, target, () =>
-          withGenLock(() => rawGenerate(text, voice, genSpeed))
+        generated = await getAudio(
+          backendUrl,
+          {
+            ...target,
+            onPersistentMiss: () => notify("Regenerating audio because the saved copy was deleted.")
+          },
+          () => withGenLock(() => rawGenerate(text, voice, genSpeed))
         );
       }
     } catch (error) {
@@ -798,6 +824,7 @@ export function createPlaybackController({
 
   function applyLiveSettings(settings) {
     if (!settings) return;
+    applyOutputDevice(settings);
     if (activeStream && !activeBuffer && activeSource && Number.isFinite(Number(settings.rate))) {
       const target = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
       const chunk = activeStreamChunk;
@@ -863,7 +890,13 @@ export function createPlaybackController({
     try {
       generated = await getAudio(
         backendUrl,
-        { itemId: activeItem.id, engine, voice, speed: plan.genSpeed },
+        {
+          itemId: activeItem.id,
+          engine,
+          voice,
+          speed: plan.genSpeed,
+          onPersistentMiss: () => notify("Regenerating audio because the saved copy was deleted.")
+        },
         () => withGenLock(() => rawGenerate(text, voice, plan.genSpeed))
       );
     } catch (error) {

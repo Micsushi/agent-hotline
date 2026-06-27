@@ -225,6 +225,77 @@ function testProjectRootMigrationOnLoad() {
   assert.equal(persisted.items[0].projectPath, repoRoot);
 }
 
+function testTrashAndRestoreItems() {
+  const store = createSpeechQueueStore({
+    filePath: createTempFile(),
+    now: createClock(),
+    idGenerator: createIds(["first", "second", "replay"])
+  });
+
+  store.enqueue(sampleItem({ speakableText: "First visible item." }));
+  store.enqueue(sampleItem({ speakableText: "Second visible item." }));
+
+  assert.deepEqual(store.trashItems(["second"]), ["second"]);
+  assert.equal(store.getLatest().id, "first");
+  assert.deepEqual(
+    store.getPending().map((item) => item.id),
+    ["first"]
+  );
+  assert.equal(store.replayItem("second"), null);
+  assert.equal(
+    store.getState().items.find((item) => item.id === "second").trashedAt,
+    "2026-06-20T00:00:03.000Z"
+  );
+
+  assert.deepEqual(store.restoreItems(["second"]), ["second"]);
+  assert.equal(store.getLatest().id, "second");
+  assert.equal(store.replayItem("second").replayOf, "second");
+}
+
+function testTrashByProjectAndSession() {
+  const store = createSpeechQueueStore({
+    filePath: createTempFile(),
+    now: createClock(),
+    idGenerator: createIds(["a", "b", "c"])
+  });
+
+  store.enqueue(sampleItem({ projectPath: "C:\\Repo\\Alpha", threadId: "thread-a" }));
+  store.enqueue(sampleItem({ projectPath: "C:/Repo/Alpha", threadId: "thread-b" }));
+  store.enqueue(sampleItem({ projectPath: "C:\\Repo\\Beta", threadId: "thread-a" }));
+
+  assert.deepEqual(store.trashBySession("thread-a"), ["a", "c"]);
+  assert.deepEqual(
+    store.getPending().map((item) => item.id),
+    ["b"]
+  );
+
+  assert.deepEqual(store.restoreByProject("c:repoalpha"), ["a"]);
+  assert.deepEqual(
+    store.getPending().map((item) => item.id),
+    ["a", "b"]
+  );
+}
+
+function testTrashByExplicitSessionKey() {
+  const store = createSpeechQueueStore({
+    filePath: createTempFile(),
+    now: createClock(),
+    idGenerator: createIds(["a", "b", "c"])
+  });
+
+  store.enqueue(sampleItem({ sessionKey: "session-a", threadId: "thread-a" }));
+  store.enqueue(sampleItem({ sessionKey: "session-b", threadId: "thread-a" }));
+  store.enqueue(sampleItem({ threadId: "thread-a" }));
+
+  assert.deepEqual(store.trashBySession("session-a"), ["a"]);
+  assert.deepEqual(
+    store.getPending().map((item) => item.id),
+    ["b", "c"]
+  );
+  assert.deepEqual(store.restoreBySession("session-a"), ["a"]);
+  assert.equal(store.replayItem("a").sessionKey, "session-a");
+}
+
 const tests = [
   testProjectRootMigrationOnLoad,
   testDefaultRuntimeFile,
@@ -234,6 +305,9 @@ const tests = [
   testSkippedItemsRecordReason,
   testReplayIgnoresSkippedLatest,
   testThreadFieldsStoredAndReplayedById,
+  testTrashAndRestoreItems,
+  testTrashByProjectAndSession,
+  testTrashByExplicitSessionKey,
   testClearQueue
 ];
 

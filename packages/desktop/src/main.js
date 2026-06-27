@@ -12,16 +12,10 @@ import {
   selectItemIdForQueueUpdate
 } from "./read-mode.js";
 import { initSettingsUi } from "./settings-ui.js";
-import {
-  listCache,
-  deleteCacheAll,
-  deleteCacheSession,
-  deleteCacheProject,
-  deleteCacheItem
-} from "./audio-cache.js";
+import { listCache, deleteCacheSession, deleteCacheProject } from "./audio-cache.js";
 import { groupByProjectSession, latestCreatedAt, projectKeyOf, sessionKeyOf } from "./grouping.js";
 import { applyProjectColor, applyOwnerColor, ownerSolidColor } from "./project-colors.js";
-import { openColorMenu } from "./color-menu.js";
+import { closeColorMenu, openColorMenu } from "./color-menu.js";
 import { initColumnResize } from "./column-resize.js";
 
 const isTauri = Boolean(window.__TAURI_INTERNALS__);
@@ -40,8 +34,8 @@ const STATUS_LABELS = {
 const QUEUE_POLL_INTERVAL_MS = 1000;
 const AUTO_READ_STORAGE_KEY = "agent-hotline.auto-read-attempted";
 const PREGEN_STORAGE_KEY = "agent-hotline.pregen-seen";
-const AUDIO_CACHE_LIMIT_MAX_MB = 100000;
-
+const ORDERING_STORAGE_KEY = "agent-hotline.ordering";
+const COPY_TOAST_DURATION_MS = 500;
 const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>';
 const ICON_SPINNER = '<span class="spinner" aria-hidden="true"></span>';
 const ICON_PAUSE =
@@ -50,6 +44,8 @@ const ICON_SPEAKER =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const ICON_SPEAKER_MUTED =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M4.5 4.5 19.5 19.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const ICON_PIN =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5-4 4v5l-2 2-5-5-5 5 5-5-5-5 2-2h5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>';
 
 const el = (id) => document.getElementById(id);
 const windowMinimize = el("window-minimize");
@@ -75,16 +71,44 @@ const historyList = el("history");
 const actionHint = el("action-hint");
 const backendUrl = el("backend-url");
 const navChats = el("nav-chats");
-const navStorage = el("nav-storage");
+const navSearch = el("nav-search");
+const navTrash = el("nav-trash");
 const navSettings = el("nav-settings");
 const viewBlank = el("view-blank");
 const viewChats = el("view-chats");
-const viewStorage = el("view-storage");
+const viewSearch = el("view-search");
+const viewTrash = el("view-trash");
 const viewSettings = el("view-settings");
+const searchInput = el("search-input");
+const searchClear = el("search-clear");
+const searchCount = el("search-count");
+const searchResults = el("search-results");
+const searchType = el("search-type");
+const searchOwner = el("search-owner");
+const searchTime = el("search-time");
+const searchSort = el("search-sort");
+const projectsTitle = el("projects-title");
+const sessionFind = el("session-find");
+const sessionFindInput = el("session-find-input");
+const sessionFindCount = el("session-find-count");
+const sessionFindPrev = el("session-find-prev");
+const sessionFindNext = el("session-find-next");
+const trashCount = el("trash-count");
+const trashEmpty = el("trash-empty");
+const trashCascade = el("trash-cascade");
+const trashProjectsList = el("trash-projects");
+const trashSessionsPane = el("trash-sessions-pane");
+const trashSessionsList = el("trash-sessions");
+const trashMessagesPane = el("trash-messages-pane");
+const trashMessagesList = el("trash-messages");
+const trashProjectsTitle = el("trash-projects-title");
+const trashSessionsTitle = el("trash-sessions-title");
+const trashMessagesTitle = el("trash-messages-title");
 const projectsList = el("projects-list");
 const sessionsList = el("sessions-list");
 const sessionsPane = el("sessions-pane");
 const messagesPane = el("messages-pane");
+const trashSessionButton = el("trash-session");
 const msgModal = el("msg-modal");
 const modalOwner = el("modal-owner");
 const modalTime = el("modal-time");
@@ -95,6 +119,16 @@ const modalPrev = el("modal-prev");
 const modalPlay = el("modal-play");
 const modalNext = el("modal-next");
 const modalSpeed = el("modal-speed");
+const sessionDetailsModal = el("session-details-modal");
+const sessionDetailsOwner = el("session-details-owner");
+const sessionDetailsTitle = el("session-details-title");
+const sessionDetailsBody = el("session-details-body");
+const sessionDetailsClose = el("session-details-close");
+const confirmModal = el("confirm-modal");
+const confirmTitle = el("confirm-title");
+const confirmMessage = el("confirm-message");
+const confirmCancel = el("confirm-cancel");
+const confirmOk = el("confirm-ok");
 
 function initWindowChrome() {
   if (!isTauri) return;
@@ -117,7 +151,28 @@ let lastRate;
 let voiceTrackInit = false;
 let lastDataSig = null;
 let historyView = { level: "messages", projectKey: null, sessionKey: null };
-let storageView = { projectKey: null, sessionKey: null };
+let searchQuery = "";
+let searchResultType = "all";
+let searchOwnerFilter = "all";
+let searchTimeFilter = "any";
+let searchSortMode = "newest";
+let searchHighlightItemId = null;
+let searchHighlightPrompt = null;
+let projectDragMode = false;
+let sessionDragModeProjectKey = null;
+let projectSelectMode = false;
+let selectedProjectKeys = new Set();
+let sessionSelectMode = false;
+let sessionSelectionProjectKey = null;
+let selectedSessionKeys = new Set();
+let trashView = { projectKey: null, sessionKey: null };
+let trashSelectMode = null;
+let selectedTrashProjectKeys = new Set();
+let selectedTrashSessionKeys = new Set();
+let sessionFindQuery = "";
+let sessionFindActiveIndex = 0;
+let sessionFindPreferredTarget = null;
+let sessionFindMatches = [];
 let autoReadAttemptedItemIds = loadAutoReadAttempted();
 let autoReadSeeded = false;
 let highlightSurface = "preview";
@@ -125,6 +180,10 @@ const noticedQueueItemIds = new Set();
 const NOTICED_QUEUE_ITEM_LIMIT = 200;
 let queueNotice = null;
 let queueNoticeEl = null;
+let pendingConfirm = null;
+let toastEl = null;
+let toastTimer = 0;
+let orderingPrefs = loadOrderingPrefs();
 
 // ---- Unread tracking -------------------------------------------------------
 // An item is "unread" until the user opens it or playback of it finishes. The
@@ -301,6 +360,131 @@ function persistPregenSeen() {
   } catch {}
 }
 
+function defaultOrderingPrefs() {
+  return {
+    projectSort: "recent",
+    sessionSortByProject: {},
+    pinnedProjects: [],
+    projectOrder: [],
+    pinnedSessionsByProject: {},
+    sessionOrderByProject: {}
+  };
+}
+
+function cleanStringArray(value) {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : [];
+}
+
+function cleanSort(value) {
+  return ["recent", "name", "manual"].includes(value) ? value : "recent";
+}
+
+function cleanStringArrayMap(value) {
+  const out = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [key, entries] of Object.entries(value)) out[key] = cleanStringArray(entries);
+  return out;
+}
+
+function cleanSortMap(value) {
+  const out = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [key, sort] of Object.entries(value)) out[key] = cleanSort(sort);
+  return out;
+}
+
+function loadOrderingPrefs() {
+  const base = defaultOrderingPrefs();
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(ORDERING_STORAGE_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object") return base;
+    return {
+      projectSort: cleanSort(parsed.projectSort),
+      sessionSortByProject: cleanSortMap(parsed.sessionSortByProject),
+      pinnedProjects: cleanStringArray(parsed.pinnedProjects),
+      projectOrder: cleanStringArray(parsed.projectOrder),
+      pinnedSessionsByProject: cleanStringArrayMap(parsed.pinnedSessionsByProject),
+      sessionOrderByProject: cleanStringArrayMap(parsed.sessionOrderByProject)
+    };
+  } catch {
+    return base;
+  }
+}
+
+function persistOrderingPrefs() {
+  try {
+    window.localStorage.setItem(ORDERING_STORAGE_KEY, JSON.stringify(orderingPrefs));
+  } catch {}
+}
+
+function uniqueOrdered(keys) {
+  const seen = new Set();
+  const out = [];
+  for (const key of keys) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+function moveKeyToFront(keys, key) {
+  return uniqueOrdered([key, ...keys.filter((entry) => entry !== key)]);
+}
+
+function sortByName(a, b) {
+  return String(a.label || "").localeCompare(String(b.label || ""), undefined, {
+    sensitivity: "base"
+  });
+}
+
+function sortByRecent(a, b) {
+  return latestCreatedAt(b.items).localeCompare(latestCreatedAt(a.items));
+}
+
+function manualIndex(order, key) {
+  const index = order.indexOf(key);
+  return index === -1 ? Number.POSITIVE_INFINITY : index;
+}
+
+function compareOrderedGroups(a, b, { pinnedKeys, order, sort }) {
+  const aPinned = pinnedKeys.has(a.key);
+  const bPinned = pinnedKeys.has(b.key);
+  if (aPinned !== bPinned) return aPinned ? -1 : 1;
+  const aIndex = manualIndex(order, a.key);
+  const bIndex = manualIndex(order, b.key);
+  const useManual = aPinned || bPinned || sort === "manual";
+  if (useManual && aIndex !== bIndex) return aIndex - bIndex;
+  if (sort === "name") return sortByName(a, b);
+  return sortByRecent(a, b);
+}
+
+function sessionSortForProject(projectKey) {
+  return cleanSort(orderingPrefs.sessionSortByProject[projectKey]);
+}
+
+function orderedSessions(project) {
+  const pinnedKeys = new Set(orderingPrefs.pinnedSessionsByProject[project.key] || []);
+  const order = orderingPrefs.sessionOrderByProject[project.key] || [];
+  const sort = sessionSortForProject(project.key);
+  return [...project.sessions].sort((a, b) =>
+    compareOrderedGroups(a, b, { pinnedKeys, order, sort })
+  );
+}
+
+function applyOrdering(projects) {
+  const pinnedKeys = new Set(orderingPrefs.pinnedProjects);
+  return projects
+    .map((project) => ({ ...project, sessions: orderedSessions(project) }))
+    .sort((a, b) =>
+      compareOrderedGroups(a, b, {
+        pinnedKeys,
+        order: orderingPrefs.projectOrder,
+        sort: orderingPrefs.projectSort
+      })
+    );
+}
+
 function schedulePregen(settings, items) {
   if (!playback) return;
   if (settings.engine !== "kokoro" && settings.engine !== "kokoro-ts") return;
@@ -338,23 +522,50 @@ async function drainPregen() {
   }
 }
 
+function queuePregenForItemIds(itemIds, settings) {
+  if (!playback || !settings || !Array.isArray(itemIds) || itemIds.length === 0) return;
+  if (settings.engine !== "kokoro" && settings.engine !== "kokoro-ts") return;
+  const wanted = new Set(itemIds);
+  const items = speakableItems(latestState?.queue || {}).filter((item) => wanted.has(item.id));
+  for (const item of items) {
+    pregenSeenIds.add(item.id);
+    pregenQueue.push({ item, settings });
+  }
+  persistPregenSeen();
+  drainPregen();
+}
+
 let currentView = "blank";
 
-// Nav rail drives a single workspace view. "chats" and "storage" cascade their
-// own columns; "settings" fills the page; "blank" is the fresh/empty state.
+// Nav rail drives a single workspace view. "chats" cascades its own columns;
+// settings/search/trash fill the page; "blank" is the fresh/empty state.
 function setView(view) {
-  const active = ["chats", "storage", "settings"].includes(view) ? view : "blank";
+  const active = ["chats", "search", "trash", "settings"].includes(view) ? view : "blank";
   // Switching away from chats counts as leaving the open thread: flush it read.
   if (currentView === "chats" && active !== "chats") leaveOpenSession();
   currentView = active;
-  if (navChats) navChats.classList.toggle("is-active", active === "chats");
-  if (navStorage) navStorage.classList.toggle("is-active", active === "storage");
-  if (navSettings) navSettings.classList.toggle("is-active", active === "settings");
+  const navPairs = [
+    [navChats, "chats"],
+    [navSearch, "search"],
+    [navTrash, "trash"],
+    [navSettings, "settings"]
+  ];
+  for (const [button, name] of navPairs) {
+    if (!button) continue;
+    const selected = active === name;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-selected", selected ? "true" : "false");
+    button.tabIndex = selected || active === "blank" ? 0 : -1;
+  }
   if (viewBlank) viewBlank.hidden = active !== "blank";
   if (viewChats) viewChats.hidden = active !== "chats";
-  if (viewStorage) viewStorage.hidden = active !== "storage";
+  if (viewSearch) viewSearch.hidden = active !== "search";
+  if (viewTrash) viewTrash.hidden = active !== "trash";
   if (viewSettings) viewSettings.hidden = active !== "settings";
-  if (active === "storage") loadAudioCache().catch(showError);
+  if (latestState) {
+    if (active === "search") renderSearch();
+    if (active === "trash") renderTrash();
+  }
 }
 
 async function loadRuntimeConfig() {
@@ -381,6 +592,35 @@ function setStatus(kind) {
 
 function notify(message) {
   actionHint.textContent = message;
+}
+
+function showToast(message, options = {}) {
+  if (!toastEl) {
+    toastEl = document.createElement("div");
+    toastEl.className = "app-toast";
+    toastEl.setAttribute("role", "status");
+    toastEl.setAttribute("aria-live", "polite");
+    document.querySelector(".app-shell")?.append(toastEl);
+  }
+  toastEl.classList.toggle("is-copy", Boolean(options.copy));
+  toastEl.classList.remove("is-anchored");
+  toastEl.style.removeProperty("--toast-left");
+  toastEl.style.removeProperty("--toast-top");
+  toastEl.textContent = message;
+  toastEl.hidden = false;
+  if (options.anchor?.getBoundingClientRect) {
+    const rect = options.anchor.getBoundingClientRect();
+    const left = rect.left + rect.width / 2;
+    const top = Math.max(8, rect.top - toastEl.offsetHeight - 8);
+    toastEl.style.setProperty("--toast-left", `${left}px`);
+    toastEl.style.setProperty("--toast-top", `${top}px`);
+    toastEl.classList.add("is-anchored");
+  }
+  toastEl.classList.add("is-visible");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toastEl?.classList.remove("is-visible");
+  }, options.durationMs || 1800);
 }
 
 function queueNoticeContainer() {
@@ -420,7 +660,12 @@ async function maybeNotify(item, settings) {
 
 function speakableItems(queue) {
   const items = Array.isArray(queue.items) ? queue.items : [];
-  return items.filter((item) => item.speakableText && item.speakableText.trim());
+  return items.filter((item) => item.speakableText && item.speakableText.trim() && !item.trashedAt);
+}
+
+function trashedSpeakableItems(queue) {
+  const items = Array.isArray(queue.items) ? queue.items : [];
+  return items.filter((item) => item.speakableText && item.speakableText.trim() && item.trashedAt);
 }
 
 function findSelected(items) {
@@ -462,6 +707,18 @@ function formatTime(iso) {
       ? { month: "short", day: "numeric" }
       : { year: "numeric", month: "short", day: "numeric" };
   return `${date.toLocaleDateString([], dateOpts)}, ${time}`;
+}
+
+function formatDateTime(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 // Clock for the seek bar: speech-time seconds (base 1x timeline), so it never
@@ -566,10 +823,9 @@ function renderNowCard(selected, statusKind = selected?.status || "idle") {
   }
 }
 
-// History groups newest-first; Storage groups largest-first. Both run through
-// the shared grouper in grouping.js so the two trees stay in lockstep.
+// History groups newest-first through the shared grouper in grouping.js.
 function buildProjects(items) {
-  return groupByProjectSession(items, { sortBy: "recent", dropUnnamed: true });
+  return applyOrdering(groupByProjectSession(items, { sortBy: "recent", dropUnnamed: true }));
 }
 
 // A small muted timestamp that sits outside the bubble, aligned to its side
@@ -593,20 +849,674 @@ function buildBubbleTail() {
   return tail;
 }
 
+function showCopyToast(anchor) {
+  showToast("Copied", {
+    anchor,
+    copy: true,
+    durationMs: COPY_TOAST_DURATION_MS
+  });
+}
+
+async function copyMessageText(text, anchor) {
+  const value = String(text || "");
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    showCopyToast(anchor);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = value;
+    area.style.position = "fixed";
+    area.style.left = "-9999px";
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+    showCopyToast(anchor);
+  }
+}
+
+function copyButton(text, side) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `bubble-copy is-${side}`;
+  button.title = "Copy message";
+  button.setAttribute("aria-label", "Copy message");
+  button.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2zm2 0h4a2 2 0 0 1 2 2v6h2V5h-8v2zM6 9v10h8V9H6z"/></svg>';
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    copyMessageText(text, event.currentTarget);
+  });
+  return button;
+}
+
+function closeMessageMenu() {
+  document.querySelector(".message-menu")?.remove();
+}
+
+function closeSessionMenu() {
+  document.querySelector(".session-menu")?.remove();
+  closeColorMenu();
+}
+
+function resolveConfirm(value) {
+  if (!pendingConfirm) return;
+  const { resolve } = pendingConfirm;
+  pendingConfirm = null;
+  if (confirmModal) confirmModal.hidden = true;
+  resolve(value);
+}
+
+function askConfirm({
+  title = "Confirm action",
+  message,
+  confirmText = "Confirm",
+  cancelText = "Cancel"
+}) {
+  if (!confirmModal || !confirmTitle || !confirmMessage || !confirmOk || !confirmCancel) {
+    return Promise.resolve(window.confirm(message));
+  }
+  if (pendingConfirm) resolveConfirm(false);
+  confirmTitle.textContent = title;
+  confirmMessage.textContent = message;
+  confirmOk.textContent = confirmText;
+  confirmCancel.textContent = cancelText;
+  confirmModal.hidden = false;
+  return new Promise((resolve) => {
+    pendingConfirm = { resolve };
+  });
+}
+
+function openMessageMenu(event, text) {
+  closeMessageMenu();
+  closeSessionMenu();
+  const menu = document.createElement("div");
+  menu.className = "message-menu";
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.textContent = "Copy message";
+  copy.addEventListener("click", async (clickEvent) => {
+    await copyMessageText(
+      text,
+      clickEvent.currentTarget.closest(".message-menu") || clickEvent.currentTarget
+    );
+    closeMessageMenu();
+  });
+  menu.append(copy);
+  document.body.append(menu);
+}
+
+function openSession(project, session) {
+  if (historyView.sessionKey !== session.key) leaveOpenSession();
+  historyView.projectKey = project.key;
+  historyView.sessionKey = session.key;
+  setView("chats");
+  renderState(latestState);
+}
+
+function sessionDateRange(session) {
+  const times = session.items
+    .map((item) => item.timestamps?.createdAt)
+    .filter(Boolean)
+    .map((value) => new Date(value).getTime())
+    .filter((value) => !Number.isNaN(value));
+  if (times.length === 0) return { first: "", last: "" };
+  return {
+    first: new Date(Math.min(...times)).toISOString(),
+    last: new Date(Math.max(...times)).toISOString()
+  };
+}
+
+function statusCounts(session) {
+  const counts = new Map();
+  for (const item of session.items) {
+    const status = item.status || "unknown";
+    counts.set(status, (counts.get(status) || 0) + 1);
+  }
+  return [...counts.entries()].map(([status, count]) => `${status}: ${count}`).join(", ");
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean).map(String))];
+}
+
+function detailsRow(label, value) {
+  const row = document.createElement("div");
+  row.className = "details-row";
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const desc = document.createElement("dd");
+  desc.textContent = value || "-";
+  row.append(term, desc);
+  return row;
+}
+
+function detailsStat(label, value, hint = "") {
+  const stat = document.createElement("div");
+  stat.className = "details-stat";
+  const number = document.createElement("strong");
+  number.textContent = value || "-";
+  const caption = document.createElement("span");
+  caption.textContent = label;
+  stat.append(number, caption);
+  if (hint) {
+    const note = document.createElement("small");
+    note.textContent = hint;
+    stat.append(note);
+  }
+  return stat;
+}
+
+function detailsSection(title, ...rows) {
+  const section = document.createElement("section");
+  section.className = "details-section";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const list = document.createElement("dl");
+  list.className = "details-list";
+  list.append(...rows);
+  section.append(heading, list);
+  return section;
+}
+
+function detailsIdGroup(label, values) {
+  const clean = uniqueValues(values);
+  const group = document.createElement("details");
+  group.className = "details-id-group";
+
+  const summary = document.createElement("summary");
+  const title = document.createElement("span");
+  title.textContent = label;
+  const count = document.createElement("span");
+  count.className = "details-id-count";
+  count.textContent = `${clean.length} ${clean.length === 1 ? "value" : "values"}`;
+  summary.append(title, count);
+  group.append(summary);
+
+  const list = document.createElement("ol");
+  list.className = "details-id-list";
+  if (clean.length === 0) {
+    const empty = document.createElement("li");
+    empty.textContent = "-";
+    list.append(empty);
+  } else {
+    for (const value of clean) {
+      const item = document.createElement("li");
+      const code = document.createElement("code");
+      code.textContent = value;
+      item.append(code);
+      list.append(item);
+    }
+  }
+  group.append(list);
+  return group;
+}
+
+function audioDetailsText(audio) {
+  if (!audio) return "Unavailable";
+  return `${formatBytes(audio.bytes)} across ${audio.count} recording${audio.count === 1 ? "" : "s"}`;
+}
+
+async function cacheSummaryFor({ projectKey, sessionKey } = {}) {
+  try {
+    const data = await listCache(targetUrl);
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    const matching = entries.filter((entry) => {
+      if (sessionKey) return entry.sessionKey === sessionKey;
+      if (projectKey) return entry.projectKey === projectKey;
+      return false;
+    });
+    return {
+      count: matching.length,
+      bytes: matching.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0)
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function openSessionDetails(project, session) {
+  closeSessionMenu();
+  if (!sessionDetailsModal || !sessionDetailsBody) return;
+  const { first, last } = sessionDateRange(session);
+  const title = session.parts?.title || session.label || "Session";
+  const threadIds = uniqueValues(session.items.map((item) => item.threadId));
+  const sessionNames = uniqueValues(
+    session.items.map((item) => item.sessionName || item.threadLabel)
+  );
+  const sourceApps = uniqueValues(session.items.map((item) => item.sourceApp));
+
+  if (sessionDetailsOwner) {
+    sessionDetailsOwner.hidden = false;
+    sessionDetailsOwner.className = `owner-badge ${OWNER_CLASS[session.owner] || "owner-unknown"}`;
+    sessionDetailsOwner.textContent = session.owner || "Unknown";
+    sessionDetailsOwner.title = session.owner || "Unknown harness";
+  }
+  if (sessionDetailsTitle) sessionDetailsTitle.textContent = title;
+  const audio = await cacheSummaryFor({ sessionKey: session.key });
+
+  const shell = document.createElement("div");
+  shell.className = "details-shell";
+  const overview = document.createElement("div");
+  overview.className = "details-overview";
+  overview.append(
+    detailsStat("Messages", String(session.items.length)),
+    detailsStat(
+      "Saved audio",
+      audio ? formatBytes(audio.bytes) : "-",
+      audio ? `${audio.count} files` : ""
+    ),
+    detailsStat("Started", formatTime(first)),
+    detailsStat("Last", formatTime(last))
+  );
+
+  const ids = document.createElement("section");
+  ids.className = "details-section details-id-section";
+  const idsTitle = document.createElement("h3");
+  idsTitle.textContent = "Identifiers";
+  ids.append(
+    idsTitle,
+    detailsIdGroup("Session keys", [session.key]),
+    detailsIdGroup("Session IDs", threadIds.length ? threadIds : [session.parts?.id || "direct"]),
+    detailsIdGroup("Project keys", [project.key])
+  );
+
+  shell.append(
+    overview,
+    detailsSection(
+      "Identity",
+      detailsRow("Display name", session.label),
+      detailsRow("Full session name", sessionNames.join(", ") || title),
+      detailsRow("Project", project.label),
+      detailsRow("Harness", sourceApps.join(", ") || session.owner)
+    ),
+    detailsSection(
+      "Activity",
+      detailsRow("First message", formatDateTime(first)),
+      detailsRow("Last message", formatDateTime(last)),
+      detailsRow("Statuses", statusCounts(session)),
+      detailsRow("Saved audio", audioDetailsText(audio))
+    ),
+    ids
+  );
+  sessionDetailsBody.replaceChildren(shell);
+  sessionDetailsModal.hidden = false;
+}
+
+async function openProjectDetails(project) {
+  closeSessionMenu();
+  if (!sessionDetailsModal || !sessionDetailsBody || !project) return;
+  const times = project.items
+    .map((item) => item.timestamps?.createdAt)
+    .filter(Boolean)
+    .map((value) => new Date(value).getTime())
+    .filter((value) => !Number.isNaN(value));
+  const first = times.length ? new Date(Math.min(...times)).toISOString() : "";
+  const last = times.length ? new Date(Math.max(...times)).toISOString() : "";
+  const owners = uniqueValues(project.items.map((item) => item.sourceApp));
+  const threadIds = uniqueValues(project.items.map((item) => item.threadId));
+
+  if (sessionDetailsOwner) {
+    sessionDetailsOwner.hidden = true;
+  }
+  if (sessionDetailsTitle) sessionDetailsTitle.textContent = project.label || "Project";
+  const audio = await cacheSummaryFor({ projectKey: project.key });
+
+  const shell = document.createElement("div");
+  shell.className = "details-shell";
+  const overview = document.createElement("div");
+  overview.className = "details-overview";
+  overview.append(
+    detailsStat("Sessions", String(project.sessions.length)),
+    detailsStat("Messages", String(project.items.length)),
+    detailsStat(
+      "Saved audio",
+      audio ? formatBytes(audio.bytes) : "-",
+      audio ? `${audio.count} files` : ""
+    ),
+    detailsStat("Last", formatTime(last))
+  );
+
+  const ids = document.createElement("section");
+  ids.className = "details-section details-id-section";
+  const idsTitle = document.createElement("h3");
+  idsTitle.textContent = "Identifiers";
+  ids.append(
+    idsTitle,
+    detailsIdGroup("Project keys", [project.key]),
+    detailsIdGroup("Session IDs", threadIds)
+  );
+
+  shell.append(
+    overview,
+    detailsSection(
+      "Identity",
+      detailsRow("Project", project.label),
+      detailsRow("Harnesses", owners.join(", "))
+    ),
+    detailsSection(
+      "Activity",
+      detailsRow("First message", formatDateTime(first)),
+      detailsRow("Last message", formatDateTime(last)),
+      detailsRow("Saved audio", audioDetailsText(audio))
+    ),
+    ids
+  );
+  sessionDetailsBody.replaceChildren(shell);
+  sessionDetailsModal.hidden = false;
+}
+
+function closeSessionDetails() {
+  if (sessionDetailsModal) sessionDetailsModal.hidden = true;
+}
+
+function openSessionMenu(event, project, session) {
+  event.preventDefault();
+  closeMessageMenu();
+  closeSessionMenu();
+  const menu = document.createElement("div");
+  menu.className = "message-menu session-menu";
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+
+  const open = document.createElement("button");
+  open.type = "button";
+  open.textContent = "Open session";
+  open.addEventListener("click", () => {
+    openSession(project, session);
+    closeSessionMenu();
+  });
+
+  const details = document.createElement("button");
+  details.type = "button";
+  details.textContent = "Details";
+  details.addEventListener("click", () => openSessionDetails(project, session));
+
+  const sessionPinned = (orderingPrefs.pinnedSessionsByProject[project.key] || []).includes(
+    session.key
+  );
+  const pin = document.createElement("button");
+  pin.type = "button";
+  pin.textContent = sessionPinned ? "Unpin session" : "Pin session";
+  pin.addEventListener("click", () => {
+    closeSessionMenu();
+    const pinned = orderingPrefs.pinnedSessionsByProject[project.key] || [];
+    orderingPrefs.pinnedSessionsByProject[project.key] = sessionPinned
+      ? pinned.filter((key) => key !== session.key)
+      : moveKeyToFront(pinned, session.key);
+    if (!sessionPinned) {
+      orderingPrefs.sessionOrderByProject[project.key] = moveKeyToFront(
+        orderingPrefs.sessionOrderByProject[project.key] || [],
+        session.key
+      );
+    }
+    persistOrderingPrefs();
+    renderState(latestState);
+  });
+
+  const audio = document.createElement("button");
+  audio.type = "button";
+  audio.textContent = "Remove audio";
+  audio.addEventListener("click", () => {
+    closeSessionMenu();
+    removeSessionAudio(session);
+  });
+
+  const trash = document.createElement("button");
+  trash.type = "button";
+  trash.className = "is-danger";
+  trash.textContent = "Move to trash";
+  trash.addEventListener("click", () => {
+    closeSessionMenu();
+    trashQueueTarget({ sessionKey: session.key, itemIds: session.items.map((item) => item.id) });
+  });
+
+  menu.append(open, details, pin, audio, trash);
+  document.body.append(menu);
+}
+
+function openProjectMenu(event, project) {
+  event.preventDefault();
+  closeMessageMenu();
+  closeSessionMenu();
+  closeColorMenu();
+  const menu = document.createElement("div");
+  menu.className = "message-menu session-menu";
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+
+  const details = document.createElement("button");
+  details.type = "button";
+  details.textContent = "Details";
+  details.addEventListener("click", () => openProjectDetails(project));
+
+  const color = document.createElement("button");
+  color.type = "button";
+  color.textContent = "Change colour";
+  color.addEventListener("click", (clickEvent) => {
+    clickEvent.stopPropagation();
+    closeSessionMenu();
+    openColorMenu(clickEvent, project, () => renderState(latestState));
+  });
+
+  const projectPinned = orderingPrefs.pinnedProjects.includes(project.key);
+  const pin = document.createElement("button");
+  pin.type = "button";
+  pin.textContent = projectPinned ? "Unpin project" : "Pin project";
+  pin.addEventListener("click", () => {
+    closeSessionMenu();
+    orderingPrefs.pinnedProjects = projectPinned
+      ? orderingPrefs.pinnedProjects.filter((key) => key !== project.key)
+      : moveKeyToFront(orderingPrefs.pinnedProjects, project.key);
+    if (!projectPinned)
+      orderingPrefs.projectOrder = moveKeyToFront(orderingPrefs.projectOrder, project.key);
+    persistOrderingPrefs();
+    renderState(latestState);
+  });
+
+  const audio = document.createElement("button");
+  audio.type = "button";
+  audio.textContent = "Remove audio";
+  audio.addEventListener("click", () => {
+    closeSessionMenu();
+    removeProjectAudio(project);
+  });
+
+  const trash = document.createElement("button");
+  trash.type = "button";
+  trash.className = "is-danger";
+  trash.textContent = "Move to trash";
+  trash.addEventListener("click", () => {
+    closeSessionMenu();
+    trashQueueTarget({ projectKey: project.key, itemIds: project.items.map((item) => item.id) });
+  });
+
+  menu.append(details, color, pin, audio, trash);
+  document.body.append(menu);
+}
+
+function openTrashRestoreMenu(event, actions) {
+  event.preventDefault();
+  event.stopPropagation();
+  closeMessageMenu();
+  closeSessionMenu();
+  const menu = document.createElement("div");
+  menu.className = "message-menu session-menu";
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+
+  for (const action of actions) {
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.textContent = action.text;
+    restore.addEventListener("click", () => {
+      closeSessionMenu();
+      restoreQueueTarget(action.body, action.label);
+    });
+    menu.append(restore);
+  }
+  document.body.append(menu);
+}
+
 // A user prompt bubble (right side). Display-only: never read aloud. Clicking it
 // expands the clamped body. No id/owner chrome -- it is the human half of the turn.
-function buildUserBubble(text, createdAt) {
+function searchMatchBadge() {
+  const badge = document.createElement("span");
+  badge.className = "search-match-badge";
+  badge.textContent = "Search match";
+  return badge;
+}
+
+function sessionFindTerms() {
+  return String(sessionFindQuery || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function findTextRanges(text, terms) {
+  const raw = String(text || "");
+  const lower = raw.toLowerCase();
+  const ranges = [];
+  for (const term of terms) {
+    let index = lower.indexOf(term);
+    while (index >= 0) {
+      ranges.push({ start: index, end: index + term.length });
+      index = lower.indexOf(term, index + Math.max(1, term.length));
+    }
+  }
+  ranges.sort((a, b) => a.start - b.start || b.end - a.end);
+  const merged = [];
+  for (const range of ranges) {
+    const previous = merged[merged.length - 1];
+    if (previous && range.start < previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
+}
+
+function sameFindTarget(a, b) {
+  if (!a || !b) return false;
+  if (a.kind !== b.kind || a.itemId !== b.itemId) return false;
+  return a.kind !== "prompt" || a.targetId === b.targetId;
+}
+
+function appendFindMarkedText(body, text, target, { record = true } = {}) {
+  const terms = sessionFindTerms();
+  const ranges = terms.length ? findTextRanges(text, terms) : [];
+  if (ranges.length === 0) {
+    body.textContent = text;
+    return;
+  }
+
+  let cursor = 0;
+  for (const range of ranges) {
+    if (range.start > cursor) body.append(document.createTextNode(text.slice(cursor, range.start)));
+    const index = sessionFindMatches.length;
+    if (record) sessionFindMatches.push({ index, target });
+    const mark = document.createElement("mark");
+    mark.className = "session-find-mark";
+    if (record) mark.dataset.findIndex = String(index);
+    mark.textContent = text.slice(range.start, range.end);
+    body.append(mark);
+    cursor = range.end;
+  }
+  if (cursor < text.length) body.append(document.createTextNode(text.slice(cursor)));
+}
+
+function setBubbleBodyText(body, text, target, options = {}) {
+  body.replaceChildren();
+  appendFindMarkedText(body, String(text || ""), target, options);
+}
+
+function updateSessionFindControls() {
+  if (sessionFindInput && sessionFindInput.value !== sessionFindQuery) {
+    sessionFindInput.value = sessionFindQuery;
+  }
+  const total = sessionFindMatches.length;
+  if (sessionFindCount) {
+    sessionFindCount.textContent = total ? `${sessionFindActiveIndex + 1}/${total}` : "0/0";
+  }
+  if (sessionFindPrev) sessionFindPrev.disabled = total === 0;
+  if (sessionFindNext) sessionFindNext.disabled = total === 0;
+}
+
+function updateSessionFindActiveDom({ scroll = false } = {}) {
+  const total = sessionFindMatches.length;
+  if (sessionFindPreferredTarget && total > 0) {
+    const preferredIndex = sessionFindMatches.findIndex((match) =>
+      sameFindTarget(match.target, sessionFindPreferredTarget)
+    );
+    if (preferredIndex >= 0) sessionFindActiveIndex = preferredIndex;
+    sessionFindPreferredTarget = null;
+  }
+  if (total === 0) {
+    sessionFindActiveIndex = 0;
+    updateSessionFindControls();
+    return null;
+  }
+  sessionFindActiveIndex = Math.min(Math.max(0, sessionFindActiveIndex), total - 1);
+  for (const mark of historyList.querySelectorAll(".session-find-mark.is-active")) {
+    mark.classList.remove("is-active");
+  }
+  const active = historyList.querySelector(
+    `.session-find-mark[data-find-index="${CSS.escape(String(sessionFindActiveIndex))}"]`
+  );
+  active?.classList.add("is-active");
+  updateSessionFindControls();
+  if (scroll && active) {
+    const bubble = active.closest(".bubble");
+    bubble?.classList.add("is-expanded");
+    const historyRect = historyList.getBoundingClientRect();
+    const activeRect = active.getBoundingClientRect();
+    historyList.scrollTop = Math.max(
+      0,
+      historyList.scrollTop +
+        activeRect.top -
+        historyRect.top -
+        historyList.clientHeight / 2 +
+        activeRect.height / 2
+    );
+  }
+  return active;
+}
+
+function moveSessionFind(delta) {
+  if (sessionFindMatches.length === 0) return;
+  sessionFindActiveIndex =
+    (sessionFindActiveIndex + delta + sessionFindMatches.length) % sessionFindMatches.length;
+  updateSessionFindActiveDom({ scroll: true });
+}
+
+function buildUserBubble(text, createdAt, options = {}) {
   const row = document.createElement("div");
   row.className = "convo-row is-user";
 
   const bubble = document.createElement("div");
-  bubble.className = "bubble bubble-user";
+  const classes = ["bubble", "bubble-user"];
+  if (options.searchHighlight) classes.push("is-search-highlight", "is-expanded");
+  bubble.className = classes.join(" ");
+  if (options.searchTargetId) bubble.dataset.searchTargetId = options.searchTargetId;
 
   const body = document.createElement("div");
   body.className = "bubble-body";
-  body.textContent = text;
+  setBubbleBodyText(body, text, {
+    kind: "prompt",
+    itemId: options.itemId,
+    targetId: options.searchTargetId
+  });
 
-  bubble.append(buildBubbleTail(), body);
+  bubble.dataset.copyText = text;
+  bubble.append(buildBubbleTail(), copyButton(text, "left"));
+  if (options.searchHighlight) bubble.append(searchMatchBadge());
+  bubble.append(body);
   row.append(bubble);
   if (createdAt) row.append(buildTimeOut(createdAt));
   return row;
@@ -624,6 +1534,7 @@ function buildAssistantBubble(item) {
   const classes = ["bubble", "bubble-assistant"];
   if (item.id === selectedItemId) classes.push("is-selected");
   if (item.id === selectedItemId && highlightSurface === "inline") classes.push("is-expanded");
+  if (item.id === searchHighlightItemId) classes.push("is-search-highlight", "is-expanded");
   if (isUnread(item)) classes.push("is-unread");
   bubble.className = classes.join(" ");
   bubble.dataset.id = item.id;
@@ -638,9 +1549,12 @@ function buildAssistantBubble(item) {
 
   const body = document.createElement("div");
   body.className = "bubble-body";
-  body.textContent = item.speakableText;
+  setBubbleBodyText(body, item.speakableText, { kind: "reply", itemId: item.id });
 
-  bubble.append(buildBubbleTail(), play, body, buildNowPlayingIcon());
+  bubble.dataset.copyText = item.speakableText;
+  bubble.append(buildBubbleTail(), play);
+  if (item.id === searchHighlightItemId) bubble.append(searchMatchBadge());
+  bubble.append(body, copyButton(item.speakableText, "right"), buildNowPlayingIcon());
   row.append(bubble);
 
   const extras = [];
@@ -655,11 +1569,60 @@ function buildAssistantBubble(item) {
   return row;
 }
 
+function buildTrashAssistantBubble(item, session) {
+  const row = document.createElement("div");
+  row.className = "convo-row is-assistant is-trash";
+  row.style.setProperty("--owner-color", ownerSolidColor(item.sourceApp));
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble bubble-assistant bubble-trash-audio";
+  bubble.dataset.id = item.id;
+
+  const deleted = document.createElement("span");
+  deleted.className = "trash-audio-deleted";
+  deleted.title = "Restore this session to regenerate and play audio.";
+  deleted.textContent = "Audio deleted";
+
+  const body = document.createElement("div");
+  body.className = "bubble-body";
+  setBubbleBodyText(
+    body,
+    item.speakableText,
+    { kind: "reply", itemId: item.id },
+    { record: false }
+  );
+
+  bubble.dataset.copyText = item.speakableText;
+  bubble.append(buildBubbleTail(), deleted, body, copyButton(item.speakableText, "right"));
+  row.oncontextmenu = (event) =>
+    openTrashRestoreMenu(event, [
+      { text: "Restore message", label: "this message", body: { itemIds: [item.id] } },
+      {
+        text: "Restore session",
+        label: session.label,
+        body: { itemIds: session.items.map((entry) => entry.id) }
+      }
+    ]);
+  bubble.oncontextmenu = row.oncontextmenu;
+  row.append(bubble);
+  row.append(buildTimeOut(item.timestamps?.createdAt));
+  return row;
+}
+
 function buildNowPlayingIcon() {
   const icon = document.createElement("span");
   icon.className = "now-playing-icon";
   icon.setAttribute("aria-hidden", "true");
   icon.innerHTML = ICON_SPEAKER;
+  return icon;
+}
+
+function buildPinnedIcon(label) {
+  const icon = document.createElement("span");
+  icon.className = "pinned-icon";
+  icon.title = label;
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = ICON_PIN;
   return icon;
 }
 
@@ -774,7 +1737,14 @@ function handleBubblePlay(itemId, bubble) {
   bubble.classList.add("is-selected", "is-expanded");
   bubble.classList.remove("is-unread");
   const body = bubble.querySelector(".bubble-body");
-  if (body) body.textContent = item.speakableText;
+  if (body) {
+    setBubbleBodyText(
+      body,
+      item.speakableText,
+      { kind: "reply", itemId: item.id },
+      { record: false }
+    );
+  }
   renderNowCard(item);
   updateControls(latestState.settings, items, item);
   playSelectedOn("inline");
@@ -791,9 +1761,361 @@ function markClampedBubbles() {
   }
 }
 
+function menuButton(label, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "text-button head-action menu-button";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function openHeaderMenu(event, actions) {
+  event.preventDefault();
+  event.stopPropagation();
+  closeMessageMenu();
+  closeSessionMenu();
+  const menu = document.createElement("div");
+  menu.className = "message-menu session-menu header-menu";
+  const rect = event.currentTarget.getBoundingClientRect();
+  menu.style.left = `${Math.min(Math.max(8, rect.left), window.innerWidth - 236)}px`;
+  menu.style.top = `${rect.bottom + 6}px`;
+  for (const action of actions) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.textContent = action.label;
+    item.disabled = Boolean(action.disabled);
+    if (action.danger) item.className = "is-danger";
+    item.addEventListener("click", () => {
+      closeSessionMenu();
+      action.run();
+    });
+    menu.append(item);
+  }
+  document.body.append(menu);
+}
+
+function selectionCheckbox({ checked, label, onChange }) {
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.className = "tree-select-check";
+  checkbox.checked = checked;
+  checkbox.setAttribute("aria-label", label);
+  checkbox.addEventListener("click", (event) => event.stopPropagation());
+  checkbox.addEventListener("change", () => onChange(checkbox.checked));
+  return checkbox;
+}
+
+function setSelectionRowClick(row, onToggle) {
+  row.classList.add("is-selecting");
+  row.tabIndex = 0;
+  row.addEventListener("click", (event) => {
+    if (event.target.closest("button, input, a, select, textarea")) return;
+    onToggle();
+  });
+  row.addEventListener("keydown", (event) => {
+    if (event.key !== " " && event.key !== "Enter") return;
+    event.preventDefault();
+    onToggle();
+  });
+}
+
+function reorderedKeys(keys, sourceKey, targetKey, placeAfter = false) {
+  if (!sourceKey || !targetKey || sourceKey === targetKey) return keys;
+  const next = keys.filter((key) => key !== sourceKey);
+  const targetIndex = next.indexOf(targetKey);
+  if (targetIndex === -1) return keys;
+  next.splice(targetIndex + (placeAfter ? 1 : 0), 0, sourceKey);
+  return next;
+}
+
+function reorderTargetFromPointer(container, sourceKey, clientY, sourcePinned) {
+  const rows = [...container.querySelectorAll(".tree-select-row.is-drag-enabled")].filter(
+    (row) =>
+      row.dataset.reorderKey &&
+      row.dataset.reorderKey !== sourceKey &&
+      row.dataset.reorderPinned === sourcePinned
+  );
+  if (rows.length === 0) return null;
+  for (const row of rows) {
+    const rect = row.getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) {
+      return { key: row.dataset.reorderKey, placeAfter: false };
+    }
+  }
+  return { key: rows[rows.length - 1].dataset.reorderKey, placeAfter: true };
+}
+
+function clearReorderIndicators(container) {
+  for (const row of container?.querySelectorAll(
+    ".is-drop-before, .is-drop-after, .is-drop-target"
+  ) || []) {
+    row.classList.remove("is-drop-before", "is-drop-after", "is-drop-target");
+  }
+}
+
+function updateReorderIndicator(container, sourceKey, sourcePinned, clientY) {
+  clearReorderIndicators(container);
+  const target = reorderTargetFromPointer(container, sourceKey, clientY, sourcePinned);
+  if (!target) return null;
+  const row = [...container.querySelectorAll(".tree-select-row.is-drag-enabled")].find(
+    (entry) => entry.dataset.reorderKey === target.key
+  );
+  row?.classList.add("is-drop-target", target.placeAfter ? "is-drop-after" : "is-drop-before");
+  return target;
+}
+
+function setDragRow(row, key, visibleKeys, onOrder, options = {}) {
+  row.classList.add("is-drag-enabled");
+  row.dataset.reorderKey = key;
+  row.dataset.reorderPinned = options.pinned ? "true" : "false";
+  let startY = 0;
+  let moved = false;
+  let target = null;
+
+  row.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    startY = event.clientY;
+    moved = false;
+    target = null;
+    row.classList.add("is-dragging");
+    row.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+  row.addEventListener("pointermove", (event) => {
+    if (!row.classList.contains("is-dragging")) return;
+    if (Math.abs(event.clientY - startY) > 3) {
+      moved = true;
+      target = updateReorderIndicator(
+        row.parentElement,
+        key,
+        row.dataset.reorderPinned,
+        event.clientY
+      );
+    }
+  });
+  row.addEventListener("pointerup", (event) => {
+    row.releasePointerCapture?.(event.pointerId);
+    row.classList.remove("is-dragging");
+    clearReorderIndicators(row.parentElement);
+    if (!moved) return;
+    if (!target) return;
+    const next = reorderedKeys(visibleKeys, key, target.key, target.placeAfter);
+    onOrder(next);
+  });
+  row.addEventListener("pointercancel", (event) => {
+    row.releasePointerCapture?.(event.pointerId);
+    row.classList.remove("is-dragging");
+    clearReorderIndicators(row.parentElement);
+  });
+}
+
+function buildSelectionToolbar({ selectedCount, totalCount, selectAll, deselectAll, actions }) {
+  const toolbar = document.createElement("div");
+  toolbar.className = "session-selection-toolbar";
+
+  const count = document.createElement("span");
+  count.className = "selection-count";
+  count.textContent = `${selectedCount} selected`;
+
+  const selectAllButton = document.createElement("button");
+  selectAllButton.type = "button";
+  selectAllButton.className = "text-button head-action";
+  selectAllButton.textContent = "Select all";
+  selectAllButton.disabled = totalCount === 0 || selectedCount === totalCount;
+  selectAllButton.onclick = selectAll;
+
+  const deselectAllButton = document.createElement("button");
+  deselectAllButton.type = "button";
+  deselectAllButton.className = "text-button head-action";
+  deselectAllButton.textContent = "Deselect all";
+  deselectAllButton.disabled = selectedCount === 0;
+  deselectAllButton.onclick = deselectAll;
+
+  toolbar.append(count, selectAllButton, deselectAllButton, ...actions);
+  return toolbar;
+}
+
+function resetProjectSelection() {
+  projectSelectMode = false;
+  selectedProjectKeys = new Set();
+}
+
+function resetProjectDragMode() {
+  projectDragMode = false;
+}
+
+function finishProjectManageMode() {
+  resetProjectSelection();
+  resetProjectDragMode();
+  renderState(latestState);
+}
+
+function selectedProjects(projects) {
+  return projects.filter((project) => selectedProjectKeys.has(project.key));
+}
+
+function renderProjectsHeader() {
+  if (!projectsTitle) return;
+  const title = document.createElement("span");
+  title.textContent = "Projects";
+  if (projectSelectMode || projectDragMode) {
+    const done = document.createElement("button");
+    done.type = "button";
+    done.className = "text-button head-action";
+    done.textContent = "Done";
+    done.onclick = finishProjectManageMode;
+    projectsTitle.replaceChildren(title, done);
+    return;
+  }
+  projectsTitle.replaceChildren(
+    title,
+    menuButton("Project options", (event) =>
+      openHeaderMenu(event, [
+        {
+          label: "Select items",
+          run: () => {
+            projectSelectMode = true;
+            projectDragMode = false;
+            selectedProjectKeys = new Set();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Sort by recent",
+          run: () => {
+            orderingPrefs.projectSort = "recent";
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Sort A-Z",
+          run: () => {
+            orderingPrefs.projectSort = "name";
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Manual order",
+          run: () => {
+            orderingPrefs.projectSort = "manual";
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Enable drag reorder",
+          run: () => {
+            projectDragMode = true;
+            resetProjectSelection();
+            orderingPrefs.projectSort = "manual";
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Reset pins",
+          run: () => {
+            orderingPrefs.pinnedProjects = [];
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Reset manual order",
+          run: () => {
+            orderingPrefs.projectOrder = [];
+            if (orderingPrefs.projectSort === "manual") orderingPrefs.projectSort = "recent";
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        }
+      ])
+    )
+  );
+}
+
+function buildProjectSelectionToolbar(projects) {
+  const selected = selectedProjects(projects);
+  const removeAudio = document.createElement("button");
+  removeAudio.type = "button";
+  removeAudio.className = "text-button head-action";
+  removeAudio.textContent = "Remove audio";
+  removeAudio.disabled = selected.length === 0;
+  removeAudio.onclick = async () => {
+    const removed = await removeAudioForTarget(
+      async () => {
+        for (const project of selected) await deleteCacheProject(targetUrl, project.key);
+      },
+      `${selected.length} project${selected.length === 1 ? "" : "s"}`
+    );
+    if (!removed) return;
+    resetProjectSelection();
+    if (latestState) renderState(latestState);
+  };
+
+  const trash = document.createElement("button");
+  trash.type = "button";
+  trash.className = "text-button danger head-action";
+  trash.textContent = "Move to trash";
+  trash.disabled = selected.length === 0;
+  trash.onclick = async () => {
+    const itemIds = selected.flatMap((project) => project.items.map((item) => item.id));
+    await trashQueueTarget({ itemIds });
+    resetProjectSelection();
+    if (latestState) renderState(latestState);
+  };
+
+  return buildSelectionToolbar({
+    selectedCount: selected.length,
+    totalCount: projects.length,
+    selectAll: () => {
+      selectedProjectKeys = new Set(projects.map((project) => project.key));
+      renderState(latestState);
+    },
+    deselectAll: () => {
+      selectedProjectKeys = new Set();
+      renderState(latestState);
+    },
+    actions: [removeAudio, trash]
+  });
+}
+
 function renderProjectsList(projects) {
+  renderProjectsHeader();
+  const liveProjectKeys = new Set(projects.map((project) => project.key));
+  for (const key of [...selectedProjectKeys]) {
+    if (!liveProjectKeys.has(key)) selectedProjectKeys.delete(key);
+  }
   projectsList.replaceChildren();
+  if (projectSelectMode) {
+    projectsList.append(buildProjectSelectionToolbar(projects));
+  }
+  const projectKeys = projects.map((project) => project.key);
   for (const project of projects) {
+    const row = document.createElement("div");
+    row.className = "tree-select-row";
+    const toggleProject = () => {
+      checkbox.checked = !checkbox.checked;
+      if (checkbox.checked) selectedProjectKeys.add(project.key);
+      else selectedProjectKeys.delete(project.key);
+      renderState(latestState);
+    };
+    const checkbox = selectionCheckbox({
+      checked: selectedProjectKeys.has(project.key),
+      label: `Select ${project.label}`,
+      onChange: (checked) => {
+        if (checked) selectedProjectKeys.add(project.key);
+        else selectedProjectKeys.delete(project.key);
+        renderState(latestState);
+      }
+    });
+
     const btn = document.createElement("button");
     btn.className = `tree-item ${project.key === historyView.projectKey ? "is-selected" : ""}`;
     btn.dataset.project = project.key;
@@ -803,7 +2125,12 @@ function renderProjectsList(projects) {
     const title = document.createElement("span");
     title.className = "tree-item-title";
     title.textContent = project.label;
-    titleRow.append(title, buildNowPlayingIcon());
+    titleRow.append(title);
+    const projectPinned = orderingPrefs.pinnedProjects.includes(project.key);
+    if (projectPinned) {
+      titleRow.append(buildPinnedIcon("Pinned project"));
+    }
+    titleRow.append(buildNowPlayingIcon());
     let unread = unreadCount(project.items);
     const openSession = project.sessions.find((s) => isSessionOpen(s));
     if (openSession) unread = Math.max(0, unread - unreadCount(openSession.items));
@@ -814,25 +2141,261 @@ function renderProjectsList(projects) {
     meta.textContent = `${count} session${count === 1 ? "" : "s"} - ${formatTime(latestCreatedAt(project.items))}`;
     btn.append(titleRow, meta);
     btn.onclick = () => {
+      if (projectDragMode) return;
+      if (projectSelectMode) {
+        toggleProject();
+        return;
+      }
       leaveOpenSession();
       historyView.projectKey = project.key;
       historyView.sessionKey = null;
       renderState(latestState);
     };
-    btn.oncontextmenu = (event) => openColorMenu(event, project, () => renderState(latestState));
-    projectsList.append(btn);
+    btn.oncontextmenu = (event) => openProjectMenu(event, project);
+    if (projectSelectMode) {
+      setSelectionRowClick(row, toggleProject);
+      row.append(checkbox);
+    }
+    row.append(btn);
+    if (projectDragMode) {
+      setDragRow(
+        row,
+        project.key,
+        projectKeys,
+        (nextOrder) => {
+          orderingPrefs.projectOrder = uniqueOrdered([
+            ...nextOrder,
+            ...orderingPrefs.projectOrder.filter((key) => !nextOrder.includes(key))
+          ]);
+          orderingPrefs.projectSort = "manual";
+          persistOrderingPrefs();
+          renderState(latestState);
+        },
+        { pinned: projectPinned }
+      );
+    }
+    projectsList.append(row);
   }
 }
 
+function resetSessionSelection() {
+  sessionSelectMode = false;
+  sessionSelectionProjectKey = null;
+  selectedSessionKeys = new Set();
+}
+
+function resetSessionDragMode() {
+  sessionDragModeProjectKey = null;
+}
+
+function finishSessionManageMode() {
+  resetSessionSelection();
+  resetSessionDragMode();
+  renderState(latestState);
+}
+
+function selectedSessionsForProject(project) {
+  if (!project) return [];
+  return project.sessions.filter((session) => selectedSessionKeys.has(session.key));
+}
+
+function toggleSessionSelection(sessionKey, checked) {
+  if (checked) selectedSessionKeys.add(sessionKey);
+  else selectedSessionKeys.delete(sessionKey);
+  renderState(latestState);
+}
+
+function renderSessionsHeader(project, projectTitle) {
+  if (!projectTitle) return;
+  const title = document.createElement("span");
+  title.textContent = "Sessions";
+  const managing =
+    (sessionSelectMode && sessionSelectionProjectKey === project.key) ||
+    sessionDragModeProjectKey === project.key;
+
+  if (managing) {
+    const done = document.createElement("button");
+    done.type = "button";
+    done.className = "text-button head-action";
+    done.textContent = "Done";
+    done.onclick = finishSessionManageMode;
+    projectTitle.replaceChildren(title, done);
+    return;
+  }
+
+  projectTitle.replaceChildren(
+    title,
+    menuButton("Session options", (event) =>
+      openHeaderMenu(event, [
+        {
+          label: "Select items",
+          run: () => {
+            resetSessionDragMode();
+            sessionSelectMode = true;
+            sessionSelectionProjectKey = project.key;
+            selectedSessionKeys = new Set();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Sort by recent",
+          run: () => {
+            orderingPrefs.sessionSortByProject[project.key] = "recent";
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Sort A-Z",
+          run: () => {
+            orderingPrefs.sessionSortByProject[project.key] = "name";
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Manual order",
+          run: () => {
+            orderingPrefs.sessionSortByProject[project.key] = "manual";
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Enable drag reorder",
+          run: () => {
+            resetSessionSelection();
+            sessionDragModeProjectKey = project.key;
+            orderingPrefs.sessionSortByProject[project.key] = "manual";
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Reset pins",
+          run: () => {
+            orderingPrefs.pinnedSessionsByProject[project.key] = [];
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        },
+        {
+          label: "Reset manual order",
+          run: () => {
+            orderingPrefs.sessionOrderByProject[project.key] = [];
+            if (orderingPrefs.sessionSortByProject[project.key] === "manual") {
+              orderingPrefs.sessionSortByProject[project.key] = "recent";
+            }
+            persistOrderingPrefs();
+            renderState(latestState);
+          }
+        }
+      ])
+    )
+  );
+}
+
+function buildSessionSelectionToolbar(project) {
+  const selected = selectedSessionsForProject(project);
+  const toolbar = document.createElement("div");
+  toolbar.className = "session-selection-toolbar";
+
+  const count = document.createElement("span");
+  count.className = "selection-count";
+  count.textContent = `${selected.length} selected`;
+
+  const selectAll = document.createElement("button");
+  selectAll.type = "button";
+  selectAll.className = "text-button head-action";
+  selectAll.textContent = "Select all";
+  selectAll.onclick = () => {
+    selectedSessionKeys = new Set(project.sessions.map((session) => session.key));
+    renderState(latestState);
+  };
+
+  const deselectAll = document.createElement("button");
+  deselectAll.type = "button";
+  deselectAll.className = "text-button head-action";
+  deselectAll.textContent = "Deselect all";
+  deselectAll.disabled = selected.length === 0;
+  deselectAll.onclick = () => {
+    selectedSessionKeys = new Set();
+    renderState(latestState);
+  };
+
+  const removeAudio = document.createElement("button");
+  removeAudio.type = "button";
+  removeAudio.className = "text-button head-action";
+  removeAudio.textContent = "Remove audio";
+  removeAudio.disabled = selected.length === 0;
+  removeAudio.onclick = async () => {
+    const removed = await removeAudioForTarget(
+      async () => {
+        for (const session of selected) await deleteCacheSession(targetUrl, session.key);
+      },
+      `${selected.length} session${selected.length === 1 ? "" : "s"}`
+    );
+    if (!removed) return;
+    resetSessionSelection();
+    if (latestState) renderState(latestState);
+  };
+
+  const trash = document.createElement("button");
+  trash.type = "button";
+  trash.className = "text-button danger head-action";
+  trash.textContent = "Move to trash";
+  trash.disabled = selected.length === 0;
+  trash.onclick = async () => {
+    const itemIds = selected.flatMap((session) => session.items.map((item) => item.id));
+    await trashQueueTarget({ itemIds });
+    resetSessionSelection();
+    if (latestState) renderState(latestState);
+  };
+
+  toolbar.append(count, selectAll, deselectAll, removeAudio, trash);
+  return toolbar;
+}
+
 function renderSessionsList(project) {
+  const projectTitle = el("current-project-title");
   if (!project) {
     sessionsPane.hidden = true;
     sessionsList.replaceChildren();
+    resetSessionSelection();
+    if (projectTitle) projectTitle.textContent = "Sessions";
     return;
   }
+  if (sessionSelectionProjectKey && sessionSelectionProjectKey !== project.key) {
+    resetSessionSelection();
+  }
+  if (sessionDragModeProjectKey && sessionDragModeProjectKey !== project.key) {
+    resetSessionDragMode();
+  }
   sessionsPane.hidden = false;
+  renderSessionsHeader(project, projectTitle);
   sessionsList.replaceChildren();
+  if (sessionSelectMode && sessionSelectionProjectKey === project.key) {
+    sessionsList.append(buildSessionSelectionToolbar(project));
+  }
+  const sessionKeys = project.sessions.map((session) => session.key);
   for (const session of project.sessions) {
+    const row = document.createElement("div");
+    row.className = "tree-select-row";
+    const toggleSession = () => {
+      checkbox.checked = !checkbox.checked;
+      toggleSessionSelection(session.key, checkbox.checked);
+    };
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "tree-select-check";
+    checkbox.checked = selectedSessionKeys.has(session.key);
+    checkbox.hidden = !sessionSelectMode || sessionSelectionProjectKey !== project.key;
+    checkbox.setAttribute("aria-label", `Select ${session.label}`);
+    checkbox.addEventListener("click", (event) => event.stopPropagation());
+    checkbox.addEventListener("change", () =>
+      toggleSessionSelection(session.key, checkbox.checked)
+    );
+
     const btn = document.createElement("button");
     btn.className = `tree-item ${session.key === historyView.sessionKey ? "is-selected" : ""}`;
     btn.dataset.session = session.key;
@@ -842,7 +2405,14 @@ function renderSessionsList(project) {
     const title = document.createElement("span");
     title.className = "tree-item-title session-title";
     appendSessionTitle(title, session);
-    titleRow.append(ownerBadge(session.owner), title, buildNowPlayingIcon());
+    titleRow.append(ownerBadge(session.owner), title);
+    const sessionPinned = (orderingPrefs.pinnedSessionsByProject[project.key] || []).includes(
+      session.key
+    );
+    if (sessionPinned) {
+      titleRow.append(buildPinnedIcon("Pinned session"));
+    }
+    titleRow.append(buildNowPlayingIcon());
     const unread = isSessionOpen(session) ? 0 : unreadCount(session.items);
     if (unread > 0) titleRow.append(unreadDot(unread));
     const meta = document.createElement("span");
@@ -850,11 +2420,37 @@ function renderSessionsList(project) {
     meta.textContent = `${session.items.length} msgs - ${formatTime(latestCreatedAt(session.items))}`;
     btn.append(titleRow, meta);
     btn.onclick = () => {
-      if (session.key !== historyView.sessionKey) leaveOpenSession();
-      historyView.sessionKey = session.key;
-      renderState(latestState);
+      if (sessionDragModeProjectKey === project.key) return;
+      if (sessionSelectMode && sessionSelectionProjectKey === project.key) {
+        toggleSession();
+        return;
+      }
+      openSession(project, session);
     };
-    sessionsList.append(btn);
+    btn.oncontextmenu = (event) => openSessionMenu(event, project, session);
+    if (sessionSelectMode && sessionSelectionProjectKey === project.key) {
+      setSelectionRowClick(row, toggleSession);
+    }
+    row.append(checkbox, btn);
+    if (sessionDragModeProjectKey === project.key) {
+      setDragRow(
+        row,
+        session.key,
+        sessionKeys,
+        (nextOrder) => {
+          const current = orderingPrefs.sessionOrderByProject[project.key] || [];
+          orderingPrefs.sessionOrderByProject[project.key] = uniqueOrdered([
+            ...nextOrder,
+            ...current.filter((key) => !nextOrder.includes(key))
+          ]);
+          orderingPrefs.sessionSortByProject[project.key] = "manual";
+          persistOrderingPrefs();
+          renderState(latestState);
+        },
+        { pinned: sessionPinned }
+      );
+    }
+    sessionsList.append(row);
   }
 }
 
@@ -862,7 +2458,18 @@ function renderMessagesDetail(session) {
   if (!session) {
     if (messagesPane) messagesPane.hidden = true;
     historyList.replaceChildren();
+    sessionFindMatches = [];
+    if (sessionFind) sessionFind.hidden = true;
+    updateSessionFindControls();
+    if (trashSessionButton) trashSessionButton.hidden = true;
     return;
+  }
+  sessionFindMatches = [];
+  if (sessionFind) sessionFind.hidden = false;
+  if (trashSessionButton) {
+    trashSessionButton.hidden = false;
+    trashSessionButton.onclick = () =>
+      trashQueueTarget({ sessionKey: session.key, itemIds: session.items.map((item) => item.id) });
   }
   const inlinePlaybackVisible = activateInlineSurfaceForOpenPlayback(session);
   if (messagesPane) messagesPane.hidden = false;
@@ -890,13 +2497,63 @@ function renderMessagesDetail(session) {
   const fragment = document.createDocumentFragment();
   for (const item of session.items) {
     const prompts = Array.isArray(item.userMessages) ? item.userMessages : [];
-    for (const prompt of prompts) {
-      fragment.append(buildUserBubble(prompt, item.timestamps?.createdAt));
+    for (let index = 0; index < prompts.length; index += 1) {
+      const prompt = prompts[index];
+      const searchTargetId = `${item.id}:prompt:${index}`;
+      fragment.append(
+        buildUserBubble(prompt, item.timestamps?.createdAt, {
+          itemId: item.id,
+          searchTargetId,
+          searchHighlight:
+            searchHighlightPrompt?.itemId === item.id && searchHighlightPrompt?.prompt === prompt
+        })
+      );
     }
     fragment.append(buildAssistantBubble(item));
   }
   historyList.replaceChildren(fragment);
   markClampedBubbles();
+  updateSessionFindActiveDom();
+  if (searchHighlightPrompt) {
+    const promptBubble = historyList.querySelector(
+      `.bubble-user[data-search-target-id="${CSS.escape(searchHighlightPrompt.targetId)}"]`
+    );
+    if (promptBubble) {
+      historyList.scrollTop = Math.max(
+        0,
+        promptBubble.offsetTop - historyList.clientHeight / 2 + promptBubble.clientHeight / 2
+      );
+      window.setTimeout(() => {
+        if (searchHighlightPrompt?.targetId === promptBubble.dataset.searchTargetId) {
+          promptBubble.classList.remove("is-search-highlight");
+          promptBubble.querySelector(".search-match-badge")?.remove();
+          searchHighlightPrompt = null;
+        }
+      }, 4200);
+      updateSessionFindActiveDom({ scroll: true });
+      return;
+    }
+  }
+  if (searchHighlightItemId) {
+    const bubble = historyList.querySelector(
+      `.bubble-assistant[data-id="${CSS.escape(searchHighlightItemId)}"]`
+    );
+    if (bubble) {
+      historyList.scrollTop = Math.max(
+        0,
+        bubble.offsetTop - historyList.clientHeight / 2 + bubble.clientHeight / 2
+      );
+      window.setTimeout(() => {
+        if (searchHighlightItemId === bubble.dataset.id) {
+          bubble.classList.remove("is-search-highlight");
+          bubble.querySelector(".search-match-badge")?.remove();
+          searchHighlightItemId = null;
+        }
+      }, 4200);
+      updateSessionFindActiveDom({ scroll: true });
+      return;
+    }
+  }
   if (inlinePlaybackVisible && selectedItemId) {
     const bubble = historyList.querySelector(
       `.bubble-assistant[data-id="${CSS.escape(selectedItemId)}"]`
@@ -1051,6 +2708,836 @@ function renderQueueNotice() {
   close.addEventListener("click", dismissQueueNotice);
 
   container.replaceChildren(copy, jump, close);
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function localDayKey(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function parseSearchQuery(query) {
+  const raw = String(query || "").trim();
+  const parts = raw.split(/\s+/).filter(Boolean);
+  const now = new Date();
+  const textTerms = [];
+  const timeTests = [];
+  for (const part of parts) {
+    const lower = part.toLowerCase();
+    if (lower === "today") {
+      const key = localDayKey(now);
+      timeTests.push((date) => localDayKey(date) === key);
+    } else if (lower === "yesterday") {
+      const date = new Date(now);
+      date.setDate(date.getDate() - 1);
+      const key = localDayKey(date);
+      timeTests.push((candidate) => localDayKey(candidate) === key);
+    } else if (lower.startsWith("last:")) {
+      const match = lower.match(/^last:(\d+)(h|d)$/);
+      if (!match) {
+        textTerms.push(lower);
+        continue;
+      }
+      const amount = Number(match[1]);
+      const unitMs = match[2] === "h" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+      const cutoff = now.getTime() - amount * unitMs;
+      timeTests.push((date) => date.getTime() >= cutoff);
+    } else if (lower.startsWith("after:")) {
+      const cutoff = new Date(`${lower.slice(6)}T00:00:00`);
+      if (Number.isNaN(cutoff.getTime())) textTerms.push(lower);
+      else timeTests.push((date) => date >= cutoff);
+    } else if (lower.startsWith("before:")) {
+      const cutoff = new Date(`${lower.slice(7)}T23:59:59.999`);
+      if (Number.isNaN(cutoff.getTime())) textTerms.push(lower);
+      else timeTests.push((date) => date <= cutoff);
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(lower)) {
+      timeTests.push((date) => localDayKey(date) === lower);
+    } else {
+      textTerms.push(lower);
+    }
+  }
+  return { raw, textTerms, timeTests };
+}
+
+function timeTestsForSearchFilter(filter) {
+  const now = new Date();
+  if (filter === "today") {
+    const key = localDayKey(now);
+    return [(date) => localDayKey(date) === key];
+  }
+  if (filter === "yesterday") {
+    const date = new Date(now);
+    date.setDate(date.getDate() - 1);
+    const key = localDayKey(date);
+    return [(candidate) => localDayKey(candidate) === key];
+  }
+  if (filter === "7d" || filter === "30d") {
+    const days = filter === "7d" ? 7 : 30;
+    const cutoff = now.getTime() - days * 24 * 60 * 60 * 1000;
+    return [(date) => date.getTime() >= cutoff];
+  }
+  return [];
+}
+
+function activeSearchFilters() {
+  return (
+    searchResultType !== "all" ||
+    searchOwnerFilter !== "all" ||
+    searchTimeFilter !== "any" ||
+    searchSortMode !== "newest"
+  );
+}
+
+function resultTimeMs(result) {
+  const iso =
+    result.type === "message"
+      ? result.item?.timestamps?.createdAt
+      : latestCreatedAt(result.session?.items || []);
+  const date = new Date(iso || "");
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function compareSearchResults(a, b) {
+  if (searchSortMode === "oldest") return resultTimeMs(a) - resultTimeMs(b);
+  if (searchSortMode === "project") {
+    return (
+      a.project.label.localeCompare(b.project.label) ||
+      a.session.label.localeCompare(b.session.label) ||
+      resultTimeMs(b) - resultTimeMs(a)
+    );
+  }
+  if (searchSortMode === "session") {
+    return (
+      a.session.label.localeCompare(b.session.label) ||
+      a.project.label.localeCompare(b.project.label) ||
+      resultTimeMs(b) - resultTimeMs(a)
+    );
+  }
+  return resultTimeMs(b) - resultTimeMs(a);
+}
+
+function sessionMatchesOwner(session) {
+  if (searchOwnerFilter === "all") return true;
+  return session.items.some((item) => item.sourceApp === searchOwnerFilter);
+}
+
+function itemMatchesOwner(item) {
+  return searchOwnerFilter === "all" || item.sourceApp === searchOwnerFilter;
+}
+
+function renderSearchOwnerOptions(items) {
+  if (!searchOwner) return;
+  const owners = Array.from(new Set(items.map((item) => item.sourceApp).filter(Boolean))).sort(
+    (a, b) => a.localeCompare(b)
+  );
+  const previous = searchOwnerFilter;
+  const options = [new Option("Any harness", "all")];
+  for (const owner of owners) options.push(new Option(owner, owner));
+  searchOwner.replaceChildren(...options);
+  searchOwnerFilter = previous === "all" || owners.includes(previous) ? previous : "all";
+  searchOwner.value = searchOwnerFilter;
+}
+
+function sessionSearchText(project, session) {
+  return normalizeSearchText(
+    [
+      project.label,
+      session.label,
+      session.parts?.title,
+      session.parts?.id,
+      session.key,
+      ...session.items.flatMap((item) => [item.threadId, item.threadLabel, item.sessionName])
+    ].join(" ")
+  );
+}
+
+function itemSearchText(item, project, session) {
+  return normalizeSearchText(
+    [
+      project.label,
+      session.label,
+      session.parts?.title,
+      session.parts?.id,
+      item.id,
+      item.threadId,
+      item.threadLabel,
+      item.sessionName,
+      item.projectName,
+      item.speakableText,
+      ...(Array.isArray(item.userMessages) ? item.userMessages : [])
+    ].join(" ")
+  );
+}
+
+function itemMatchesParsedSearch(item, text, parsed) {
+  const created = new Date(item.timestamps?.createdAt || "");
+  const textOk = parsed.textTerms.every((term) => text.includes(term));
+  const timeOk =
+    parsed.timeTests.length === 0 ||
+    (!Number.isNaN(created.getTime()) && parsed.timeTests.every((test) => test(created)));
+  return textOk && timeOk;
+}
+
+function searchPreviewFrom(value, terms) {
+  const raw = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  const index = terms.map((term) => lower.indexOf(term)).find((pos) => pos >= 0);
+  if (!Number.isFinite(index) || index < 0) return raw.slice(0, 170);
+  const start = Math.max(0, index - 52);
+  const end = Math.min(raw.length, index + 118);
+  return `${start > 0 ? "..." : ""}${raw.slice(start, end)}${end < raw.length ? "..." : ""}`;
+}
+
+function itemSearchMatchDetail(item, parsed) {
+  const terms = parsed.textTerms;
+  const prompts = Array.isArray(item.userMessages) ? item.userMessages : [];
+  for (let index = 0; index < prompts.length; index += 1) {
+    const prompt = prompts[index];
+    const text = normalizeSearchText(prompt);
+    if (terms.length > 0 && terms.every((term) => text.includes(term))) {
+      return {
+        kind: "prompt",
+        prompt,
+        targetId: `${item.id}:prompt:${index}`,
+        preview: `Prompt: ${searchPreviewFrom(prompt, terms)}`
+      };
+    }
+  }
+  const replyText = normalizeSearchText(item.speakableText);
+  if (terms.length > 0 && terms.every((term) => replyText.includes(term))) {
+    return {
+      kind: "reply",
+      preview: `Reply: ${searchPreviewFrom(item.speakableText, terms)}`
+    };
+  }
+  return {
+    kind: "message",
+    preview: item.speakableText.slice(0, 170)
+  };
+}
+
+function buildSearchResults() {
+  if (!latestState) return [];
+  const parsed = parseSearchQuery(searchQuery);
+  parsed.timeTests.push(...timeTestsForSearchFilter(searchTimeFilter));
+  if (!parsed.raw && !activeSearchFilters()) return [];
+  const items = speakableItems(latestState.queue);
+  const projects = buildProjects(items);
+  const results = [];
+  for (const project of projects) {
+    for (const session of project.sessions) {
+      const sessionText = sessionSearchText(project, session);
+      const sessionTextOk =
+        parsed.textTerms.length === 0 ||
+        parsed.textTerms.every((term) => sessionText.includes(term));
+      const sessionTimeOk =
+        parsed.timeTests.length === 0 ||
+        session.items.some((item) => itemMatchesParsedSearch(item, sessionText, parsed));
+      if (
+        searchResultType !== "messages" &&
+        sessionMatchesOwner(session) &&
+        sessionTextOk &&
+        sessionTimeOk
+      ) {
+        results.push({ type: "session", project, session });
+      }
+      if (searchResultType !== "sessions") {
+        for (const item of session.items) {
+          const text = itemSearchText(item, project, session);
+          if (itemMatchesOwner(item) && itemMatchesParsedSearch(item, text, parsed)) {
+            results.push({
+              type: "message",
+              project,
+              session,
+              item,
+              match: itemSearchMatchDetail(item, parsed)
+            });
+          }
+        }
+      }
+    }
+  }
+  return results.sort(compareSearchResults).slice(0, 100);
+}
+
+function resultMeta(project, session, item) {
+  const time = formatTime(item?.timestamps?.createdAt || latestCreatedAt(session.items));
+  return `${project.label} - ${session.label}${time ? ` - ${time}` : ""}`;
+}
+
+function resultButton(result) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "result-item";
+  const badge = document.createElement("span");
+  badge.className = "h-badge";
+  badge.textContent = result.type === "session" ? "Session" : "Message";
+  const title = document.createElement("span");
+  title.className = "result-title";
+  title.textContent =
+    result.type === "session"
+      ? result.session.label
+      : result.match?.preview || result.item.speakableText.slice(0, 160);
+  const meta = document.createElement("span");
+  meta.className = "result-meta";
+  meta.textContent = resultMeta(result.project, result.session, result.item);
+  const action = document.createElement("span");
+  action.className = "result-open";
+  action.textContent = "Open";
+  btn.append(badge, title, action, meta);
+  btn.addEventListener("click", () => jumpToSearchResult(result));
+  return btn;
+}
+
+function renderSearch() {
+  if (!searchResults || !searchCount) return;
+  if (searchInput && searchInput.value !== searchQuery) searchInput.value = searchQuery;
+  if (searchType && searchType.value !== searchResultType) searchType.value = searchResultType;
+  if (searchTime && searchTime.value !== searchTimeFilter) searchTime.value = searchTimeFilter;
+  if (searchSort && searchSort.value !== searchSortMode) searchSort.value = searchSortMode;
+  document.querySelectorAll("[data-search-chip]").forEach((button) => {
+    const value = button.dataset.searchChip || "";
+    const filterValue = value.startsWith("last:") ? value.slice(5) : value;
+    button.classList.toggle("is-active", searchTimeFilter === filterValue);
+  });
+  const items = latestState ? speakableItems(latestState.queue) : [];
+  renderSearchOwnerOptions(items);
+  const results = buildSearchResults();
+  if (!searchQuery.trim() && !activeSearchFilters()) {
+    searchCount.textContent = "No query";
+    searchResults.innerHTML =
+      '<p class="history-empty">Search chats by keyword, date, name, ID, or add filters above.</p>';
+    return;
+  }
+  searchCount.textContent = `${results.length} result${results.length === 1 ? "" : "s"}`;
+  if (results.length === 0) {
+    searchResults.innerHTML = '<p class="history-empty">No matching chats.</p>';
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  for (const result of results) fragment.append(resultButton(result));
+  searchResults.replaceChildren(fragment);
+}
+
+function setSessionFindQuery(query, { preferredTarget = null, activeIndex = 0 } = {}) {
+  sessionFindQuery = String(query || "");
+  sessionFindPreferredTarget = preferredTarget;
+  sessionFindActiveIndex = activeIndex;
+  if (sessionFindInput && sessionFindInput.value !== sessionFindQuery) {
+    sessionFindInput.value = sessionFindQuery;
+  }
+  if (latestState && currentView === "chats") renderState(latestState);
+}
+
+function jumpToSearchResult(result) {
+  leaveOpenSession();
+  const parsed = parseSearchQuery(searchQuery);
+  const findQuery = parsed.textTerms.join(" ");
+  let preferredTarget = null;
+  historyView = {
+    level: "messages",
+    projectKey: result.project.key,
+    sessionKey: result.session.key
+  };
+  if (result.type === "message") {
+    selectedItemId = result.item.id;
+    if (result.match?.kind === "prompt") {
+      preferredTarget = {
+        kind: "prompt",
+        itemId: result.item.id,
+        targetId: result.match.targetId
+      };
+      searchHighlightPrompt = {
+        itemId: result.item.id,
+        prompt: result.match.prompt,
+        targetId: result.match.targetId
+      };
+      searchHighlightItemId = null;
+    } else {
+      preferredTarget = { kind: "reply", itemId: result.item.id };
+      searchHighlightItemId = result.item.id;
+      searchHighlightPrompt = null;
+    }
+    markItemRead(result.item.id, { render: false });
+  } else {
+    searchHighlightItemId = null;
+    searchHighlightPrompt = null;
+  }
+  if (findQuery) {
+    sessionFindQuery = findQuery;
+    sessionFindPreferredTarget = preferredTarget;
+    sessionFindActiveIndex = 0;
+  }
+  setView("chats");
+  renderState(latestState);
+}
+
+async function postQueueAction(path, body) {
+  const response = await fetch(`${targetUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+async function refreshAfterQueueMutation(message) {
+  notify(message);
+  await refreshPanel(targetUrl, { quiet: true, force: true });
+}
+
+async function removeAudioForTarget(action, label) {
+  const ok = await askConfirm({
+    title: "Remove Saved Audio",
+    message: `Remove saved audio for ${label}? Chats will stay visible and audio will regenerate when played.`,
+    confirmText: "Remove Audio"
+  });
+  if (!ok) return false;
+  try {
+    await action();
+    showToast("Saved audio removed.");
+    await refreshPanel(targetUrl, { quiet: true, force: true });
+    return true;
+  } catch (error) {
+    showError(error);
+    return false;
+  }
+}
+
+function removeProjectAudio(project) {
+  removeAudioForTarget(() => deleteCacheProject(targetUrl, project.key), project.label);
+}
+
+function removeSessionAudio(session) {
+  removeAudioForTarget(() => deleteCacheSession(targetUrl, session.key), session.label);
+}
+
+async function trashQueueTarget(body) {
+  const targetLabel = body?.projectKey
+    ? "this project"
+    : body?.sessionKey
+      ? "the current chat"
+      : "the selected chats";
+  const ok = await askConfirm({
+    title: "Move to Trash",
+    message: `Move ${targetLabel} to Trash? Saved audio will be deleted.`,
+    confirmText: "Move to Trash"
+  });
+  if (!ok) return;
+  try {
+    const result = await postQueueAction("/api/queue/trash", body);
+    if (!result.trashed?.length) {
+      notify("Nothing moved to Trash. The session may have already changed.");
+      await refreshPanel(targetUrl, { quiet: true, force: true });
+      return;
+    }
+    if (Array.isArray(result.trashed) && result.trashed.includes(selectedItemId)) {
+      selectedItemId = null;
+    }
+    await refreshAfterQueueMutation(`Moved ${result.trashed?.length || 0} chat item(s) to Trash.`);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function restoreQueueTarget(body, label) {
+  try {
+    const result = await postQueueAction("/api/queue/restore", body);
+    for (const id of result.restored || []) pregenSeenIds.delete(id);
+    persistPregenSeen();
+    await refreshAfterQueueMutation(`Restored ${label}. Audio will regenerate in the background.`);
+    queuePregenForItemIds(result.restored || [], latestState?.settings);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function trashSelectionCount() {
+  return selectedTrashProjectKeys.size + selectedTrashSessionKeys.size;
+}
+
+function selectedTrashProjects(projects) {
+  return projects.filter((project) => selectedTrashProjectKeys.has(project.key));
+}
+
+function selectedTrashSessions(project) {
+  if (!project) return [];
+  return project.sessions.filter((session) => selectedTrashSessionKeys.has(session.key));
+}
+
+async function restoreSelectedTrashItems() {
+  if (!latestState || trashSelectionCount() === 0) return;
+  const projects = buildProjects(trashedSpeakableItems(latestState.queue));
+  const selectedProjectSet = new Set(selectedTrashProjectKeys);
+  const selectedSessionSet = new Set(selectedTrashSessionKeys);
+  const itemIds = new Set();
+  for (const project of projects) {
+    if (selectedProjectSet.has(project.key)) {
+      for (const item of project.items) itemIds.add(item.id);
+      continue;
+    }
+    for (const session of project.sessions) {
+      if (selectedSessionSet.has(session.key)) {
+        for (const item of session.items) itemIds.add(item.id);
+      }
+    }
+  }
+  const ids = [...itemIds];
+  if (ids.length === 0) return;
+  await restoreQueueTarget({ itemIds: ids }, `${ids.length} item${ids.length === 1 ? "" : "s"}`);
+  clearTrashSelection();
+}
+
+function restoreTrashSession(session) {
+  if (!session) return;
+  restoreQueueTarget({ itemIds: session.items.map((item) => item.id) }, session.label || "session");
+}
+
+function clearTrashSelection() {
+  selectedTrashProjectKeys = new Set();
+  selectedTrashSessionKeys = new Set();
+  renderTrash();
+}
+
+function setTrashSelectMode(mode) {
+  trashSelectMode = mode;
+  selectedTrashProjectKeys = new Set();
+  selectedTrashSessionKeys = new Set();
+  renderTrash();
+}
+
+function renderTrashColumnHeader(titleEl, label, mode, metaNode = null) {
+  if (!titleEl) return;
+  const title = document.createElement("span");
+  title.textContent = label;
+  const actions = document.createElement("span");
+  actions.className = "head-actions";
+  if (metaNode) actions.append(metaNode);
+
+  if (trashSelectMode === mode) {
+    const done = document.createElement("button");
+    done.type = "button";
+    done.className = "text-button head-action";
+    done.textContent = "Done";
+    done.onclick = () => setTrashSelectMode(null);
+    actions.append(done);
+  } else {
+    actions.append(
+      menuButton(`${label} options`, (event) =>
+        openHeaderMenu(event, [
+          {
+            label: "Select items",
+            run: () => setTrashSelectMode(mode)
+          }
+        ])
+      )
+    );
+  }
+
+  titleEl.replaceChildren(title, actions);
+}
+
+function buildTrashSelectionToolbar({ selectedCount, totalCount, selectAll, deselectAll }) {
+  const restore = document.createElement("button");
+  restore.type = "button";
+  restore.className = "text-button head-action";
+  restore.textContent = "Restore";
+  restore.disabled = selectedCount === 0;
+  restore.onclick = restoreSelectedTrashItems;
+
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "text-button head-action";
+  clear.textContent = "Clear";
+  clear.disabled = selectedCount === 0;
+  clear.onclick = clearTrashSelection;
+
+  return buildSelectionToolbar({
+    selectedCount,
+    totalCount,
+    selectAll,
+    deselectAll,
+    actions: [restore, clear]
+  });
+}
+
+function buildTrashProjectRow(project) {
+  const row = document.createElement("div");
+  row.className = "tree-select-row";
+  const toggleProject = () => {
+    check.checked = !check.checked;
+    if (check.checked) selectedTrashProjectKeys.add(project.key);
+    else selectedTrashProjectKeys.delete(project.key);
+    renderTrash();
+  };
+  const check = selectionCheckbox({
+    checked: selectedTrashProjectKeys.has(project.key),
+    label: `Select ${project.label}`,
+    onChange: (checked) => {
+      if (checked) selectedTrashProjectKeys.add(project.key);
+      else selectedTrashProjectKeys.delete(project.key);
+      renderTrash();
+    }
+  });
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `tree-item ${project.key === trashView.projectKey ? "is-selected" : ""}`;
+  btn.dataset.project = project.key;
+  applyProjectColor(btn, project);
+  const titleRow = document.createElement("span");
+  titleRow.className = "tree-item-head";
+  const title = document.createElement("span");
+  title.className = "tree-item-title";
+  title.textContent = project.label;
+  const meta = document.createElement("span");
+  meta.className = "tree-item-meta";
+  meta.textContent = `${project.sessions.length} session${project.sessions.length === 1 ? "" : "s"} - ${project.items.length} trashed`;
+  titleRow.append(title);
+  btn.append(titleRow, meta);
+  btn.onclick = () => {
+    if (trashSelectMode === "projects") {
+      toggleProject();
+      return;
+    }
+    trashView.projectKey = project.key;
+    trashView.sessionKey = null;
+    renderTrash();
+  };
+  btn.oncontextmenu = (event) =>
+    openTrashRestoreMenu(event, [
+      {
+        text: "Restore project",
+        label: project.label,
+        body: { itemIds: project.items.map((item) => item.id) }
+      }
+    ]);
+  if (trashSelectMode === "projects") {
+    setSelectionRowClick(row, toggleProject);
+    row.append(check);
+  }
+  row.append(btn);
+  return row;
+}
+
+function renderTrashSessions(project) {
+  if (!trashSessionsPane || !trashSessionsList) return;
+  if (!project) {
+    trashSessionsPane.hidden = true;
+    trashSessionsList.replaceChildren();
+    if (trashSelectMode === "sessions") setTrashSelectMode(null);
+    renderTrashMessages(null);
+    return;
+  }
+  trashSessionsPane.hidden = false;
+  renderTrashColumnHeader(trashSessionsTitle, "Sessions", "sessions");
+  trashSessionsList.replaceChildren();
+  if (trashSelectMode === "sessions") {
+    const selected = selectedTrashSessions(project);
+    trashSessionsList.append(
+      buildTrashSelectionToolbar({
+        selectedCount: selected.length,
+        totalCount: project.sessions.length,
+        selectAll: () => {
+          selectedTrashSessionKeys = new Set(project.sessions.map((session) => session.key));
+          renderTrash();
+        },
+        deselectAll: () => {
+          selectedTrashSessionKeys = new Set();
+          renderTrash();
+        }
+      })
+    );
+  }
+  for (const session of project.sessions) {
+    const row = document.createElement("div");
+    row.className = "tree-select-row";
+    const toggleSession = () => {
+      check.checked = !check.checked;
+      if (check.checked) selectedTrashSessionKeys.add(session.key);
+      else selectedTrashSessionKeys.delete(session.key);
+      renderTrash();
+    };
+    const check = selectionCheckbox({
+      checked: selectedTrashSessionKeys.has(session.key),
+      label: `Select ${session.label}`,
+      onChange: (checked) => {
+        if (checked) selectedTrashSessionKeys.add(session.key);
+        else selectedTrashSessionKeys.delete(session.key);
+        renderTrash();
+      }
+    });
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `tree-item ${session.key === trashView.sessionKey ? "is-selected" : ""}`;
+    btn.dataset.session = session.key;
+    applyOwnerColor(btn, session.owner);
+    const titleRow = document.createElement("span");
+    titleRow.className = "tree-item-head";
+    const title = document.createElement("span");
+    title.className = "tree-item-title session-title";
+    appendSessionTitle(title, session);
+    titleRow.append(ownerBadge(session.owner), title);
+    const meta = document.createElement("span");
+    meta.className = "tree-item-meta";
+    meta.textContent = `${session.items.length} msg${session.items.length === 1 ? "" : "s"} - audio deleted`;
+    btn.append(titleRow, meta);
+    btn.onclick = () => {
+      if (trashSelectMode === "sessions") {
+        toggleSession();
+        return;
+      }
+      trashView.sessionKey = session.key;
+      renderTrash();
+    };
+    btn.oncontextmenu = (event) =>
+      openTrashRestoreMenu(event, [
+        {
+          text: "Restore session",
+          label: session.label,
+          body: { itemIds: session.items.map((item) => item.id) }
+        }
+      ]);
+    if (trashSelectMode === "sessions") {
+      setSelectionRowClick(row, toggleSession);
+      row.append(check);
+    }
+    row.append(btn);
+    trashSessionsList.append(row);
+  }
+}
+
+function renderTrashMessages(session) {
+  if (!trashMessagesPane || !trashMessagesList) return;
+  if (!session) {
+    trashMessagesPane.hidden = true;
+    trashMessagesList.replaceChildren();
+    return;
+  }
+  trashMessagesPane.hidden = false;
+  if (trashMessagesTitle) {
+    const title = document.createElement("span");
+    title.textContent = "Messages";
+    const actions = document.createElement("span");
+    actions.className = "head-actions";
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.className = "text-button head-action";
+    restore.textContent = "Restore session";
+    restore.addEventListener("click", () => restoreTrashSession(session));
+    actions.append(restore);
+    trashMessagesTitle.replaceChildren(title, actions);
+  }
+  const fragment = document.createDocumentFragment();
+  for (const item of session.items) {
+    const prompts = Array.isArray(item.userMessages) ? item.userMessages : [];
+    for (let index = 0; index < prompts.length; index += 1) {
+      const promptRow = buildUserBubble(prompts[index], item.timestamps?.createdAt, {
+        itemId: item.id,
+        searchTargetId: `${item.id}:trash-prompt:${index}`
+      });
+      promptRow.oncontextmenu = (event) =>
+        openTrashRestoreMenu(event, [
+          { text: "Restore message", label: "this message", body: { itemIds: [item.id] } },
+          {
+            text: "Restore session",
+            label: session.label,
+            body: { itemIds: session.items.map((entry) => entry.id) }
+          }
+        ]);
+      fragment.append(promptRow);
+    }
+    fragment.append(buildTrashAssistantBubble(item, session));
+  }
+  trashMessagesList.replaceChildren(fragment);
+}
+
+function renderTrash() {
+  if (!trashProjectsList || !trashCount) return;
+  const trashed = trashedSpeakableItems(latestState?.queue || {});
+  trashCount.textContent = `${trashed.length} trashed item${trashed.length === 1 ? "" : "s"}`;
+  if (trashed.length === 0) {
+    selectedTrashProjectKeys = new Set();
+    selectedTrashSessionKeys = new Set();
+    trashSelectMode = null;
+    trashView = { projectKey: null, sessionKey: null };
+    trashEmpty.hidden = false;
+    trashCascade.hidden = true;
+    trashProjectsList.replaceChildren();
+    trashSessionsList?.replaceChildren();
+    trashMessagesList?.replaceChildren();
+    if (trashSessionsPane) trashSessionsPane.hidden = true;
+    if (trashMessagesPane) trashMessagesPane.hidden = true;
+    return;
+  }
+  trashEmpty.hidden = true;
+  trashCascade.hidden = false;
+  const projects = buildProjects(trashed);
+  const trashCountMeta = document.createElement("span");
+  trashCountMeta.id = "trash-count";
+  trashCountMeta.className = "head-meta";
+  trashCountMeta.textContent = `${trashed.length} trashed item${trashed.length === 1 ? "" : "s"}`;
+  renderTrashColumnHeader(trashProjectsTitle, "Projects", "projects", trashCountMeta);
+
+  const liveProjectKeys = new Set(projects.map((project) => project.key));
+  const liveSessionKeys = new Set(
+    projects.flatMap((project) => project.sessions.map((s) => s.key))
+  );
+  for (const key of [...selectedTrashProjectKeys])
+    if (!liveProjectKeys.has(key)) selectedTrashProjectKeys.delete(key);
+  for (const key of [...selectedTrashSessionKeys])
+    if (!liveSessionKeys.has(key)) selectedTrashSessionKeys.delete(key);
+  if (trashView.projectKey && !liveProjectKeys.has(trashView.projectKey)) {
+    trashView = { projectKey: null, sessionKey: null };
+  }
+  if (!trashView.projectKey && projects[0]) {
+    trashView.projectKey = projects[0].key;
+  }
+
+  trashProjectsList.replaceChildren();
+  if (trashSelectMode === "projects") {
+    const selected = selectedTrashProjects(projects);
+    trashProjectsList.append(
+      buildTrashSelectionToolbar({
+        selectedCount: selected.length,
+        totalCount: projects.length,
+        selectAll: () => {
+          selectedTrashProjectKeys = new Set(projects.map((project) => project.key));
+          renderTrash();
+        },
+        deselectAll: () => {
+          selectedTrashProjectKeys = new Set();
+          renderTrash();
+        }
+      })
+    );
+  }
+  for (const project of projects) {
+    trashProjectsList.append(buildTrashProjectRow(project));
+  }
+
+  const project = trashView.projectKey
+    ? projects.find((entry) => entry.key === trashView.projectKey)
+    : null;
+  renderTrashSessions(project);
+  const session =
+    project && trashView.sessionKey
+      ? project.sessions.find((entry) => entry.key === trashView.sessionKey)
+      : null;
+  if (project && trashView.sessionKey && !session) trashView.sessionKey = null;
+  renderTrashMessages(session);
 }
 
 function snapToWordEnd(full, count) {
@@ -1263,6 +3750,8 @@ function renderState({ settings, queue }) {
   renderNowCard(selected, statusKind);
   renderHistory(items);
   renderQueueNotice();
+  renderSearch();
+  renderTrash();
   updateNowPlayingIndicators();
   updateControls(settings, items, selected);
   updateModal();
@@ -1369,7 +3858,14 @@ function resetInactiveHighlightSurfaces(surface, item) {
   if (!item) return;
   if (surface !== "inline") {
     const bubbleBody = selectedInlineBubbleBody();
-    if (bubbleBody) bubbleBody.textContent = item.speakableText;
+    if (bubbleBody) {
+      setBubbleBodyText(
+        bubbleBody,
+        item.speakableText,
+        { kind: "reply", itemId: item.id },
+        { record: false }
+      );
+    }
   }
   if (surface !== "modal" && modalBody?.dataset.itemId === item.id) {
     modalBody.textContent = item.speakableText;
@@ -1379,359 +3875,11 @@ function resetInactiveHighlightSurfaces(surface, item) {
   }
 }
 
-let audioCacheData = null;
-// Three independent selection sets, one per storage level. "Delete selected"
-// acts on the union; a checked project/session subsumes its own descendants so
-// we never fire redundant per-item deletes for things already covered above.
-const audioSelected = new Set();
-const projectSelected = new Set();
-const sessionSelected = new Set();
-
-function selectionTotal() {
-  return audioSelected.size + projectSelected.size + sessionSelected.size;
-}
-
-function updateDeleteSelectedState() {
-  const deleteSelected = el("audio-delete-selected");
-  if (deleteSelected) deleteSelected.disabled = selectionTotal() === 0;
-}
-
 function formatBytes(bytes) {
   const n = Number(bytes) || 0;
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   if (n >= 1024) return `${Math.round(n / 1024)} KB`;
   return `${n} B`;
-}
-
-function cacheEntryKey(entry) {
-  return `${entry.itemId}__${entry.engine}__${entry.voice}`;
-}
-
-function buildProjectTree(entries) {
-  return groupByProjectSession(entries, { sortBy: "bytes", dropUnnamed: true });
-}
-
-async function loadAudioCache() {
-  const summary = el("audio-summary");
-  try {
-    audioCacheData = await listCache(targetUrl);
-    renderAudioCache();
-  } catch (error) {
-    if (summary) summary.textContent = `Could not load saved audio: ${error.message}`;
-  }
-}
-
-// A storage row mirrors a Chats tree-item (owner badge + label + meta) with a
-// leading selection checkbox. The checkbox marks the whole level for the bulk
-// "Delete selected" action; there is no per-row delete button.
-function storageRow(kind, key, label, owner, metaText, selectedKey, checked) {
-  const wrap = document.createElement("div");
-  wrap.className = "tree-row";
-
-  const check = document.createElement("input");
-  check.type = "checkbox";
-  check.className = "tree-check";
-  check.dataset[kind === "project" ? "pcheck" : "scheck"] = key;
-  check.checked = Boolean(checked);
-  check.title = kind === "project" ? "Select this project" : "Select this chat";
-
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = `tree-item ${key === selectedKey ? "is-selected" : ""}`;
-  btn.dataset[kind === "project" ? "sproject" : "ssession"] = key;
-
-  const head = document.createElement("span");
-  head.className = "tree-item-head";
-  if (kind === "project") {
-    const pseudo = { key, label };
-    applyProjectColor(btn, pseudo);
-    btn.oncontextmenu = (event) => openColorMenu(event, pseudo, () => renderAudioCache());
-  } else {
-    applyOwnerColor(btn, owner);
-    head.append(ownerBadge(owner));
-  }
-  const title = document.createElement("span");
-  title.className = "tree-item-title";
-  title.textContent = label;
-  head.append(title);
-
-  const meta = document.createElement("span");
-  meta.className = "tree-item-meta";
-  meta.textContent = metaText;
-  btn.append(head, meta);
-
-  wrap.append(check, btn);
-  return wrap;
-}
-
-function renderStorageSessions(project) {
-  const pane = el("storage-sessions-pane");
-  const col = el("storage-sessions");
-  const title = el("storage-project-title");
-  if (!project) {
-    if (pane) pane.hidden = true;
-    if (col) col.replaceChildren();
-    return;
-  }
-  if (pane) pane.hidden = false;
-  if (title) title.textContent = "Sessions";
-  col.replaceChildren();
-  for (const session of project.sessions) {
-    col.append(
-      storageRow(
-        "session",
-        session.key,
-        session.label,
-        session.owner,
-        `${session.items.length}  -  ${formatBytes(session.bytes)}`,
-        storageView.sessionKey,
-        sessionSelected.has(session.key)
-      )
-    );
-  }
-}
-
-function renderStorageRecordings(session) {
-  const pane = el("storage-recordings-pane");
-  const listEl = el("audio-list");
-  const title = el("storage-session-title");
-  if (!session) {
-    if (pane) pane.hidden = true;
-    if (listEl) listEl.replaceChildren();
-    return;
-  }
-  if (pane) pane.hidden = false;
-  if (title) title.textContent = session.label;
-  const fragment = document.createDocumentFragment();
-  for (const entry of session.items) {
-    const row = document.createElement("label");
-    row.className = "manage-item";
-
-    const check = document.createElement("input");
-    check.type = "checkbox";
-    check.dataset.entry = cacheEntryKey(entry);
-    check.checked = audioSelected.has(cacheEntryKey(entry));
-
-    const text = document.createElement("span");
-    text.className = "manage-item-text";
-    text.textContent = entry.preview || entry.itemId;
-
-    const size = document.createElement("span");
-    size.className = "session-meta";
-    size.textContent = `${entry.voice}  -  ${formatBytes(entry.bytes)}`;
-
-    row.append(check, text, size);
-    fragment.append(row);
-  }
-  listEl.replaceChildren(fragment);
-}
-
-// Storage is the same progressive Project > Session > Recordings cascade as
-// Chats, so the column headers double as the breadcrumb of where you are.
-function renderAudioCache() {
-  const summary = el("audio-summary");
-  const deleteSelected = el("audio-delete-selected");
-  const limitInput = el("audio-limit");
-  const projectsCol = el("storage-projects");
-  if (!audioCacheData || !summary || !projectsCol) return;
-
-  const { entries, totalBytes, maxBytes } = audioCacheData;
-  summary.textContent = entries.length
-    ? `${entries.length} saved  -  ${formatBytes(totalBytes)} of ${formatBytes(maxBytes)} used`
-    : "No saved audio yet. New replies are saved automatically as they arrive.";
-
-  if (limitInput && document.activeElement !== limitInput) {
-    limitInput.value = String(Math.round(maxBytes / 1024 / 1024));
-  }
-
-  const liveKeys = new Set(entries.map(cacheEntryKey));
-  for (const key of [...audioSelected]) if (!liveKeys.has(key)) audioSelected.delete(key);
-
-  if (entries.length === 0) {
-    projectSelected.clear();
-    sessionSelected.clear();
-    storageView = { projectKey: null, sessionKey: null };
-    projectsCol.innerHTML = '<p class="history-empty">Nothing saved yet.</p>';
-    renderStorageSessions(null);
-    renderStorageRecordings(null);
-    if (deleteSelected) deleteSelected.disabled = selectionTotal() === 0;
-    return;
-  }
-
-  const projects = buildProjectTree(entries);
-  // Drop checkbox selections whose project/session no longer exists.
-  const liveProjects = new Set(projects.map((p) => p.key));
-  const liveSessions = new Set(projects.flatMap((p) => p.sessions.map((s) => s.key)));
-  for (const key of [...projectSelected]) if (!liveProjects.has(key)) projectSelected.delete(key);
-  for (const key of [...sessionSelected]) if (!liveSessions.has(key)) sessionSelected.delete(key);
-  if (deleteSelected) deleteSelected.disabled = selectionTotal() === 0;
-  projectsCol.replaceChildren();
-  for (const project of projects) {
-    const count = project.sessions.length;
-    projectsCol.append(
-      storageRow(
-        "project",
-        project.key,
-        project.label,
-        project.owner,
-        `${count} chat${count === 1 ? "" : "s"}  -  ${formatBytes(project.bytes)}`,
-        storageView.projectKey,
-        projectSelected.has(project.key)
-      )
-    );
-  }
-
-  const project = storageView.projectKey
-    ? projects.find((entry) => entry.key === storageView.projectKey)
-    : null;
-  if (storageView.projectKey && !project) {
-    storageView.projectKey = null;
-    storageView.sessionKey = null;
-  }
-  renderStorageSessions(project);
-
-  const session =
-    project && storageView.sessionKey
-      ? project.sessions.find((entry) => entry.key === storageView.sessionKey)
-      : null;
-  if (project && storageView.sessionKey && !session) storageView.sessionKey = null;
-  renderStorageRecordings(session);
-}
-
-async function runCacheDelete(action) {
-  try {
-    await action();
-    await loadAudioCache();
-  } catch (error) {
-    showError(error);
-  }
-}
-
-function setupManageTab() {
-  const refreshBtn = el("audio-refresh");
-  const deleteAllBtn = el("audio-delete-all");
-  const deleteSelectedBtn = el("audio-delete-selected");
-  const limitInput = el("audio-limit");
-  const listEl = el("audio-list");
-  const cascade = el("storage-cascade");
-
-  refreshBtn?.addEventListener("click", () => loadAudioCache().catch(showError));
-
-  limitInput?.addEventListener("change", async () => {
-    const mb = Math.round(Number(limitInput.value));
-    if (!Number.isFinite(mb) || mb < 10 || mb > AUDIO_CACHE_LIMIT_MAX_MB) {
-      loadAudioCache().catch(showError);
-      return;
-    }
-    try {
-      const response = await fetch(`${targetUrl}/api/settings`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioCacheLimitMb: mb })
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      await loadAudioCache();
-    } catch (error) {
-      showError(error);
-    }
-  });
-
-  deleteAllBtn?.addEventListener("click", () => {
-    if (!window.confirm("Delete all saved audio?")) return;
-    audioSelected.clear();
-    projectSelected.clear();
-    sessionSelected.clear();
-    runCacheDelete(() => deleteCacheAll(targetUrl));
-  });
-
-  deleteSelectedBtn?.addEventListener("click", () => {
-    if (selectionTotal() === 0) return;
-    // Resolve each checked item back to its session/project so a checked
-    // project or session subsumes everything inside it: we only fire the
-    // narrowest delete that isn't already covered by a broader one.
-    const tree = buildProjectTree(audioCacheData?.entries || []);
-    const sessionToProject = new Map();
-    const itemOwner = new Map();
-    for (const project of tree) {
-      for (const session of project.sessions) {
-        sessionToProject.set(session.key, project.key);
-        for (const entry of session.items) {
-          itemOwner.set(cacheEntryKey(entry), {
-            projectKey: project.key,
-            sessionKey: session.key,
-            entry
-          });
-        }
-      }
-    }
-
-    const projectsToDelete = [...projectSelected];
-    const projectSet = new Set(projectsToDelete);
-    const sessionsToDelete = [...sessionSelected].filter(
-      (key) => !projectSet.has(sessionToProject.get(key))
-    );
-    const sessionSet = new Set(sessionsToDelete);
-    const itemsToDelete = [...audioSelected]
-      .map((key) => itemOwner.get(key))
-      .filter(
-        (owner) => owner && !projectSet.has(owner.projectKey) && !sessionSet.has(owner.sessionKey)
-      )
-      .map((owner) => owner.entry);
-
-    audioSelected.clear();
-    projectSelected.clear();
-    sessionSelected.clear();
-    runCacheDelete(async () => {
-      for (const key of projectsToDelete) await deleteCacheProject(targetUrl, key);
-      for (const key of sessionsToDelete) await deleteCacheSession(targetUrl, key);
-      for (const entry of itemsToDelete) {
-        await deleteCacheItem(targetUrl, entry.itemId, entry.engine, entry.voice);
-      }
-    });
-  });
-
-  cascade?.addEventListener("click", (event) => {
-    // Drill-down cascade (mirrors the Chats tab): clicking a project reveals its
-    // sessions column; clicking a session reveals its recordings column.
-    const projectRow = event.target.closest(".tree-item[data-sproject]");
-    if (projectRow) {
-      storageView = { projectKey: projectRow.dataset.sproject, sessionKey: null };
-      renderAudioCache();
-      return;
-    }
-
-    const sessionRow = event.target.closest(".tree-item[data-ssession]");
-    if (sessionRow) {
-      storageView = { projectKey: storageView.projectKey, sessionKey: sessionRow.dataset.ssession };
-      renderAudioCache();
-    }
-  });
-
-  // Project/session checkboxes toggle their selection set without re-rendering;
-  // their checked state lives in the DOM until the next render reads the set.
-  cascade?.addEventListener("change", (event) => {
-    const pcheck = event.target.closest("input[data-pcheck]");
-    if (pcheck) {
-      if (pcheck.checked) projectSelected.add(pcheck.dataset.pcheck);
-      else projectSelected.delete(pcheck.dataset.pcheck);
-      updateDeleteSelectedState();
-      return;
-    }
-    const scheck = event.target.closest("input[data-scheck]");
-    if (scheck) {
-      if (scheck.checked) sessionSelected.add(scheck.dataset.scheck);
-      else sessionSelected.delete(scheck.dataset.scheck);
-      updateDeleteSelectedState();
-    }
-  });
-
-  listEl?.addEventListener("change", (event) => {
-    const check = event.target.closest("input[type=checkbox][data-entry]");
-    if (!check) return;
-    if (check.checked) audioSelected.add(check.dataset.entry);
-    else audioSelected.delete(check.dataset.entry);
-    updateDeleteSelectedState();
-  });
 }
 
 initColumnResize();
@@ -1778,9 +3926,86 @@ function wireNav(button, view) {
   button.addEventListener("click", () => setView(currentView === view ? "blank" : view));
 }
 wireNav(navChats, "chats");
-wireNav(navStorage, "storage");
+wireNav(navSearch, "search");
+wireNav(navTrash, "trash");
 wireNav(navSettings, "settings");
-setupManageTab();
+
+function setSettingsTab(targetId) {
+  const tabs = Array.from(document.querySelectorAll("[data-settings-tab]"));
+  const panels = Array.from(document.querySelectorAll("[data-settings-panel]"));
+  if (!tabs.length || !panels.length) return;
+  const fallback = tabs[0]?.dataset.settingsTab;
+  const activeId = panels.some((panel) => panel.id === targetId) ? targetId : fallback;
+  for (const tab of tabs) {
+    const active = tab.dataset.settingsTab === activeId;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+    tab.tabIndex = active ? 0 : -1;
+  }
+  for (const panel of panels) {
+    panel.hidden = panel.id !== activeId;
+    panel.setAttribute("aria-hidden", panel.hidden ? "true" : "false");
+  }
+}
+
+document.querySelector(".settings-rail")?.addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-settings-tab]");
+  if (!tab) return;
+  setSettingsTab(tab.dataset.settingsTab);
+});
+setSettingsTab("settings-behavior");
+
+searchInput?.addEventListener("input", () => {
+  searchQuery = searchInput.value;
+  renderSearch();
+});
+searchClear?.addEventListener("click", () => {
+  searchQuery = "";
+  if (searchInput) searchInput.value = "";
+  renderSearch();
+  searchInput?.focus();
+});
+searchType?.addEventListener("change", () => {
+  searchResultType = searchType.value || "all";
+  renderSearch();
+});
+searchOwner?.addEventListener("change", () => {
+  searchOwnerFilter = searchOwner.value || "all";
+  renderSearch();
+});
+searchTime?.addEventListener("change", () => {
+  searchTimeFilter = searchTime.value || "any";
+  renderSearch();
+});
+searchSort?.addEventListener("change", () => {
+  searchSortMode = searchSort.value || "newest";
+  renderSearch();
+});
+document.querySelectorAll("[data-search-chip]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const value = button.dataset.searchChip || "any";
+    searchTimeFilter = value.startsWith("last:") ? value.slice(5) : value;
+    renderSearch();
+  });
+});
+sessionFindInput?.addEventListener("input", () => {
+  sessionFindQuery = sessionFindInput.value;
+  sessionFindPreferredTarget = null;
+  sessionFindActiveIndex = 0;
+  if (latestState) renderState(latestState);
+});
+sessionFindInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    moveSessionFind(event.shiftKey ? -1 : 1);
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    sessionFindInput.blur();
+    if (sessionFindQuery) setSessionFindQuery("");
+  }
+});
+sessionFindPrev?.addEventListener("click", () => moveSessionFind(-1));
+sessionFindNext?.addEventListener("click", () => moveSessionFind(1));
 function navAndFollow(targetId) {
   if (!targetId || !playbackActive()) return;
   // Re-assert past the render's playback-follow revert so we play the item the
@@ -1839,9 +4064,22 @@ seekBar.addEventListener("change", () => {
 seekBar.addEventListener("blur", () => (seekDragging = false));
 
 historyList.addEventListener("click", (event) => {
+  closeMessageMenu();
   // Bubble body (user or assistant): toggle the 2-line clamp to show full text.
   const bubble = event.target.closest(".bubble");
   if (bubble) bubble.classList.toggle("is-expanded");
+});
+
+historyList.addEventListener("contextmenu", (event) => {
+  const bubble = event.target.closest(".bubble");
+  if (!bubble?.dataset.copyText) return;
+  event.preventDefault();
+  openMessageMenu(event, bubble.dataset.copyText);
+});
+
+window.addEventListener("click", (event) => {
+  if (!event.target.closest(".message-menu")) closeMessageMenu();
+  if (!event.target.closest(".session-menu")) closeSessionMenu();
 });
 
 el("expand-all")?.addEventListener("click", () => setAllBubblesExpanded(true));
@@ -1864,8 +4102,37 @@ msgModal?.addEventListener("click", (event) => {
   // Click on the dimmed backdrop (not the card) closes the modal.
   if (event.target === msgModal) closeModal();
 });
+sessionDetailsClose?.addEventListener("click", closeSessionDetails);
+sessionDetailsModal?.addEventListener("click", (event) => {
+  if (event.target === sessionDetailsModal) closeSessionDetails();
+});
+confirmCancel?.addEventListener("click", () => resolveConfirm(false));
+confirmOk?.addEventListener("click", () => resolveConfirm(true));
+confirmModal?.addEventListener("click", (event) => {
+  if (event.target === confirmModal) resolveConfirm(false);
+});
 window.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+    if (currentView === "chats") {
+      event.preventDefault();
+      sessionFindInput?.focus();
+      sessionFindInput?.select();
+      return;
+    }
+    if (currentView === "search") {
+      event.preventDefault();
+      searchInput?.focus();
+      searchInput?.select();
+      return;
+    }
+  }
   if (event.key === "Escape" && isModalOpen()) closeModal();
+  if (event.key === "Escape" && sessionDetailsModal && !sessionDetailsModal.hidden) {
+    closeSessionDetails();
+  }
+  if (event.key === "Escape" && confirmModal && !confirmModal.hidden) {
+    resolveConfirm(false);
+  }
 });
 modalPlay?.addEventListener("click", () => {
   if (playback.isEnded || playback.isAtEnd) {

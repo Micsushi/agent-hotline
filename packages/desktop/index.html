@@ -4,12 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Hotline</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
     <style>
       html,
       body {
@@ -18,7 +12,15 @@
         height: 100vh;
         overflow: hidden;
         color: #ede6da;
-        font-family: Inter, "Segoe UI", system-ui, sans-serif;
+        font-family:
+          "Segoe UI Variable",
+          "Segoe UI",
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
       }
     </style>
   </head>
@@ -74,8 +76,16 @@
             <h1 id="app-title">Agent Hotline</h1>
           </div>
 
-          <div class="nav-items" role="tablist">
-            <button id="nav-chats" class="nav-item" type="button" data-view="chats">
+          <div class="nav-items" role="tablist" aria-label="Primary views">
+            <button
+              id="nav-chats"
+              class="nav-item"
+              type="button"
+              data-view="chats"
+              role="tab"
+              aria-controls="view-chats"
+              aria-selected="false"
+            >
               <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"
@@ -92,7 +102,15 @@
               </svg>
               <span>Chats</span>
             </button>
-            <button id="nav-storage" class="nav-item" type="button" data-view="storage">
+            <button
+              id="nav-search"
+              class="nav-item"
+              type="button"
+              data-view="search"
+              role="tab"
+              aria-controls="view-search"
+              aria-selected="false"
+            >
               <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"
@@ -100,16 +118,50 @@
                 height="20"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linejoin="round"
+                stroke-width="1.8"
+                stroke-linecap="round"
               >
-                <path d="M4 7c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2z" />
-                <path d="M4 7v10c0 1.1 3.6 2 8 2s8-.9 8-2V7" />
-                <path d="M4 12c0 1.1 3.6 2 8 2s8-.9 8-2" />
+                <circle cx="10.8" cy="10.8" r="6.2" />
+                <path d="m15.4 15.4 4.4 4.4" />
               </svg>
-              <span>Storage</span>
+              <span>Search</span>
             </button>
-            <button id="nav-settings" class="nav-item" type="button" data-view="settings">
+            <button
+              id="nav-trash"
+              class="nav-item"
+              type="button"
+              data-view="trash"
+              role="tab"
+              aria-controls="view-trash"
+              aria-selected="false"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+              >
+                <path d="M4 7h16" />
+                <path d="M9 7V4h6v3" />
+                <path d="M6 7l1 13h10l1-13" />
+                <path d="M10 11v5M14 11v5" />
+              </svg>
+              <span>Trash</span>
+            </button>
+            <button
+              id="nav-settings"
+              class="nav-item"
+              type="button"
+              data-view="settings"
+              role="tab"
+              aria-controls="view-settings"
+              aria-selected="false"
+            >
               <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"
@@ -131,15 +183,81 @@
           <!-- BLANK: fresh open, nothing selected -->
           <section id="view-blank" class="view view-blank">
             <p class="blank-hint">
-              Pick <strong>Chats</strong>, <strong>Storage</strong>, or <strong>Settings</strong> to
+              Pick <strong>Chats</strong>, <strong>Search</strong>, or <strong>Settings</strong> to
               get started.
             </p>
           </section>
 
+          <!-- SEARCH: jump directly to sessions or messages -->
+          <section id="view-search" class="view view-search" role="tabpanel" hidden>
+            <div class="search-page">
+              <header class="search-header">
+                <div>
+                  <h2>Search</h2>
+                  <p>Find sessions, prompts, replies, names, IDs, and dates.</p>
+                </div>
+                <span id="search-count" class="settings-state">No query</span>
+              </header>
+              <div class="search-console">
+                <div class="search-input-row">
+                  <input
+                    id="search-input"
+                    type="search"
+                    placeholder="Search keyword, session name, ID, today, after:2026-06-01"
+                    autocomplete="off"
+                  />
+                  <button id="search-clear" class="text-button" type="button">Clear</button>
+                </div>
+                <div class="search-filter-grid">
+                  <label>
+                    <span>Show</span>
+                    <select id="search-type">
+                      <option value="all">All results</option>
+                      <option value="sessions">Sessions only</option>
+                      <option value="messages">Messages only</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Harness</span>
+                    <select id="search-owner">
+                      <option value="all">Any harness</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>When</span>
+                    <select id="search-time">
+                      <option value="any">Any time</option>
+                      <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="7d">Last 7 days</option>
+                      <option value="30d">Last 30 days</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Sort</span>
+                    <select id="search-sort">
+                      <option value="newest">Newest first</option>
+                      <option value="oldest">Oldest first</option>
+                      <option value="project">Project name</option>
+                      <option value="session">Session name</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="search-chip-row" aria-label="Quick search filters">
+                  <button type="button" data-search-chip="today">Today</button>
+                  <button type="button" data-search-chip="yesterday">Yesterday</button>
+                  <button type="button" data-search-chip="last:7d">Last 7 days</button>
+                  <button type="button" data-search-chip="last:30d">Last 30 days</button>
+                </div>
+              </div>
+              <div id="search-results" class="result-list"><!-- JS --></div>
+            </div>
+          </section>
+
           <!-- CHATS: Projects > Sessions > Messages cascade -->
-          <section id="view-chats" class="view view-cascade" hidden>
+          <section id="view-chats" class="view view-cascade" role="tabpanel" hidden>
             <div class="column col-projects">
-              <header class="column-head">Projects</header>
+              <header class="column-head" id="projects-title">Projects</header>
               <div id="projects-list" class="column-list"><!-- JS --></div>
             </div>
             <div id="sessions-pane" class="column col-sessions" hidden>
@@ -153,6 +271,38 @@
                   <span id="current-session-title">Messages</span>
                 </span>
                 <span class="convo-actions">
+                  <span id="session-find" class="session-find" hidden>
+                    <input
+                      id="session-find-input"
+                      type="search"
+                      placeholder="Find"
+                      autocomplete="off"
+                      aria-label="Find in this session"
+                    />
+                    <span id="session-find-count" class="session-find-count">0/0</span>
+                    <button
+                      id="session-find-prev"
+                      class="icon-button"
+                      type="button"
+                      aria-label="Previous match"
+                      title="Previous match"
+                    >
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M7 14l5-5 5 5H7z" />
+                      </svg>
+                    </button>
+                    <button
+                      id="session-find-next"
+                      class="icon-button"
+                      type="button"
+                      aria-label="Next match"
+                      title="Next match"
+                    >
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M7 10l5 5 5-5H7z" />
+                      </svg>
+                    </button>
+                  </span>
                   <button
                     id="expand-all"
                     class="text-button"
@@ -169,177 +319,342 @@
                   >
                     Collapse all
                   </button>
+                  <button id="trash-session" class="text-button danger" type="button">
+                    Move to trash
+                  </button>
                 </span>
               </header>
               <div id="history" class="column-list history-list"><!-- JS --></div>
             </div>
           </section>
 
-          <!-- STORAGE: Projects > Sessions > Recordings cascade -->
-          <section id="view-storage" class="view view-storage" hidden>
-            <div class="storage-bar">
-              <h2 id="manage-title">Storage</h2>
-              <p id="audio-summary" class="storage-summary">Loading saved audio...</p>
-              <label class="field-row storage-limit" for="audio-limit">
-                <span>Limit (MB)</span>
-                <input
-                  id="audio-limit"
-                  type="number"
-                  min="10"
-                  max="100000"
-                  step="64"
-                  inputmode="numeric"
-                />
-              </label>
-              <div class="manage-actions">
-                <button id="audio-delete-selected" type="button" disabled>Delete selected</button>
-                <button id="audio-delete-all" type="button">Delete all</button>
-              </div>
-              <button
-                id="audio-refresh"
-                class="icon-button"
-                type="button"
-                aria-label="Refresh"
-                title="Refresh"
-              >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path
-                    d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"
-                  />
-                </svg>
-              </button>
-            </div>
-            <div id="storage-cascade" class="cascade">
-              <div class="column col-projects">
-                <header class="column-head">Projects</header>
-                <div id="storage-projects" class="column-list"><!-- JS --></div>
-              </div>
-              <div id="storage-sessions-pane" class="column col-sessions" hidden>
-                <header class="column-head" id="storage-project-title">Sessions</header>
-                <div id="storage-sessions" class="column-list"><!-- JS --></div>
-              </div>
-              <div id="storage-recordings-pane" class="column col-messages" hidden>
-                <header class="column-head">
-                  <span id="storage-session-title">Recordings</span>
-                </header>
-                <div id="audio-list" class="column-list storage-list"><!-- JS --></div>
+          <!-- TRASH: restore hidden chat records -->
+          <section id="view-trash" class="view view-trash" role="tabpanel" hidden>
+            <div class="trash-layout">
+              <div id="trash-empty" class="history-empty" hidden>Trash is empty.</div>
+              <div id="trash-cascade" class="trash-cascade">
+                <div class="column col-projects">
+                  <header class="column-head" id="trash-projects-title">
+                    <span>Projects</span>
+                    <span class="trash-head-actions">
+                      <span id="trash-count" class="head-meta">No trashed chats</span>
+                    </span>
+                  </header>
+                  <div id="trash-projects" class="column-list"><!-- JS --></div>
+                </div>
+                <div id="trash-sessions-pane" class="column col-sessions" hidden>
+                  <header class="column-head" id="trash-sessions-title">
+                    <span>Sessions</span>
+                  </header>
+                  <div id="trash-sessions" class="column-list"><!-- JS --></div>
+                </div>
+                <div id="trash-messages-pane" class="column col-messages" hidden>
+                  <header class="column-head" id="trash-messages-title">Messages</header>
+                  <div id="trash-messages" class="column-list trash-message-list"><!-- JS --></div>
+                </div>
               </div>
             </div>
           </section>
 
-          <!-- SETTINGS: full-width page -->
-          <section id="view-settings" class="view view-settings" hidden>
-            <div class="page-head">
-              <h2 id="settings-title">Settings</h2>
-              <span id="settings-state" class="settings-state">Loading</span>
-            </div>
+          <!-- SETTINGS: shell-integrated split view -->
+          <section id="view-settings" class="view view-settings" role="tabpanel" hidden>
+            <div class="settings-layout">
+              <nav class="settings-rail" aria-label="Settings sections" role="tablist">
+                <header id="settings-title" class="settings-rail-head">Settings</header>
+                <button
+                  class="settings-tab is-active"
+                  type="button"
+                  data-settings-tab="settings-behavior"
+                  role="tab"
+                  aria-controls="settings-behavior"
+                  aria-selected="true"
+                >
+                  Behavior
+                </button>
+                <button
+                  class="settings-tab"
+                  type="button"
+                  data-settings-tab="settings-voice"
+                  role="tab"
+                  aria-controls="settings-voice"
+                  aria-selected="false"
+                >
+                  Voice
+                </button>
+                <button
+                  class="settings-tab"
+                  type="button"
+                  data-settings-tab="settings-sources"
+                  role="tab"
+                  aria-controls="settings-sources"
+                  aria-selected="false"
+                >
+                  Sources
+                </button>
+                <button
+                  class="settings-tab"
+                  type="button"
+                  data-settings-tab="settings-notifications"
+                  role="tab"
+                  aria-controls="settings-notifications"
+                  aria-selected="false"
+                >
+                  Notifications
+                </button>
+                <button
+                  class="settings-tab"
+                  type="button"
+                  data-settings-tab="settings-reading"
+                  role="tab"
+                  aria-controls="settings-reading"
+                  aria-selected="false"
+                >
+                  Reading
+                </button>
+                <button
+                  class="settings-tab"
+                  type="button"
+                  data-settings-tab="settings-mcp"
+                  role="tab"
+                  aria-controls="settings-mcp"
+                  aria-selected="false"
+                >
+                  MCP
+                </button>
+              </nav>
 
-            <div class="settings-grid">
-              <section class="card settings-group">
-                <div class="settings-group-head">
-                  <p class="card-title">Queue behavior</p>
-                </div>
-                <div class="segmented-control" role="radiogroup" aria-label="Read behavior">
-                  <label title="Replies are saved, but only read when you press play.">
-                    <input type="radio" name="read-behavior" value="manual" />
-                    <span>Save only</span>
-                  </label>
-                  <label title="New replies play automatically when no other reply is being read.">
-                    <input type="radio" name="read-behavior" value="auto" />
-                    <span>Auto-play</span>
-                  </label>
-                </div>
-              </section>
+              <div class="settings-panel">
+                <span id="settings-state" class="settings-state">Loading</span>
+                <section
+                  id="settings-behavior"
+                  class="settings-section"
+                  data-settings-panel
+                  role="tabpanel"
+                >
+                  <header class="settings-section-head">
+                    <h3>Behavior</h3>
+                    <p>Choose how new replies enter the playback queue.</p>
+                  </header>
+                  <div class="settings-row">
+                    <div class="settings-copy">
+                      <strong>Read behavior</strong>
+                      <span>Save replies quietly, or play new replies when playback is idle.</span>
+                    </div>
+                    <div class="segmented-control" role="radiogroup" aria-label="Read behavior">
+                      <label title="Replies are saved, but only read when you press play.">
+                        <input type="radio" name="read-behavior" value="manual" />
+                        <span>Save only</span>
+                      </label>
+                      <label
+                        title="New replies play automatically when no other reply is being read."
+                      >
+                        <input type="radio" name="read-behavior" value="auto" />
+                        <span>Auto-play</span>
+                      </label>
+                    </div>
+                  </div>
+                </section>
 
-              <section class="card settings-group">
-                <div class="settings-group-head">
-                  <p class="card-title">Voice</p>
-                </div>
-                <div class="field-grid">
-                  <label class="field-row" for="setting-engine">
-                    <span>Engine</span>
+                <section
+                  id="settings-voice"
+                  class="settings-section"
+                  data-settings-panel
+                  role="tabpanel"
+                  hidden
+                >
+                  <header class="settings-section-head">
+                    <h3>Voice</h3>
+                    <p>Pick the speech engine, voice, audio output, and playback level.</p>
+                  </header>
+                  <label class="settings-row" for="setting-engine">
+                    <span class="settings-copy">
+                      <strong>Engine</strong>
+                      <span>Select the voice runtime used to generate speech.</span>
+                    </span>
                     <select id="setting-engine">
                       <option value="webview">System voice</option>
                       <option value="kokoro">Kokoro</option>
                       <option value="kokoro-ts">Kokoro TS</option>
                     </select>
                   </label>
-                  <label class="field-row" for="setting-voice">
-                    <span>Voice</span>
+                  <label class="settings-row" for="setting-voice">
+                    <span class="settings-copy">
+                      <strong>System voice</strong>
+                      <span>Used when the engine is set to System voice.</span>
+                    </span>
                     <select id="setting-voice"></select>
                   </label>
-                  <label class="field-row" for="setting-kokoro-voice" id="kokoro-voice-row" hidden>
-                    <span>Kokoro voice</span>
+                  <label
+                    class="settings-row"
+                    for="setting-kokoro-voice"
+                    id="kokoro-voice-row"
+                    hidden
+                  >
+                    <span class="settings-copy">
+                      <strong>Kokoro voice</strong>
+                      <span>Used when the engine is set to Kokoro.</span>
+                    </span>
                     <select id="setting-kokoro-voice"></select>
                   </label>
-                  <label class="field-row" for="setting-volume">
-                    <span>Volume <output id="setting-volume-value">100%</output></span>
-                    <input id="setting-volume" type="range" min="0" max="1" step="0.05" />
+                  <label class="settings-row" for="setting-output-device">
+                    <span class="settings-copy">
+                      <strong>Output device</strong>
+                      <span>Choose where Agent Hotline audio should play.</span>
+                    </span>
+                    <select id="setting-output-device"></select>
                   </label>
-                </div>
-              </section>
+                  <label class="settings-row" for="setting-volume">
+                    <span class="settings-copy">
+                      <strong>Volume</strong>
+                      <span>Playback loudness for generated speech.</span>
+                    </span>
+                    <span class="settings-range">
+                      <input id="setting-volume" type="range" min="0" max="1" step="0.05" />
+                      <output id="setting-volume-value">100%</output>
+                    </span>
+                  </label>
+                </section>
 
-              <section class="card settings-group">
-                <div class="settings-group-head">
-                  <p class="card-title">Sources</p>
-                </div>
-                <div class="toggle-grid">
-                  <label class="toggle-row"
-                    ><input id="setting-mute" type="checkbox" /> <span>Mute</span></label
-                  >
-                  <label class="toggle-row"
-                    ><input id="setting-codex" type="checkbox" /> <span>Codex</span></label
-                  >
-                  <label class="toggle-row"
-                    ><input id="setting-claude" type="checkbox" /> <span>Claude</span></label
-                  >
-                </div>
-              </section>
+                <section
+                  id="settings-sources"
+                  class="settings-section"
+                  data-settings-panel
+                  role="tabpanel"
+                  hidden
+                >
+                  <header class="settings-section-head">
+                    <h3>Sources</h3>
+                    <p>Control which harnesses can send replies into Agent Hotline.</p>
+                  </header>
+                  <label class="settings-row">
+                    <span class="settings-copy">
+                      <strong>Mute playback</strong>
+                      <span
+                        >Keep chats and audio generation available, but stop reading aloud.</span
+                      >
+                    </span>
+                    <input id="setting-mute" type="checkbox" />
+                  </label>
+                  <label class="settings-row">
+                    <span class="settings-copy">
+                      <strong>Codex</strong>
+                      <span>Accept replies from Codex sessions.</span>
+                    </span>
+                    <input id="setting-codex" type="checkbox" />
+                  </label>
+                  <label class="settings-row">
+                    <span class="settings-copy">
+                      <strong>Claude</strong>
+                      <span>Accept replies from Claude Code sessions.</span>
+                    </span>
+                    <input id="setting-claude" type="checkbox" />
+                  </label>
+                </section>
 
-              <section class="card settings-group">
-                <div class="settings-group-head">
-                  <p class="card-title">Notifications</p>
-                </div>
-                <div class="field-grid">
-                  <label class="toggle-row"
-                    ><input id="setting-notify" type="checkbox" />
-                    <span>Notify on new reply</span></label
+                <section
+                  id="settings-notifications"
+                  class="settings-section"
+                  data-settings-panel
+                  role="tabpanel"
+                  hidden
+                >
+                  <header class="settings-section-head">
+                    <h3>Notifications</h3>
+                    <p>Decide when the app should alert you about new replies.</p>
+                  </header>
+                  <label class="settings-row">
+                    <span class="settings-copy">
+                      <strong>Notify on new reply</strong>
+                      <span
+                        >Show a system notification when a reply arrives in the background.</span
+                      >
+                    </span>
+                    <input id="setting-notify" type="checkbox" />
+                  </label>
+                  <label
+                    class="settings-row"
+                    id="notify-opens-row"
+                    for="setting-notify-opens"
+                    hidden
                   >
-                  <label class="field-row" id="notify-opens-row" for="setting-notify-opens" hidden>
-                    <span>Opens</span>
+                    <span class="settings-copy">
+                      <strong>Notification opens</strong>
+                      <span>Choose which Agent Hotline surface opens from a notification.</span>
+                    </span>
                     <select id="setting-notify-opens">
                       <option value="full">Full window</option>
                       <option value="mini">Mini popup</option>
                     </select>
                   </label>
-                </div>
-              </section>
+                </section>
 
-              <section class="card settings-group">
-                <div class="settings-group-head">
-                  <p class="card-title">Reading detail</p>
-                </div>
-                <div class="field-grid">
-                  <label class="toggle-row"
-                    ><input id="setting-highlight" type="checkbox" />
-                    <span>Highlight spoken text</span></label
-                  >
-                  <p id="highlight-warn" class="settings-warn" hidden>Experimental.</p>
-                </div>
-                <details class="skip-rules">
-                  <summary>Skip rules</summary>
-                  <div class="skip-grid">
-                    <label><input data-skip-rule="codeBlocks" type="checkbox" /> Code</label>
-                    <label><input data-skip-rule="diffs" type="checkbox" /> Diffs</label>
-                    <label><input data-skip-rule="logs" type="checkbox" /> Logs</label>
-                    <label><input data-skip-rule="tables" type="checkbox" /> Tables</label>
-                    <label><input data-skip-rule="json" type="checkbox" /> JSON</label>
-                    <label
-                      ><input data-skip-rule="longBulletLists" type="checkbox" /> Long lists</label
-                    >
+                <section
+                  id="settings-reading"
+                  class="settings-section"
+                  data-settings-panel
+                  role="tabpanel"
+                  hidden
+                >
+                  <header class="settings-section-head">
+                    <h3>Reading</h3>
+                    <p>Tune what is highlighted or skipped while replies are read aloud.</p>
+                  </header>
+                  <label class="settings-row">
+                    <span class="settings-copy">
+                      <strong>Highlight spoken text</strong>
+                      <span>Track the current spoken word inside the active message.</span>
+                      <em id="highlight-warn" class="settings-warn" hidden>Experimental.</em>
+                    </span>
+                    <input id="setting-highlight" type="checkbox" />
+                  </label>
+                  <div class="settings-row settings-row-block">
+                    <div class="settings-copy">
+                      <strong>Skip rules</strong>
+                      <span>Filter technical sections that usually sound bad when read aloud.</span>
+                    </div>
+                    <div class="skip-grid">
+                      <label><input data-skip-rule="codeBlocks" type="checkbox" /> Code</label>
+                      <label><input data-skip-rule="diffs" type="checkbox" /> Diffs</label>
+                      <label><input data-skip-rule="logs" type="checkbox" /> Logs</label>
+                      <label><input data-skip-rule="tables" type="checkbox" /> Tables</label>
+                      <label><input data-skip-rule="json" type="checkbox" /> JSON</label>
+                      <label
+                        ><input data-skip-rule="longBulletLists" type="checkbox" /> Long
+                        lists</label
+                      >
+                    </div>
                   </div>
-                </details>
-              </section>
+                </section>
+
+                <section
+                  id="settings-mcp"
+                  class="settings-section"
+                  data-settings-panel
+                  role="tabpanel"
+                  hidden
+                >
+                  <header class="settings-section-head">
+                    <h3>MCP</h3>
+                    <p>Expose Agent Hotline to other agents and tools.</p>
+                  </header>
+                  <div class="settings-row settings-row-block">
+                    <div class="settings-copy">
+                      <strong>Server command</strong>
+                      <span>MCP is a server for external tools, not a separate app tab.</span>
+                    </div>
+                    <div class="mcp-command" title="Installed command">agent-hotline-mcp</div>
+                  </div>
+                  <div class="settings-row settings-row-block">
+                    <div class="settings-copy">
+                      <strong>Local development</strong>
+                      <span>Run this command when testing the MCP server from the repo.</span>
+                    </div>
+                    <p class="settings-note">
+                      <code>npm --prefix packages/backend exec agent-hotline-mcp</code>
+                    </p>
+                  </div>
+                </section>
+              </div>
             </div>
 
             <p id="settings-error" class="settings-error" hidden></p>
@@ -536,6 +851,54 @@
               </svg>
             </button>
             <output id="modal-speed" class="modal-speed">1.0x</output>
+          </footer>
+        </div>
+      </div>
+
+      <!-- SESSION DETAILS (overlay modal) -->
+      <div id="session-details-modal" class="modal-overlay" hidden>
+        <div
+          class="modal-card details-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Session details"
+        >
+          <header class="modal-head">
+            <span id="session-details-owner" class="owner-badge owner-unknown">Unknown</span>
+            <span id="session-details-title" class="now-meta">Session details</span>
+            <button
+              id="session-details-close"
+              class="icon-button"
+              type="button"
+              aria-label="Close"
+              title="Close"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path
+                  d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                />
+              </svg>
+            </button>
+          </header>
+          <div id="session-details-body" class="details-body"></div>
+        </div>
+      </div>
+
+      <!-- CONFIRM ACTION (overlay modal) -->
+      <div id="confirm-modal" class="modal-overlay confirm-modal" hidden>
+        <div
+          class="modal-card confirm-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-title"
+        >
+          <header class="confirm-head">
+            <span id="confirm-title">Confirm action</span>
+          </header>
+          <p id="confirm-message" class="confirm-message"></p>
+          <footer class="confirm-actions">
+            <button id="confirm-ok" class="text-button danger" type="button">Confirm</button>
+            <button id="confirm-cancel" class="text-button" type="button">Cancel</button>
           </footer>
         </div>
       </div>

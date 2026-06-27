@@ -48,6 +48,7 @@ test("settings persist after edit and reload", () => {
     mute: true,
     engine: "webview",
     voice: "Test Voice",
+    audioOutputDeviceId: "",
     kokoroVoice: "af_heart",
     rate: 1.25,
     volume: 0.6,
@@ -120,6 +121,7 @@ test("invalid settings fields fall back safely", () => {
       readBehavior: "always",
       mute: "yes",
       voice: 42,
+      audioOutputDeviceId: 99,
       rate: 99,
       volume: -1,
       skipRules: {

@@ -1,6 +1,17 @@
 :root {
   color-scheme: dark;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  --font-ui:
+    "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue",
+    Arial, sans-serif;
+  --type-micro: 0.625rem;
+  --type-caption: 0.6875rem;
+  --type-control: 0.75rem;
+  --type-body: 0.8125rem;
+  --line-label: 1.35;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --tracking-label: 0.04em;
+  font-family: var(--font-ui);
 }
 
 * {
@@ -37,18 +48,18 @@
 .mini-source {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--type-body);
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .mini-badge {
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--type-micro);
+  font-weight: var(--weight-bold);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
   padding: 2px 7px;
   border-radius: 999px;
   background: #1d2738;
@@ -80,7 +91,7 @@
   border: 1px solid #2b3850;
   background: transparent;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--type-caption);
   padding: 3px 8px;
   border-radius: 6px;
   cursor: pointer;
@@ -93,8 +104,8 @@
 
 .mini-preview {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: var(--type-control);
+  line-height: var(--line-label);
   color: #c3cfe2;
   height: 50px;
   overflow: hidden;
@@ -113,7 +124,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--type-caption);
   color: var(--text-dim);
 }
 
@@ -124,7 +135,7 @@
 
 .mini-speed output {
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
 }
 .mini-speed .speed-icon {
@@ -141,7 +152,7 @@
   border: 1px solid #2b3850;
   background: #1d2738;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--type-control);
   padding: 7px 4px;
   border-radius: 7px;
   cursor: pointer;
@@ -164,7 +175,7 @@
   background: var(--accent);
   border-color: var(--accent);
   color: var(--on-accent);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .mini-btn:disabled {
@@ -174,7 +185,7 @@
 
 .mini-hint {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--type-caption);
   color: #8294b0;
   overflow: hidden;
   text-overflow: ellipsis;

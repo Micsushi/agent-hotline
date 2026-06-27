@@ -65,6 +65,35 @@ test("getAudio generates once on a backend miss, then serves from memory", async
   assert.equal(calls.filter((c) => c.method === "POST").length, 1);
 });
 
+test("getAudio calls onPersistentMiss when backend has no saved audio", async () => {
+  evictMem();
+  let misses = 0;
+  installFetch(async (url, options) => {
+    if (options.method === "POST") return jsonResponse({ stored: true }, 201);
+    return jsonResponse({ cached: false });
+  });
+
+  await getAudio(
+    "http://b",
+    {
+      itemId: "missing-audio",
+      engine: "kokoro-ts",
+      voice: "af_heart",
+      onPersistentMiss: () => {
+        misses += 1;
+      }
+    },
+    async () => ({
+      samples: new Float32Array([0.1]),
+      sampleRate: 24000,
+      segments: [],
+      wordAccurate: false
+    })
+  );
+
+  assert.equal(misses, 1);
+});
+
 test("getAudio serves a backend hit without generating", async () => {
   evictMem();
   let generated = 0;

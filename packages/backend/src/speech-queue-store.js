@@ -144,6 +144,46 @@ function createSpeechQueueStore(options = {}) {
     return value.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean);
   }
 
+  function isVisible(item) {
+    return !item.trashedAt;
+  }
+
+  function sessionKeyForItem(item) {
+    return item.sessionKey || item.threadId || `app:${item.sourceApp}`;
+  }
+
+  function projectKeyForItem(item) {
+    if (!item.projectPath) return `direct:${item.sourceApp}`;
+    return String(item.projectPath).replace(/[\\/]/g, "").toLowerCase();
+  }
+
+  function trashMatching(predicate) {
+    const timestamp = now();
+    const ids = [];
+    for (const item of state.items) {
+      if (item.trashedAt || !predicate(item)) continue;
+      item.trashedAt = timestamp;
+      touch(item, timestamp);
+      ids.push(item.id);
+    }
+    if (ids.length) persist();
+    return ids;
+  }
+
+  function restoreMatching(predicate) {
+    const timestamp = now();
+    const ids = [];
+    for (const item of state.items) {
+      if (!item.trashedAt || !predicate(item)) continue;
+      delete item.trashedAt;
+      item.timestamps.restoredAt = timestamp;
+      touch(item, timestamp);
+      ids.push(item.id);
+    }
+    if (ids.length) persist();
+    return ids;
+  }
+
   function enqueue(input) {
     const timestamp = now();
     const item = {
@@ -160,6 +200,8 @@ function createSpeechQueueStore(options = {}) {
 
     const threadId = optionalString(input.threadId);
     if (threadId) item.threadId = threadId;
+    const sessionKey = optionalString(input.sessionKey);
+    if (sessionKey) item.sessionKey = sessionKey;
     const threadLabel = optionalString(input.threadLabel);
     if (threadLabel) item.threadLabel = threadLabel;
     const sessionName = optionalString(input.sessionName);
@@ -181,16 +223,17 @@ function createSpeechQueueStore(options = {}) {
   }
 
   function getPending() {
-    return clone(state.items.filter((item) => item.status === "pending"));
+    return clone(state.items.filter((item) => isVisible(item) && item.status === "pending"));
   }
 
   function getCurrent() {
-    const current = state.items.find((item) => item.status === "playing") || null;
+    const current =
+      state.items.find((item) => isVisible(item) && item.status === "playing") || null;
     return current ? clone(current) : null;
   }
 
   function getLatest() {
-    const latest = state.items[state.items.length - 1] || null;
+    const latest = [...state.items].reverse().find(isVisible) || null;
     return latest ? clone(latest) : null;
   }
 
@@ -249,6 +292,7 @@ function createSpeechQueueStore(options = {}) {
       }
     };
     if (source.threadId) item.threadId = source.threadId;
+    if (source.sessionKey) item.sessionKey = source.sessionKey;
     if (source.threadLabel) item.threadLabel = source.threadLabel;
     if (source.sessionName) item.sessionName = source.sessionName;
     if (source.projectPath) item.projectPath = source.projectPath;
@@ -265,16 +309,50 @@ function createSpeechQueueStore(options = {}) {
   function replayLatest() {
     const latest = [...state.items]
       .reverse()
-      .find((item) => item.speakableText && item.status !== "skipped");
+      .find((item) => isVisible(item) && item.speakableText && item.status !== "skipped");
     return latest ? pushReplay(latest) : null;
   }
 
   function replayItem(id) {
     const source = findItem(id);
-    if (!source || !source.speakableText) {
+    if (!source || source.trashedAt || !source.speakableText) {
       return null;
     }
     return pushReplay(source);
+  }
+
+  function trashItems(ids) {
+    const idSet = new Set((Array.isArray(ids) ? ids : []).filter((id) => typeof id === "string"));
+    return trashMatching((item) => idSet.has(item.id));
+  }
+
+  function trashByProject(projectKey) {
+    return trashMatching((item) => projectKeyForItem(item) === projectKey);
+  }
+
+  function trashBySession(sessionKey) {
+    return trashMatching((item) => sessionKeyForItem(item) === sessionKey);
+  }
+
+  function trashAll() {
+    return trashMatching(() => true);
+  }
+
+  function restoreItems(ids) {
+    const idSet = new Set((Array.isArray(ids) ? ids : []).filter((id) => typeof id === "string"));
+    return restoreMatching((item) => idSet.has(item.id));
+  }
+
+  function restoreByProject(projectKey) {
+    return restoreMatching((item) => projectKeyForItem(item) === projectKey);
+  }
+
+  function restoreBySession(sessionKey) {
+    return restoreMatching((item) => sessionKeyForItem(item) === sessionKey);
+  }
+
+  function restoreAll() {
+    return restoreMatching(() => true);
   }
 
   function clearQueue() {
@@ -298,6 +376,14 @@ function createSpeechQueueStore(options = {}) {
     markSkipped,
     replayLatest,
     replayItem,
+    trashItems,
+    trashByProject,
+    trashBySession,
+    trashAll,
+    restoreItems,
+    restoreByProject,
+    restoreBySession,
+    restoreAll,
     clearQueue,
     getState
   };
@@ -313,7 +399,8 @@ function isValidPersistedItem(item) {
     STATUSES.has(item.status) &&
     item.timestamps &&
     typeof item.timestamps.createdAt === "string" &&
-    typeof item.timestamps.updatedAt === "string"
+    typeof item.timestamps.updatedAt === "string" &&
+    (!("trashedAt" in item) || typeof item.trashedAt === "string")
   );
 }
 
