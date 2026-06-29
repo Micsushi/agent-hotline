@@ -8,14 +8,13 @@ const {
   TTS_ENGINES,
   createSettingsStore
 } = require("./settings-store");
-const { createSpeechQueueStore } = require("./speech-queue-store");
+const { createSpeechQueueStore, defaultDataDir } = require("./speech-queue-store");
 const { createSpoolStore } = require("./spool-store");
 const { createAudioCacheStore } = require("./audio-cache-store");
 
 const PORT = Number(process.env.AGENT_HOTLINE_PORT || process.env.VOICE_QUESTION_LOOP_PORT || 4777);
 const HOST = "127.0.0.1";
-const ROOT = path.resolve(__dirname, "..");
-const DATA_DIR = process.env.AGENT_HOTLINE_DATA_DIR || path.join(ROOT, "data");
+const DATA_DIR = process.env.AGENT_HOTLINE_DATA_DIR || defaultDataDir();
 const QUESTIONS_FILE = process.env.QUESTION_FILE || path.join(DATA_DIR, "questions.json");
 const REQUEST_LIMIT_BYTES = 1_000_000;
 const AUDIO_BODY_LIMIT_BYTES = 96 * 1024 * 1024;
@@ -1029,6 +1028,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  DATA_DIR,
   HOST,
   PORT,
   createServer,

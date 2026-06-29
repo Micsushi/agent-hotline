@@ -22,7 +22,7 @@ const BACKEND_BIN: &str = "agent-hotline-backend.exe";
 #[cfg(not(target_os = "windows"))]
 const BACKEND_BIN: &str = "agent-hotline-backend";
 
-fn spawn_backend(data_dir: Option<&Path>) -> Option<Child> {
+fn spawn_backend() -> Option<Child> {
     // Debug builds run the backend source with the system Node (dev layout).
     // Release builds run the bundled self-contained backend next to the app exe,
     // so no Node install is required. If a backend is already running, ours hits
@@ -36,12 +36,6 @@ fn spawn_backend(data_dir: Option<&Path>) -> Option<Child> {
         let sidecar = std::env::current_exe().ok()?.parent()?.join(BACKEND_BIN);
         Command::new(sidecar)
     };
-
-    // Keep app data (queue, settings, audio cache) in a writable per-user dir
-    // instead of next to the installed binary.
-    if let Some(dir) = data_dir {
-        command.env("AGENT_HOTLINE_DATA_DIR", dir);
-    }
 
     command.spawn().ok()
 }
@@ -295,8 +289,7 @@ fn main() {
         )
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            let data_dir = app.path().app_data_dir().ok();
-            if let Some(child) = spawn_backend(data_dir.as_deref()) {
+            if let Some(child) = spawn_backend() {
                 app.manage(BackendProcess(Mutex::new(Some(child))));
             }
             setup_tray(app)?;

@@ -37,15 +37,38 @@ test("launchBackend starts the server as a detached background process", () => {
   assert.equal(calls[0].options.env.AGENT_HOTLINE_PORT, "4888");
 });
 
-test("CLI exposes run command", async () => {
-  const calls = [];
+test("CLI run starts backend and opens the browser panel", async () => {
+  const launchCalls = [];
+  const openCalls = [];
   const code = await cliMain(["run", "--port", "4999"], {
     launchBackend(options) {
-      calls.push(options);
+      launchCalls.push(options);
       return { pid: 12345, port: "4999", url: "http://127.0.0.1:4999" };
+    },
+    openUrl(url) {
+      openCalls.push(url);
     }
   });
 
   assert.equal(code, 0);
-  assert.deepEqual(calls, [{ port: "4999" }]);
+  assert.deepEqual(launchCalls, [{ port: "4999" }]);
+  assert.deepEqual(openCalls, ["http://127.0.0.1:4999"]);
+});
+
+test("CLI run supports backend-only mode", async () => {
+  const launchCalls = [];
+  const openCalls = [];
+  const code = await cliMain(["run", "--port", "4999", "--no-open"], {
+    launchBackend(options) {
+      launchCalls.push(options);
+      return { pid: 12345, port: "4999", url: "http://127.0.0.1:4999" };
+    },
+    openUrl(url) {
+      openCalls.push(url);
+    }
+  });
+
+  assert.equal(code, 0);
+  assert.deepEqual(launchCalls, [{ port: "4999" }]);
+  assert.deepEqual(openCalls, []);
 });

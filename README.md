@@ -2,7 +2,7 @@
 
 Agent Hotline is a local Windows tray app that reads useful parts of Codex, Claude Code, and Antigravity replies aloud.
 
-You keep using your coding tool like normal. Agent Hotline listens for finished responses through local hooks, skips code-heavy bits, and reads the useful prose through the desktop WebView. The full reply stays in the original chat.
+You keep using your coding tool like normal. Agent Hotline listens for finished responses through local hooks, skips code-heavy bits, and reads the useful prose through the browser or desktop UI. The full reply stays in the original chat.
 
 ## What It Does
 
@@ -15,40 +15,57 @@ You keep using your coding tool like normal. Agent Hotline listens for finished 
 
 ## Status
 
-Good enough for local development use.
+Usable from npm or the Windows desktop installer.
 
 Still missing:
 
-- A normal packaged installer.
-- A bundled backend sidecar for production installs.
 - Voice input owned by Agent Hotline.
 
 ## Requirements
 
 - Windows 10 or 11.
-- Node.js 22 or newer.
-- For terminal install only: no repo clone is needed.
+- Node.js 22 or newer for the npm/npx commands.
+- No repo clone is needed for normal install.
 - For desktop app development: Rust plus the usual Tauri Windows prerequisites.
 
 ## Install
 
-### Terminal install from npm
+### Recommended: desktop app plus hook setup
 
-Use this on a normal machine that should not clone this repo:
+1. Download and run the latest Windows installer:
+
+```text
+https://github.com/Micsushi/agent-hotline/releases/latest
+```
+
+2. Install the hooks and spoken instructions:
 
 ```powershell
 npx --yes @micsushi/agent-hotline install --harness all --skill all
 ```
 
-That one command downloads the Agent Hotline npm package and installs both parts:
+3. Restart Codex, Claude Code, or Antigravity so it reloads its hook files.
+
+After that, open Agent Hotline from the Start Menu. The desktop app starts its own bundled backend and opens the panel. No separate `ah run` command is needed for the desktop installer.
+
+### Terminal install from npm
+
+Use this when you want the browser control panel instead of the native tray app:
+
+```powershell
+npx --yes @micsushi/agent-hotline install --harness all --skill all
+npx --yes @micsushi/agent-hotline run
+```
+
+The install command downloads the Agent Hotline npm package and installs both parts:
 
 - the hook/tool command used by Codex, Claude Code, and Antigravity
 - the spoken-output skill or managed instructions
 
-Start the local backend:
+The run command starts the backend and opens the browser control panel:
 
-```powershell
-npx --yes @micsushi/agent-hotline run
+```text
+http://127.0.0.1:4777
 ```
 
 For one repo only:
@@ -65,12 +82,20 @@ agent-hotline install --harness all --skill all
 agent-hotline run
 ```
 
+If `ah` or `agent-hotline` is not found after a global install, run:
+
+```powershell
+npx --yes @micsushi/agent-hotline doctor
+npx --yes @micsushi/agent-hotline doctor --fix-path
+```
+
 Useful separate commands:
 
 ```powershell
 npx --yes @micsushi/agent-hotline install-hooks --harness all
 npx --yes @micsushi/agent-hotline install-skill --target all
 npx --yes @micsushi/agent-hotline hook
+npx --yes @micsushi/agent-hotline run --no-open
 ```
 
 ### Local checkout install
@@ -90,9 +115,9 @@ npm run install:tts
 
 ## What Gets Installed
 
-The npm package includes the CLI/backend hook tool and the spoken skill/instructions. Users do not download those separately.
+The npm package includes the CLI/backend hook tool, the browser control panel, and the spoken skill/instructions. Users do not download those separately.
 
-The polished desktop installer is not finished yet. Until then, the desktop control panel is run from a local checkout.
+The GitHub release includes the Windows desktop installer for the native tray/WebView app and a bundled backend. The installer does not yet write Codex, Claude Code, or Antigravity hook files, so run the npm setup command once after installing the desktop app.
 
 ## Run Locally
 
@@ -106,6 +131,18 @@ From `npx`, start the backend:
 
 ```powershell
 npx --yes @micsushi/agent-hotline run
+```
+
+This also opens the browser control panel:
+
+```text
+http://127.0.0.1:4777
+```
+
+To start only the backend:
+
+```powershell
+npx --yes @micsushi/agent-hotline run --no-open
 ```
 
 From a local checkout, run it in the foreground while developing:
@@ -141,6 +178,47 @@ From a local checkout, test the local hook:
 ```
 
 The sentence should show up in the Agent Hotline queue. If the backend is not running, the hook exits quietly.
+
+## Troubleshooting
+
+### The desktop app says Backend unavailable
+
+Install the latest GitHub release. The current desktop app starts its bundled backend automatically. If you are using the npm/browser version instead, run:
+
+```powershell
+npx --yes @micsushi/agent-hotline run
+```
+
+### I ran ah run but no tray icon appeared
+
+`ah run` starts the npm/browser version. It opens `http://127.0.0.1:4777` and does not start the native tray app. For the tray app, install and launch the GitHub `.exe`.
+
+### ah is not recognized
+
+Use `npx` directly, or install globally:
+
+```powershell
+npm install -g @micsushi/agent-hotline
+npx --yes @micsushi/agent-hotline doctor
+```
+
+If npm's global command folder is missing from PATH on Windows:
+
+```powershell
+npx --yes @micsushi/agent-hotline doctor --fix-path
+```
+
+Restart the terminal after changing PATH.
+
+### Agent replies are not spoken
+
+Make sure the hook and spoken instructions are installed, then restart the coding tool:
+
+```powershell
+npx --yes @micsushi/agent-hotline install --harness all --skill all
+```
+
+Then say `hotline on` or `read aloud on` in Codex, Claude Code, or Antigravity.
 
 ## Checks
 

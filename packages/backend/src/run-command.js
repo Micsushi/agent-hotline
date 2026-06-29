@@ -34,7 +34,38 @@ function launchBackend(options = {}) {
   };
 }
 
+function openUrl(url, options = {}) {
+  const spawnImpl = options.spawn || spawn;
+  const platform = options.platform || process.platform;
+  let command;
+  let args;
+
+  if (platform === "win32") {
+    command = "cmd";
+    args = ["/c", "start", "", url];
+  } else if (platform === "darwin") {
+    command = "open";
+    args = [url];
+  } else {
+    command = "xdg-open";
+    args = [url];
+  }
+
+  const child = spawnImpl(command, args, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true
+  });
+
+  if (typeof child.unref === "function") {
+    child.unref();
+  }
+
+  return { command, args };
+}
+
 module.exports = {
   backendServerPath,
-  launchBackend
+  launchBackend,
+  openUrl
 };

@@ -4,7 +4,8 @@ const os = require("os");
 const path = require("path");
 const test = require("node:test");
 
-const { createServer, HOST } = require("../src/server");
+const { createServer, DATA_DIR, HOST } = require("../src/server");
+const { defaultDataDir } = require("../src/speech-queue-store");
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "agent-hotline-api-"));
@@ -21,6 +22,10 @@ function close(server) {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
+
+test("backend defaults to the shared Agent Hotline app data directory", () => {
+  assert.equal(DATA_DIR, process.env.AGENT_HOTLINE_DATA_DIR || defaultDataDir());
+});
 
 async function withServer(callback) {
   const dataDir = tempDir();

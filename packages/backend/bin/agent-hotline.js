@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 const { main: hookMain } = require("../src/hook-command");
+const { createDoctorReport, fixWindowsUserPath, formatDoctorReport } = require("../src/doctor");
 const { installHooks, installSkills, npxHookCommand, parseArgs } = require("../src/installer");
-const { launchBackend } = require("../src/run-command");
+const { launchBackend, openUrl } = require("../src/run-command");
 
 function printHelp() {
   console.log(`Agent Hotline
@@ -10,6 +11,8 @@ function printHelp() {
 Usage:
   agent-hotline run
   agent-hotline hook
+  agent-hotline doctor
+  agent-hotline doctor --fix-path
   agent-hotline install --harness codex --skill codex
   agent-hotline install-hooks --harness all
   agent-hotline install-skill --target all
@@ -24,6 +27,8 @@ Options:
   --home <path>
   --hook-command <command>
   --port <port>       Backend port for "run" (default: 4777)
+  --no-open           Start only the backend; do not open the browser panel
+  --fix-path          With "doctor", add npm global bin to the Windows user PATH
   --use-npx-hook    Write hooks that call "npx --yes @micsushi/agent-hotline hook"
 `);
 }
@@ -65,12 +70,42 @@ async function main(argv = process.argv.slice(2), options = {}) {
   if (command === "run" || command === "start") {
     const args = parseArgs([subcommand, ...rest].filter(Boolean));
     const launcher = options.launchBackend || launchBackend;
+    const opener = options.openUrl || openUrl;
     const result = launcher({ port: args.port });
     console.log(`Agent Hotline backend started in the background on ${result.url}.`);
     if (result.pid) {
       console.log(`Process id: ${result.pid}`);
     }
-    console.log("You can close this terminal; the backend will keep running.");
+    if (!args["no-open"]) {
+      opener(result.url);
+      console.log(`Opening the Agent Hotline browser panel: ${result.url}`);
+    } else {
+      console.log(`Open the Agent Hotline browser panel: ${result.url}`);
+    }
+    console.log("You can close this terminal; Agent Hotline will keep running.");
+    return 0;
+  }
+
+  if (command === "doctor") {
+    const args = parseArgs([subcommand, ...rest].filter(Boolean));
+    const report = createDoctorReport();
+    console.log(formatDoctorReport(report));
+    if (args["fix-path"]) {
+      if (report.platform !== "win32") {
+        console.log("--fix-path is only supported on Windows.");
+      } else if (!report.binDir) {
+        console.log("Could not find npm global bin directory.");
+      } else if (report.onPath) {
+        console.log("npm global bin is already on PATH.");
+      } else {
+        const result = fixWindowsUserPath(report.binDir);
+        console.log(
+          result.ok
+            ? "Added npm global bin to your user PATH. Restart your terminal."
+            : `Could not update PATH: ${result.error || "unknown error"}`
+        );
+      }
+    }
     return 0;
   }
 
