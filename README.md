@@ -11,6 +11,7 @@ You keep using your coding tool like normal. Agent Hotline listens for finished 
 - Lets you save replies or auto-play them when idle.
 - Gives you read, pause, resume, stop, replay, mute, and unmute controls.
 - Stores settings under `%APPDATA%\Agent Hotline\`.
+- Uses local Kokoro speech by default, with system voice as the fallback.
 - Does not need model API keys or paid speech APIs for read-aloud.
 
 ## Status

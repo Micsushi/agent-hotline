@@ -347,7 +347,7 @@ function registerAgentHotlineTools(server, { queueStore, settingsStore, audioCac
       inputSchema: {
         readBehavior: z.enum(["manual", "auto"]).optional(),
         mute: z.boolean().optional(),
-        engine: z.enum(["webview", "kokoro", "kokoro-ts"]).optional(),
+        engine: z.enum(["webview", "kokoro"]).optional(),
         voice: z.string().optional(),
         audioOutputDeviceId: z.string().optional(),
         kokoroVoice: z.string().optional(),

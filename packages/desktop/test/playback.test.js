@@ -79,7 +79,7 @@ function withTimeout(promise, ms, message) {
 }
 
 function installAudioWindow() {
-  const { synth } = installWindow();
+  const { synth, spoken } = installWindow();
   const sources = [];
 
   class FakeAudioBuffer {
@@ -151,7 +151,7 @@ function installAudioWindow() {
   }
 
   globalThis.window.AudioContext = FakeAudioContext;
-  return { synth, sources };
+  return { synth, sources, spoken };
 }
 
 test("playback skips code-heavy speakable text before browser speech starts", async () => {
@@ -411,6 +411,63 @@ test("kokoro cache miss starts playback after the first generated chunk", async 
   assert.deepEqual(
     calls.map((call) => new URL(call.url).pathname).filter((path) => path.endsWith("/played")),
     ["/api/queue/stream-1/played"]
+  );
+});
+
+test("kokoro generation failure falls back to browser speech", async () => {
+  const { spoken } = installAudioWindow();
+  const updates = [];
+  const calls = installFetch(async (url) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/queue/fallback-1/playing") {
+      return {
+        status: 200,
+        body: {
+          item: {
+            id: "fallback-1",
+            sourceApp: "Codex",
+            speakableText: "This should still be spoken."
+          }
+        }
+      };
+    }
+    if (path === "/api/queue/fallback-1/audio") {
+      return { status: 200, body: { cached: false } };
+    }
+    if (path === "/api/queue/fallback-1/skipped") {
+      assert.fail("Kokoro failure should fall back instead of skipping");
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+
+  const controller = createPlaybackController({
+    backendUrl: "http://127.0.0.1:4777",
+    onUpdate: (message) => updates.push(message),
+    kokoroGetChunks: () => ["This should still be spoken."],
+    kokoroGenerateChunk: async () => {
+      throw new Error("model load failed");
+    }
+  });
+
+  await controller.playItem(
+    {
+      id: "fallback-1",
+      sourceApp: "Codex",
+      speakableText: "This should still be spoken."
+    },
+    { mute: false, engine: "kokoro", rate: 1, volume: 1 }
+  );
+
+  assert.equal(spoken.length, 1);
+  assert.equal(spoken[0].text, "This should still be spoken.");
+  assert.match(updates.join("\n"), /Falling back to system voice/);
+  assert.deepEqual(
+    calls.map((call) => new URL(call.url).pathname),
+    [
+      "/api/queue/fallback-1/playing",
+      "/api/queue/fallback-1/audio",
+      "/api/queue/fallback-1/playing"
+    ]
   );
 });
 

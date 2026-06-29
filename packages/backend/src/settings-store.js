@@ -5,7 +5,7 @@ const path = require("path");
 const APP_NAME = "Agent Hotline";
 const SETTINGS_FILE = "settings.json";
 const READ_BEHAVIORS = new Set(["manual", "auto"]);
-const TTS_ENGINES = new Set(["webview", "kokoro", "kokoro-ts"]);
+const TTS_ENGINES = new Set(["webview", "kokoro"]);
 const NOTIFICATION_OPENS = new Set(["full", "mini"]);
 const AUDIO_CACHE_LIMIT_MAX_MB = 100000;
 const DEFAULT_RATE = 0.9;
@@ -13,7 +13,7 @@ const DEFAULT_RATE = 0.9;
 const DEFAULT_SETTINGS = Object.freeze({
   readBehavior: "manual",
   mute: false,
-  engine: "webview",
+  engine: "kokoro",
   voice: "",
   audioOutputDeviceId: "",
   kokoroVoice: "af_heart",

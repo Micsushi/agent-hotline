@@ -477,8 +477,7 @@ export function createPlaybackController({
       releaseActiveAudio();
       setPlaybackState("idle");
       const reason = `Local Kokoro speech failed: ${error.message}`;
-      await markSkipped(stream.playingItem, reason);
-      notify(`${reason} The speakable preview remains visible.`);
+      await fallbackToBrowserSpeech(stream.playingItem, stream.fallbackSettings, reason);
       return;
     }
 
@@ -503,12 +502,14 @@ export function createPlaybackController({
     voice,
     genSpeed,
     useCache,
-    leadInSec
+    leadInSec,
+    fallbackSettings
   }) {
     const stream = {
       token,
       target,
       playingItem,
+      fallbackSettings,
       chunks,
       cancelled: false,
       buffers: [],
@@ -694,6 +695,11 @@ export function createPlaybackController({
     return { engine, voice, rawGenerate };
   }
 
+  async function fallbackToBrowserSpeech(item, settings, reason) {
+    notify(`${reason} Falling back to system voice.`);
+    await speakItem(item, { ...settings, engine: "webview" });
+  }
+
   async function speakWithKokoro(item, settings) {
     const token = playbackToken + 1;
     playbackToken = token;
@@ -705,8 +711,7 @@ export function createPlaybackController({
     const context = getAudioContext();
     if (!context) {
       const reason = "This WebView does not expose Web Audio, so Kokoro cannot play.";
-      await markSkipped(item, reason);
-      notify(reason);
+      await fallbackToBrowserSpeech(item, settings, reason);
       return;
     }
     await applyOutputDevice(settings);
@@ -747,8 +752,7 @@ export function createPlaybackController({
       activeItem = null;
       setPlaybackState("idle");
       const reason = `Local Kokoro speech failed: ${error.message}`;
-      await markSkipped(playingItem, reason);
-      notify(`${reason} The speakable preview remains visible.`);
+      await fallbackToBrowserSpeech(playingItem, settings, reason);
       return;
     }
     const useStretch = canStretch && Math.abs(stretchRate - 1) > 0.001;
@@ -778,7 +782,8 @@ export function createPlaybackController({
           voice,
           genSpeed,
           useCache: genSpeed === 1,
-          leadInSec
+          leadInSec,
+          fallbackSettings: settings
         });
         activeStream = stream;
         activeItem = playingItem;
@@ -802,8 +807,7 @@ export function createPlaybackController({
       activeItem = null;
       setPlaybackState("idle");
       const reason = `Local Kokoro audio playback failed: ${error.message}`;
-      await markSkipped(playingItem, reason);
-      notify(`${reason} The speakable preview remains visible.`);
+      await fallbackToBrowserSpeech(playingItem, settings, reason);
     }
   }
 

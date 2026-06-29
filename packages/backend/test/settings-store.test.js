@@ -46,7 +46,7 @@ test("settings persist after edit and reload", () => {
   assert.deepEqual(restartedStore.load(), {
     readBehavior: "auto",
     mute: true,
-    engine: "webview",
+    engine: "kokoro",
     voice: "Test Voice",
     audioOutputDeviceId: "",
     kokoroVoice: "af_heart",
@@ -119,6 +119,21 @@ test("legacy default rate snaps to slider step", () => {
   );
 
   assert.equal(loadSettings({ dataDir }).rate, 0.9);
+});
+
+test("legacy kokoro-ts engine falls back to kokoro", () => {
+  const dataDir = tempDir();
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dataDir, "settings.json"),
+    JSON.stringify({
+      ...DEFAULT_SETTINGS,
+      engine: "kokoro-ts"
+    }),
+    "utf8"
+  );
+
+  assert.equal(loadSettings({ dataDir }).engine, "kokoro");
 });
 
 test("invalid settings file falls back safely", () => {

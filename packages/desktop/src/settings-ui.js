@@ -1,10 +1,9 @@
 import { getKokoroVoices } from "./tts-kokoro.js";
-import { getKokoroTimestampedVoices } from "./tts-kokoro-timestamped.js";
 
 const READ_BEHAVIORS = new Set(["manual", "auto"]);
-const TTS_ENGINES = new Set(["webview", "kokoro", "kokoro-ts"]);
+const TTS_ENGINES = new Set(["webview", "kokoro"]);
 
-const KOKORO_ENGINES = new Set(["kokoro", "kokoro-ts"]);
+const KOKORO_ENGINES = new Set(["kokoro"]);
 const SKIP_RULES = ["codeBlocks", "diffs", "logs", "tables", "json", "longBulletLists"];
 
 const KOKORO_VOICES = [
@@ -27,7 +26,7 @@ const DEFAULT_RATE = 0.9;
 const DEFAULT_SETTINGS = {
   readBehavior: "manual",
   mute: false,
-  engine: "webview",
+  engine: "kokoro",
   voice: "",
   audioOutputDeviceId: "",
   kokoroVoice: "af_heart",
@@ -170,13 +169,8 @@ function setSelectOptions(select, settings) {
 
 function setKokoroVoiceOptions(select, settings) {
   const current = settings.kokoroVoice || "af_heart";
-  let values;
-  if (settings.engine === "kokoro-ts") {
-    values = getKokoroTimestampedVoices();
-  } else {
-    const loaded = getKokoroVoices();
-    values = loaded.length > 0 ? loaded : KOKORO_VOICES;
-  }
+  const loaded = getKokoroVoices();
+  const values = loaded.length > 0 ? loaded : KOKORO_VOICES;
   const all = [...new Set([...values, current])];
 
   select.replaceChildren(
