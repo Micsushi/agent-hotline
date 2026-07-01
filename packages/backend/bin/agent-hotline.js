@@ -3,7 +3,7 @@
 const { main: hookMain } = require("../src/hook-command");
 const { createDoctorReport, fixWindowsUserPath, formatDoctorReport } = require("../src/doctor");
 const { installHooks, installSkills, npxHookCommand, parseArgs } = require("../src/installer");
-const { launchBackend, openUrl } = require("../src/run-command");
+const { launchBackend, launchSourceDesktop, openUrl } = require("../src/run-command");
 
 function printHelp() {
   console.log(`Agent Hotline
@@ -27,7 +27,8 @@ Options:
   --home <path>
   --hook-command <command>
   --port <port>       Backend port for "run" (default: 4777)
-  --no-open           Start only the backend; do not open the browser panel
+  --browser           Force the npm/browser panel instead of local desktop dev
+  --no-open           Start only the backend; do not open the browser panel or desktop app
   --fix-path          With "doctor", add npm global bin to the Windows user PATH
   --use-npx-hook    Write hooks that call "npx --yes @micsushi/agent-hotline hook"
 `);
@@ -70,7 +71,22 @@ async function main(argv = process.argv.slice(2), options = {}) {
   if (command === "run" || command === "start") {
     const args = parseArgs([subcommand, ...rest].filter(Boolean));
     const launcher = options.launchBackend || launchBackend;
+    const desktopLauncher = options.launchSourceDesktop || launchSourceDesktop;
     const opener = options.openUrl || openUrl;
+
+    if (!args["no-open"] && !args.browser) {
+      const desktop = desktopLauncher({ port: args.port });
+      if (desktop) {
+        console.log(`Agent Hotline desktop app started from the local source checkout.`);
+        console.log(`Backend URL: ${desktop.url}`);
+        if (desktop.pid) {
+          console.log(`Process id: ${desktop.pid}`);
+        }
+        console.log("You can close this terminal; Agent Hotline will keep running.");
+        return 0;
+      }
+    }
+
     const result = launcher({ port: args.port });
     console.log(`Agent Hotline backend started in the background on ${result.url}.`);
     if (result.pid) {

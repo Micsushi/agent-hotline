@@ -258,6 +258,20 @@ test("installSkills installs Antigravity skill and managed global instructions",
   assert.match(readText(path.join(home, ".codex", "AGENTS.md")), /AGENT_HOTLINE_SPOKEN_START/);
 });
 
+test("managed instruction block makes Spoken primary and Displayed optional", () => {
+  const text = managedInstructionBlock();
+
+  assert.match(text, /every response must include Spoken/);
+  assert.match(text, /Displayed is optional/);
+  assert.match(text, /smallest useful spoken answer/);
+  assert.match(text, /must stand on its own for a listener/);
+  assert.match(text, /Do not restate the spoken answer in full/);
+  assert.match(text, /one conversational chunk/);
+  assert.match(text, /multi-screen Displayed dump/);
+  assert.doesNotMatch(text, /2 to 6 short sentences/);
+  assert.doesNotMatch(text, /full normal answer/);
+});
+
 test("managed instruction block is idempotent", () => {
   const dir = tempDir();
   const file = path.join(dir, "AGENTS.md");

@@ -12,6 +12,8 @@ Start or restart the full local app from the repo root:
 npm run dev
 ```
 
+Direct workspace dev commands are intentionally blocked. The root lifecycle owns the backend, Vite, and Tauri app together.
+
 Backend URL:
 
 ```text

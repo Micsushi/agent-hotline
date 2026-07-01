@@ -148,6 +148,22 @@ function testAuthoredSpokenSectionIsNotTruncated() {
   assert.equal(result.text.includes("const x"), false);
 }
 
+function testSpokenSectionDoesNotRequireDisplayedSection() {
+  const input = [
+    "Spoken:",
+    "Yes, Hotline mode is on. The current reply can stand alone without a displayed section."
+  ].join("\n");
+
+  const result = filterSpeakableText(input);
+
+  assert.equal(result.reason, "spoken_section");
+  assert.equal(result.source, "spoken");
+  assert.equal(
+    result.text,
+    "Yes, Hotline mode is on. The current reply can stand alone without a displayed section."
+  );
+}
+
 function testMarkdownHeadingsAndMarkupAreStripped() {
   const msg = [
     "**Spoken:**",
@@ -180,7 +196,8 @@ const tests = [
   testCodeHeavyOutputIsSkipped,
   testLongBulletListIsSkipped,
   testSpeakableTextGetsConversationStyle,
-  testStyleSpokenTextHandlesFormalPhrasing
+  testStyleSpokenTextHandlesFormalPhrasing,
+  testSpokenSectionDoesNotRequireDisplayedSection
 ];
 
 for (const test of tests) {

@@ -12,6 +12,10 @@ Background mode:
 ah run
 ```
 
+In a local source checkout, this opens the full Tauri desktop app. From the
+published npm package, it starts the backend and opens the browser panel. Use
+`ah run --browser` to force the browser panel from a source checkout.
+
 Dev mode:
 
 ```powershell

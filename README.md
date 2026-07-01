@@ -96,6 +96,7 @@ Useful separate commands:
 npx --yes @micsushi/agent-hotline install-hooks --harness all
 npx --yes @micsushi/agent-hotline install-skill --target all
 npx --yes @micsushi/agent-hotline hook
+npx --yes @micsushi/agent-hotline run --browser
 npx --yes @micsushi/agent-hotline run --no-open
 ```
 
@@ -122,7 +123,7 @@ The GitHub release includes the Windows desktop installer for the native tray/We
 
 ## Run Locally
 
-From a global install, start the backend:
+From a global install, start the backend and browser panel:
 
 ```powershell
 ah run
@@ -140,13 +141,23 @@ This also opens the browser control panel:
 http://127.0.0.1:4777
 ```
 
+From a local source checkout, `ah run` starts the full local desktop app instead
+of the browser panel. It uses the repo's Tauri dev lifecycle, so local code
+changes show up without reinstalling the desktop app.
+
+To force the browser panel from a local checkout:
+
+```powershell
+ah run --browser
+```
+
 To start only the backend:
 
 ```powershell
 npx --yes @micsushi/agent-hotline run --no-open
 ```
 
-From a local checkout, start or restart the full local app while developing:
+From a local checkout, you can also start or restart the full local app while developing:
 
 ```powershell
 npm run dev
@@ -192,7 +203,7 @@ npx --yes @micsushi/agent-hotline run
 
 ### I ran ah run but no tray icon appeared
 
-`ah run` starts the npm/browser version. It opens `http://127.0.0.1:4777` and does not start the native tray app. For the tray app, install and launch the GitHub `.exe`.
+If `ah run` comes from the npm package, it starts the npm/browser version and opens `http://127.0.0.1:4777`. If `ah run` comes from this source checkout, it starts the local Tauri desktop app. Run `where ah` to check which command Windows is using.
 
 ### ah is not recognized
 

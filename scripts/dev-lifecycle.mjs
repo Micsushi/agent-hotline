@@ -90,8 +90,12 @@ function startDesktopDev() {
       : ["--workspace", "@agent-hotline/desktop", "run", "dev"];
   const child = spawn(command, args, {
     cwd: ROOT,
-    env: process.env,
-    stdio: "inherit"
+    env: {
+      ...process.env,
+      AGENT_HOTLINE_LIFECYCLE: "1"
+    },
+    stdio: "inherit",
+    windowsHide: true
   });
 
   child.on("exit", (code, signal) => {

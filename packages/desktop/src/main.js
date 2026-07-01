@@ -43,6 +43,7 @@ const QUEUE_POLL_INTERVAL_MS = 1000;
 const AUTO_READ_STORAGE_KEY = "agent-hotline.auto-read-attempted";
 const PREGEN_STORAGE_KEY = "agent-hotline.pregen-seen";
 const ORDERING_STORAGE_KEY = "agent-hotline.ordering";
+const STARTUP_SETTINGS_STORAGE_KEY = "agent-hotline.startup-settings";
 const COPY_TOAST_DURATION_MS = 500;
 const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>';
 const ICON_SPINNER = '<span class="spinner" aria-hidden="true"></span>';
@@ -170,8 +171,6 @@ let searchTimeFilter = "any";
 let searchSortMode = "newest";
 let searchHighlightItemId = null;
 let searchHighlightPrompt = null;
-let projectDragMode = false;
-let sessionDragModeProjectKey = null;
 let projectSelectMode = false;
 let selectedProjectKeys = new Set();
 let sessionSelectMode = false;
@@ -461,16 +460,47 @@ function manualIndex(order, key) {
   return index === -1 ? Number.POSITIVE_INFINITY : index;
 }
 
-function compareOrderedGroups(a, b, { pinnedKeys, order, sort }) {
-  const aPinned = pinnedKeys.has(a.key);
-  const bPinned = pinnedKeys.has(b.key);
-  if (aPinned !== bPinned) return aPinned ? -1 : 1;
+function compareOrderedGroups(a, b, { order, sort }) {
   const aIndex = manualIndex(order, a.key);
   const bIndex = manualIndex(order, b.key);
-  const useManual = aPinned || bPinned || sort === "manual";
-  if (useManual && aIndex !== bIndex) return aIndex - bIndex;
+  if (sort === "manual" && aIndex !== bIndex) return aIndex - bIndex;
   if (sort === "name") return sortByName(a, b);
   return sortByRecent(a, b);
+}
+
+function orderGroupsWithPinnedSlots(groups, { pinnedKeys, order, sort }) {
+  const sortedUnpinned = groups
+    .filter((group) => !pinnedKeys.has(group.key))
+    .sort((a, b) => compareOrderedGroups(a, b, { order, sort }));
+  const result = new Array(groups.length).fill(null);
+  const groupByKey = new Map(groups.map((group) => [group.key, group]));
+  const placedPinned = new Set();
+
+  const placePinned = (key, preferredIndex) => {
+    const group = groupByKey.get(key);
+    if (!group || !pinnedKeys.has(key) || placedPinned.has(key)) return;
+    let index = Math.min(Math.max(preferredIndex, 0), result.length - 1);
+    while (index < result.length && result[index]) index += 1;
+    if (index >= result.length) {
+      index = result.length - 1;
+      while (index >= 0 && result[index]) index -= 1;
+    }
+    if (index < 0) return;
+    result[index] = group;
+    placedPinned.add(key);
+  };
+
+  order.forEach((key, index) => placePinned(key, index));
+  groups.forEach((group, index) => placePinned(group.key, index));
+
+  let unpinnedIndex = 0;
+  for (let index = 0; index < result.length; index += 1) {
+    if (!result[index]) {
+      result[index] = sortedUnpinned[unpinnedIndex];
+      unpinnedIndex += 1;
+    }
+  }
+  return result.filter(Boolean);
 }
 
 function sessionSortForProject(projectKey) {
@@ -481,22 +511,20 @@ function orderedSessions(project) {
   const pinnedKeys = new Set(orderingPrefs.pinnedSessionsByProject[project.key] || []);
   const order = orderingPrefs.sessionOrderByProject[project.key] || [];
   const sort = sessionSortForProject(project.key);
-  return [...project.sessions].sort((a, b) =>
-    compareOrderedGroups(a, b, { pinnedKeys, order, sort })
-  );
+  return orderGroupsWithPinnedSlots(project.sessions, { pinnedKeys, order, sort });
 }
 
 function applyOrdering(projects) {
   const pinnedKeys = new Set(orderingPrefs.pinnedProjects);
-  return projects
-    .map((project) => ({ ...project, sessions: orderedSessions(project) }))
-    .sort((a, b) =>
-      compareOrderedGroups(a, b, {
-        pinnedKeys,
-        order: orderingPrefs.projectOrder,
-        sort: orderingPrefs.projectSort
-      })
-    );
+  const orderedProjects = projects.map((project) => ({
+    ...project,
+    sessions: orderedSessions(project)
+  }));
+  return orderGroupsWithPinnedSlots(orderedProjects, {
+    pinnedKeys,
+    order: orderingPrefs.projectOrder,
+    sort: orderingPrefs.projectSort
+  });
 }
 
 function schedulePregen(settings, items) {
@@ -727,6 +755,38 @@ const STARTUP_MIN_MS = 2100;
 const STARTUP_SPLASH_MAX_MS = 9000;
 const STARTUP_AUDIO_SURFACE_WAIT_MS = 1500;
 let startupJingleAudio = null;
+let startupJinglePlayStarted = false;
+let startupJingleFallbackArmed = false;
+
+function startupSettingsHint(settings) {
+  const source = settings && typeof settings === "object" ? settings : {};
+  return {
+    startupJingle: typeof source.startupJingle === "boolean" ? source.startupJingle : true,
+    mute: source.mute === true,
+    volume: Number.isFinite(source.volume) ? Math.min(1, Math.max(0, source.volume)) : 1,
+    audioOutputDeviceId:
+      typeof source.audioOutputDeviceId === "string" ? source.audioOutputDeviceId : ""
+  };
+}
+
+function loadStartupSettingsHint() {
+  try {
+    return startupSettingsHint(
+      JSON.parse(window.localStorage.getItem(STARTUP_SETTINGS_STORAGE_KEY) || "{}")
+    );
+  } catch {
+    return startupSettingsHint();
+  }
+}
+
+function cacheStartupSettingsHint(settings) {
+  try {
+    window.localStorage.setItem(
+      STARTUP_SETTINGS_STORAGE_KEY,
+      JSON.stringify(startupSettingsHint(settings))
+    );
+  } catch {}
+}
 
 function revealAppShell() {
   document.querySelector(".app-shell")?.removeAttribute("hidden");
@@ -778,7 +838,23 @@ async function applyStartupAudioSettings(audio, settings) {
   }
 }
 
+function ensureStartupJingleAudio() {
+  if (!startupJingleAudio) {
+    startupJingleAudio = new Audio("/hotline-bling.mp3");
+    startupJingleAudio.preload = "auto";
+  }
+  return startupJingleAudio;
+}
+
+function stopStartupJingle() {
+  if (!startupJingleAudio) return;
+  startupJingleAudio.pause();
+  startupJingleAudio.currentTime = 0;
+}
+
 function armStartupJingleFallback() {
+  if (startupJingleFallbackArmed) return;
+  startupJingleFallbackArmed = true;
   const playOnce = () => {
     window.removeEventListener("pointerdown", playOnce);
     window.removeEventListener("keydown", playOnce);
@@ -788,23 +864,36 @@ function armStartupJingleFallback() {
   window.addEventListener("keydown", playOnce, { once: true });
 }
 
-async function playStartupJingle(settings) {
-  if (settings.startupJingle === false || settings.mute) return;
-
-  await waitForStartupAudioSurface();
-
-  startupJingleAudio = new Audio("/hotline-bling.mp3");
-  startupJingleAudio.preload = "auto";
-  await applyStartupAudioSettings(startupJingleAudio, settings);
-
+function startStartupJingle(settings = loadStartupSettingsHint()) {
+  const hint = startupSettingsHint(settings);
+  if (hint.startupJingle === false || hint.mute) return;
+  if (startupJinglePlayStarted) return;
+  startupJinglePlayStarted = true;
+  const audio = ensureStartupJingleAudio();
+  audio.volume = hint.volume;
   try {
-    await startupJingleAudio.play();
+    const result = audio.play();
+    if (result?.catch) result.catch(() => armStartupJingleFallback());
   } catch {
     armStartupJingleFallback();
   }
 }
 
+async function finalizeStartupJingle(settings) {
+  cacheStartupSettingsHint(settings);
+  if (settings.startupJingle === false || settings.mute) {
+    stopStartupJingle();
+    return;
+  }
+
+  await waitForStartupAudioSurface();
+  const audio = ensureStartupJingleAudio();
+  await applyStartupAudioSettings(audio, settings);
+  startStartupJingle();
+}
+
 async function runStartupExperience() {
+  startStartupJingle();
   const splash = document.getElementById("startup-splash");
   if (splash) splash.hidden = false;
   const startedAt = Date.now();
@@ -813,6 +902,7 @@ async function runStartupExperience() {
   try {
     const data = await fetchJson(`${targetUrl}/api/settings`);
     settings = data?.settings || {};
+    cacheStartupSettingsHint(settings);
   } catch {}
 
   const keepSplash = Boolean(splash) && settings.startupSplash !== false;
@@ -821,7 +911,7 @@ async function runStartupExperience() {
     splash.remove();
   }
 
-  await playStartupJingle(settings);
+  await finalizeStartupJingle(settings);
 
   await refreshPanel(targetUrl).catch(() => {});
   if (!keepSplash) {
@@ -1377,7 +1467,7 @@ function closeSessionDetails() {
   if (sessionDetailsModal) sessionDetailsModal.hidden = true;
 }
 
-function openSessionMenu(event, project, session) {
+function openSessionMenu(event, project, session, visibleSessionKeys = []) {
   event.preventDefault();
   closeMessageMenu();
   closeSessionMenu();
@@ -1412,9 +1502,13 @@ function openSessionMenu(event, project, session) {
       ? pinned.filter((key) => key !== session.key)
       : moveKeyToFront(pinned, session.key);
     if (!sessionPinned) {
-      orderingPrefs.sessionOrderByProject[project.key] = moveKeyToFront(
-        orderingPrefs.sessionOrderByProject[project.key] || [],
-        session.key
+      orderingPrefs.sessionOrderByProject[project.key] = uniqueOrdered(
+        visibleSessionKeys.length
+          ? visibleSessionKeys
+          : [
+              ...(orderingPrefs.sessionOrderByProject[project.key] || []),
+              ...project.sessions.map((entry) => entry.key)
+            ]
       );
     }
     persistOrderingPrefs();
@@ -1442,7 +1536,7 @@ function openSessionMenu(event, project, session) {
   document.body.append(menu);
 }
 
-function openProjectMenu(event, project) {
+function openProjectMenu(event, project, visibleProjectKeys = []) {
   event.preventDefault();
   closeMessageMenu();
   closeSessionMenu();
@@ -1476,7 +1570,11 @@ function openProjectMenu(event, project) {
       ? orderingPrefs.pinnedProjects.filter((key) => key !== project.key)
       : moveKeyToFront(orderingPrefs.pinnedProjects, project.key);
     if (!projectPinned)
-      orderingPrefs.projectOrder = moveKeyToFront(orderingPrefs.projectOrder, project.key);
+      orderingPrefs.projectOrder = uniqueOrdered(
+        visibleProjectKeys.length
+          ? visibleProjectKeys
+          : [...orderingPrefs.projectOrder, project.key]
+      );
     persistOrderingPrefs();
     renderState(latestState);
   });
@@ -2021,9 +2119,21 @@ function clearReorderIndicators(container) {
   }
 }
 
-function updateReorderIndicator(container, sourceKey, sourcePinned, clientY) {
+function pointerInElement(element, event) {
+  if (!element) return false;
+  const rect = element.getBoundingClientRect();
+  return (
+    event.clientX >= rect.left &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom
+  );
+}
+
+function updateReorderIndicator(container, sourceKey, sourcePinned, event) {
   clearReorderIndicators(container);
-  const target = reorderTargetFromPointer(container, sourceKey, clientY, sourcePinned);
+  if (!pointerInElement(container, event)) return null;
+  const target = reorderTargetFromPointer(container, sourceKey, event.clientY, sourcePinned);
   if (!target) return null;
   const row = [...container.querySelectorAll(".tree-select-row.is-drag-enabled")].find(
     (entry) => entry.dataset.reorderKey === target.key
@@ -2036,44 +2146,82 @@ function setDragRow(row, key, visibleKeys, onOrder, options = {}) {
   row.classList.add("is-drag-enabled");
   row.dataset.reorderKey = key;
   row.dataset.reorderPinned = options.pinned ? "true" : "false";
+  let dragTimer = null;
+  let dragArmed = false;
+  let pointerId = null;
+  let startX = 0;
   let startY = 0;
   let moved = false;
   let target = null;
+  let suppressNextClick = false;
+
+  const clearDragTimer = () => {
+    if (!dragTimer) return;
+    window.clearTimeout(dragTimer);
+    dragTimer = null;
+  };
+
+  const resetDragState = () => {
+    clearDragTimer();
+    dragArmed = false;
+    pointerId = null;
+    row.classList.remove("is-dragging");
+    clearReorderIndicators(row.parentElement);
+  };
 
   row.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
+    pointerId = event.pointerId;
+    startX = event.clientX;
     startY = event.clientY;
     moved = false;
     target = null;
-    row.classList.add("is-dragging");
-    row.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
+    dragTimer = window.setTimeout(() => {
+      if (pointerId !== event.pointerId) return;
+      dragArmed = true;
+      row.setPointerCapture?.(event.pointerId);
+      row.classList.add("is-dragging");
+    }, 1000);
   });
   row.addEventListener("pointermove", (event) => {
-    if (!row.classList.contains("is-dragging")) return;
-    if (Math.abs(event.clientY - startY) > 3) {
-      moved = true;
-      target = updateReorderIndicator(
-        row.parentElement,
-        key,
-        row.dataset.reorderPinned,
-        event.clientY
-      );
-    }
+    if (pointerId !== event.pointerId) return;
+    if (!dragArmed) return;
+    const distance = Math.hypot(event.clientX - startX, event.clientY - startY);
+    if (distance > 3) moved = true;
+    if (!moved) return;
+    event.preventDefault();
+    target = updateReorderIndicator(row.parentElement, key, row.dataset.reorderPinned, event);
   });
   row.addEventListener("pointerup", (event) => {
-    row.releasePointerCapture?.(event.pointerId);
-    row.classList.remove("is-dragging");
-    clearReorderIndicators(row.parentElement);
+    if (pointerId !== event.pointerId) return;
+    const wasDragArmed = dragArmed;
+    if (wasDragArmed) row.releasePointerCapture?.(event.pointerId);
+    resetDragState();
+    if (!wasDragArmed) return;
+    suppressNextClick = true;
+    event.preventDefault();
     if (!moved) return;
-    if (!target) return;
+    if (!target || !pointerInElement(row.parentElement, event)) return;
     const next = reorderedKeys(visibleKeys, key, target.key, target.placeAfter);
     onOrder(next);
   });
   row.addEventListener("pointercancel", (event) => {
-    row.releasePointerCapture?.(event.pointerId);
-    row.classList.remove("is-dragging");
-    clearReorderIndicators(row.parentElement);
+    if (pointerId !== event.pointerId) return;
+    if (dragArmed) row.releasePointerCapture?.(event.pointerId);
+    resetDragState();
+  });
+  row.addEventListener(
+    "click",
+    (event) => {
+      if (!suppressNextClick) return;
+      suppressNextClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    true
+  );
+  row.addEventListener("lostpointercapture", () => {
+    resetDragState();
   });
 }
 
@@ -2108,13 +2256,8 @@ function resetProjectSelection() {
   selectedProjectKeys = new Set();
 }
 
-function resetProjectDragMode() {
-  projectDragMode = false;
-}
-
 function finishProjectManageMode() {
   resetProjectSelection();
-  resetProjectDragMode();
   renderState(latestState);
 }
 
@@ -2126,7 +2269,7 @@ function renderProjectsHeader() {
   if (!projectsTitle) return;
   const title = document.createElement("span");
   title.textContent = "Projects";
-  if (projectSelectMode || projectDragMode) {
+  if (projectSelectMode) {
     const done = document.createElement("button");
     done.type = "button";
     done.className = "text-button head-action";
@@ -2143,7 +2286,6 @@ function renderProjectsHeader() {
           label: "Select items",
           run: () => {
             projectSelectMode = true;
-            projectDragMode = false;
             selectedProjectKeys = new Set();
             renderState(latestState);
           }
@@ -2167,16 +2309,6 @@ function renderProjectsHeader() {
         {
           label: "Manual order",
           run: () => {
-            orderingPrefs.projectSort = "manual";
-            persistOrderingPrefs();
-            renderState(latestState);
-          }
-        },
-        {
-          label: "Enable drag reorder",
-          run: () => {
-            projectDragMode = true;
-            resetProjectSelection();
             orderingPrefs.projectSort = "manual";
             persistOrderingPrefs();
             renderState(latestState);
@@ -2306,7 +2438,6 @@ function renderProjectsList(projects) {
     meta.textContent = `${count} session${count === 1 ? "" : "s"} - ${formatTime(latestCreatedAt(project.items))}`;
     btn.append(titleRow, meta);
     btn.onclick = () => {
-      if (projectDragMode) return;
       if (projectSelectMode) {
         toggleProject();
         return;
@@ -2316,13 +2447,13 @@ function renderProjectsList(projects) {
       historyView.sessionKey = null;
       renderState(latestState);
     };
-    btn.oncontextmenu = (event) => openProjectMenu(event, project);
+    btn.oncontextmenu = (event) => openProjectMenu(event, project, projectKeys);
     if (projectSelectMode) {
       setSelectionRowClick(row, toggleProject);
       row.append(checkbox);
     }
     row.append(btn);
-    if (projectDragMode) {
+    if (!projectSelectMode) {
       setDragRow(
         row,
         project.key,
@@ -2332,7 +2463,6 @@ function renderProjectsList(projects) {
             ...nextOrder,
             ...orderingPrefs.projectOrder.filter((key) => !nextOrder.includes(key))
           ]);
-          orderingPrefs.projectSort = "manual";
           persistOrderingPrefs();
           renderState(latestState);
         },
@@ -2349,13 +2479,8 @@ function resetSessionSelection() {
   selectedSessionKeys = new Set();
 }
 
-function resetSessionDragMode() {
-  sessionDragModeProjectKey = null;
-}
-
 function finishSessionManageMode() {
   resetSessionSelection();
-  resetSessionDragMode();
   renderState(latestState);
 }
 
@@ -2374,9 +2499,7 @@ function renderSessionsHeader(project, projectTitle) {
   if (!projectTitle) return;
   const title = document.createElement("span");
   title.textContent = "Sessions";
-  const managing =
-    (sessionSelectMode && sessionSelectionProjectKey === project.key) ||
-    sessionDragModeProjectKey === project.key;
+  const managing = sessionSelectMode && sessionSelectionProjectKey === project.key;
 
   if (managing) {
     const done = document.createElement("button");
@@ -2395,7 +2518,6 @@ function renderSessionsHeader(project, projectTitle) {
         {
           label: "Select items",
           run: () => {
-            resetSessionDragMode();
             sessionSelectMode = true;
             sessionSelectionProjectKey = project.key;
             selectedSessionKeys = new Set();
@@ -2421,16 +2543,6 @@ function renderSessionsHeader(project, projectTitle) {
         {
           label: "Manual order",
           run: () => {
-            orderingPrefs.sessionSortByProject[project.key] = "manual";
-            persistOrderingPrefs();
-            renderState(latestState);
-          }
-        },
-        {
-          label: "Enable drag reorder",
-          run: () => {
-            resetSessionSelection();
-            sessionDragModeProjectKey = project.key;
             orderingPrefs.sessionSortByProject[project.key] = "manual";
             persistOrderingPrefs();
             renderState(latestState);
@@ -2533,9 +2645,6 @@ function renderSessionsList(project) {
   if (sessionSelectionProjectKey && sessionSelectionProjectKey !== project.key) {
     resetSessionSelection();
   }
-  if (sessionDragModeProjectKey && sessionDragModeProjectKey !== project.key) {
-    resetSessionDragMode();
-  }
   sessionsPane.hidden = false;
   renderSessionsHeader(project, projectTitle);
   sessionsList.replaceChildren();
@@ -2585,19 +2694,18 @@ function renderSessionsList(project) {
     meta.textContent = `${session.items.length} msgs - ${formatTime(latestCreatedAt(session.items))}`;
     btn.append(titleRow, meta);
     btn.onclick = () => {
-      if (sessionDragModeProjectKey === project.key) return;
       if (sessionSelectMode && sessionSelectionProjectKey === project.key) {
         toggleSession();
         return;
       }
       openSession(project, session);
     };
-    btn.oncontextmenu = (event) => openSessionMenu(event, project, session);
+    btn.oncontextmenu = (event) => openSessionMenu(event, project, session, sessionKeys);
     if (sessionSelectMode && sessionSelectionProjectKey === project.key) {
       setSelectionRowClick(row, toggleSession);
     }
     row.append(checkbox, btn);
-    if (sessionDragModeProjectKey === project.key) {
+    if (!sessionSelectMode || sessionSelectionProjectKey !== project.key) {
       setDragRow(
         row,
         session.key,
@@ -2608,7 +2716,6 @@ function renderSessionsList(project) {
             ...nextOrder,
             ...current.filter((key) => !nextOrder.includes(key))
           ]);
-          orderingPrefs.sessionSortByProject[project.key] = "manual";
           persistOrderingPrefs();
           renderState(latestState);
         },
@@ -4199,6 +4306,8 @@ function formatBytes(bytes) {
 
 initColumnResize();
 
+startStartupJingle();
+
 const config = await loadRuntimeConfig();
 const targetUrl = config.backendUrl || DEFAULT_BACKEND_URL;
 backendUrl.textContent = targetUrl;
@@ -4207,6 +4316,7 @@ settingsUi = initSettingsUi({
   backendUrl: targetUrl,
   onLivePreview: (partial) => playback?.applyLiveSettings(partial),
   onSettingsChanged: (settings) => {
+    cacheStartupSettingsHint(settings);
     if (settings?.mute && (playback?.isSpeaking || playback?.isPaused)) {
       playback.stop("User muted playback.").catch(showError);
     } else {
