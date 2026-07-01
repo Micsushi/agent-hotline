@@ -581,6 +581,9 @@ function setView(view) {
   if (viewTrash) viewTrash.hidden = active !== "trash";
   if (viewSettings) viewSettings.hidden = active !== "settings";
   if (latestState) {
+    // Re-render so per-layer unread dots (nav badge, project rows) reflect the
+    // view we just entered/left instead of the previous view's state.
+    renderState(latestState);
     if (active === "search") renderSearch();
     if (active === "notifications") renderNotifications();
     if (active === "trash") renderTrash();
@@ -2292,9 +2295,10 @@ function renderProjectsList(projects) {
       titleRow.append(buildPinnedIcon("Pinned project"));
     }
     titleRow.append(buildNowPlayingIcon());
-    let unread = unreadCount(project.items);
-    const openSession = project.sessions.find((s) => isSessionOpen(s));
-    if (openSession) unread = Math.max(0, unread - unreadCount(openSession.items));
+    // Drilling into a project suppresses its own aggregate dot; the unread
+    // signal moves down to the session rows now on screen.
+    const projectOpen = currentView === "chats" && project.key === historyView.projectKey;
+    const unread = projectOpen ? 0 : unreadCount(project.items);
     if (unread > 0) titleRow.append(unreadDot(unread));
     const count = project.sessions.length;
     const meta = document.createElement("span");
@@ -2988,7 +2992,9 @@ function newItemsSinceLast(items, previousLatestId) {
 function updateChatsUnreadBadge(items) {
   if (!navChats) return;
   navChats.querySelector(".nav-unread")?.remove();
-  const count = unreadCount(items);
+  // Once the chats view is open the projects list carries the dots; drop the
+  // aggregate dot on the nav entry so each layer only shows the layer below.
+  const count = currentView === "chats" ? 0 : unreadCount(items);
   navChats.classList.toggle("has-unread", count > 0);
   navChats.setAttribute("aria-label", count > 0 ? `Chats, ${count} unread` : "Chats");
   if (count === 0) return;
@@ -4021,7 +4027,13 @@ function renderState({ settings, queue }) {
     const newItems = firstLoad ? [] : newItemsSinceLast(items, lastLatestId);
     if (!firstLoad) recordBackgroundArrivals(newItems);
     if (!firstLoad) maybeNotify(latest, settings);
-    if (!firstLoad) {
+    // Suppress the "new message" toast when the arriving item's session is
+    // already open on screen - the message is right there, no nudge needed.
+    const latestSessionOpen =
+      currentView === "chats" &&
+      projectKeyOf(latest) === historyView.projectKey &&
+      sessionKeyOf(latest) === historyView.sessionKey;
+    if (!firstLoad && !latestSessionOpen) {
       const notice = describeQueueArrivalNotice({
         item: latest,
         activeItem,
