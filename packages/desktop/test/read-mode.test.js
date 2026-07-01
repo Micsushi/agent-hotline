@@ -144,7 +144,7 @@ test("seeded startup pending items do not auto-read, but later items can", () =>
   );
 });
 
-test("active playback keeps selection on the playing item when another session arrives", () => {
+test("active playback selects a newly arrived item from another session", () => {
   const activeItem = {
     id: "playing",
     projectKey: "project-a",
@@ -165,11 +165,11 @@ test("active playback keeps selection on the playing item when another session a
       activeItem,
       playbackActive: true
     }),
-    activeItem.id
+    latestItem.id
   );
 });
 
-test("active playback keeps selection on the playing item when same session queues behind it", () => {
+test("active playback selects a newly arrived item from the same session", () => {
   const activeItem = {
     id: "playing",
     projectKey: "project-a",
@@ -190,7 +190,7 @@ test("active playback keeps selection on the playing item when same session queu
       activeItem,
       playbackActive: true
     }),
-    activeItem.id
+    latestItem.id
   );
 });
 

@@ -147,6 +147,31 @@
               <span>Search</span>
             </button>
             <button
+              id="nav-notifications"
+              class="nav-item"
+              type="button"
+              data-view="notifications"
+              role="tab"
+              aria-controls="view-notifications"
+              aria-selected="false"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                <path d="M10 21h4" />
+              </svg>
+              <span>Notifications</span>
+            </button>
+            <button
               id="nav-trash"
               class="nav-item"
               type="button"
@@ -271,6 +296,20 @@
                 </div>
               </div>
               <div id="search-results" class="result-list"><!-- JS --></div>
+            </div>
+          </section>
+
+          <!-- NOTIFICATIONS: received messages in arrival order -->
+          <section id="view-notifications" class="view view-notifications" role="tabpanel" hidden>
+            <div class="notifications-page">
+              <header class="notifications-header">
+                <div>
+                  <h2>Notifications</h2>
+                  <p>Messages received by Agent Hotline, oldest first.</p>
+                </div>
+                <span id="notifications-count" class="settings-state">No messages</span>
+              </header>
+              <div id="notifications-list" class="notification-list"><!-- JS --></div>
             </div>
           </section>
 

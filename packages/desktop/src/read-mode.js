@@ -37,13 +37,7 @@ function sameSession(a, b) {
   return projectKeyOf(a) === projectKeyOf(b) && sessionKeyOf(a) === sessionKeyOf(b);
 }
 
-export function selectItemIdForQueueUpdate({
-  currentSelectedId,
-  latestItem,
-  activeItem,
-  playbackActive
-}) {
-  if (playbackActive && activeItem?.id) return activeItem.id;
+export function selectItemIdForQueueUpdate({ currentSelectedId, latestItem }) {
   return latestItem?.id || currentSelectedId || null;
 }
 

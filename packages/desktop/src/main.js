@@ -13,7 +13,15 @@ import {
 } from "./read-mode.js";
 import { initSettingsUi } from "./settings-ui.js";
 import { listCache, deleteCacheSession, deleteCacheProject } from "./audio-cache.js";
-import { groupByProjectSession, latestCreatedAt, projectKeyOf, sessionKeyOf } from "./grouping.js";
+import {
+  groupByProjectSession,
+  latestCreatedAt,
+  projectKeyOf,
+  projectLabelOf,
+  sessionKeyOf,
+  sessionLabelOf
+} from "./grouping.js";
+import { buildNotificationEntries, latestUnreadItemId } from "./notifications.js";
 import { applyProjectColor, applyOwnerColor, ownerSolidColor } from "./project-colors.js";
 import { closeColorMenu, openColorMenu } from "./color-menu.js";
 import { initColumnResize } from "./column-resize.js";
@@ -72,11 +80,13 @@ const actionHint = el("action-hint");
 const backendUrl = el("backend-url");
 const navChats = el("nav-chats");
 const navSearch = el("nav-search");
+const navNotifications = el("nav-notifications");
 const navTrash = el("nav-trash");
 const navSettings = el("nav-settings");
 const viewBlank = el("view-blank");
 const viewChats = el("view-chats");
 const viewSearch = el("view-search");
+const viewNotifications = el("view-notifications");
 const viewTrash = el("view-trash");
 const viewSettings = el("view-settings");
 const searchInput = el("search-input");
@@ -87,6 +97,8 @@ const searchType = el("search-type");
 const searchOwner = el("search-owner");
 const searchTime = el("search-time");
 const searchSort = el("search-sort");
+const notificationsCount = el("notifications-count");
+const notificationsList = el("notifications-list");
 const projectsTitle = el("projects-title");
 const sessionFind = el("session-find");
 const sessionFindInput = el("session-find-input");
@@ -180,10 +192,12 @@ const noticedQueueItemIds = new Set();
 const NOTICED_QUEUE_ITEM_LIMIT = 200;
 let queueNotice = null;
 let queueNoticeEl = null;
+let returnNoticeEl = null;
 let pendingConfirm = null;
 let toastEl = null;
 let toastTimer = 0;
 let orderingPrefs = loadOrderingPrefs();
+let backgroundArrivalIds = new Set();
 
 // ---- Unread tracking -------------------------------------------------------
 // An item is "unread" until the user opens it or playback of it finishes. The
@@ -540,13 +554,16 @@ let currentView = "blank";
 // Nav rail drives a single workspace view. "chats" cascades its own columns;
 // settings/search/trash fill the page; "blank" is the fresh/empty state.
 function setView(view) {
-  const active = ["chats", "search", "trash", "settings"].includes(view) ? view : "blank";
+  const active = ["chats", "search", "notifications", "trash", "settings"].includes(view)
+    ? view
+    : "blank";
   // Switching away from chats counts as leaving the open thread: flush it read.
   if (currentView === "chats" && active !== "chats") leaveOpenSession();
   currentView = active;
   const navPairs = [
     [navChats, "chats"],
     [navSearch, "search"],
+    [navNotifications, "notifications"],
     [navTrash, "trash"],
     [navSettings, "settings"]
   ];
@@ -560,10 +577,12 @@ function setView(view) {
   if (viewBlank) viewBlank.hidden = active !== "blank";
   if (viewChats) viewChats.hidden = active !== "chats";
   if (viewSearch) viewSearch.hidden = active !== "search";
+  if (viewNotifications) viewNotifications.hidden = active !== "notifications";
   if (viewTrash) viewTrash.hidden = active !== "trash";
   if (viewSettings) viewSettings.hidden = active !== "settings";
   if (latestState) {
     if (active === "search") renderSearch();
+    if (active === "notifications") renderNotifications();
     if (active === "trash") renderTrash();
   }
 }
@@ -634,6 +653,21 @@ function queueNoticeContainer() {
   return queueNoticeEl;
 }
 
+function returnNoticeContainer() {
+  if (returnNoticeEl) return returnNoticeEl;
+  returnNoticeEl = document.createElement("div");
+  returnNoticeEl.className = "queue-notice return-notice";
+  returnNoticeEl.hidden = true;
+  returnNoticeEl.setAttribute("role", "status");
+  returnNoticeEl.setAttribute("aria-live", "polite");
+  document.querySelector(".app-shell")?.append(returnNoticeEl);
+  return returnNoticeEl;
+}
+
+function isAppActiveSurface() {
+  return document.visibilityState !== "hidden" && document.hasFocus();
+}
+
 async function ensureNotifyPermission() {
   try {
     let granted = await notification.isPermissionGranted();
@@ -645,7 +679,7 @@ async function ensureNotifyPermission() {
 }
 
 async function maybeNotify(item, settings) {
-  if (!isTauri || !settings?.notifyOnNewReply || document.hasFocus()) return;
+  if (!isTauri || !settings?.notifyOnNewReply || isAppActiveSurface()) return;
   try {
     if (!(await ensureNotifyPermission())) return;
     notification.sendNotification({
@@ -1065,6 +1099,23 @@ function openSession(project, session) {
   historyView.sessionKey = session.key;
   setView("chats");
   renderState(latestState);
+}
+
+function openMessageById(itemId, { markRead = true, dismissReturnNotice = true } = {}) {
+  const item = speakableItems(latestState?.queue || {}).find((entry) => entry.id === itemId);
+  if (!item) return false;
+  selectedItemId = item.id;
+  historyView = {
+    level: "messages",
+    projectKey: projectKeyOf(item),
+    sessionKey: sessionKeyOf(item)
+  };
+  searchHighlightItemId = item.id;
+  setView("chats");
+  if (markRead) markItemRead(item.id, { render: false });
+  if (dismissReturnNotice) dismissReturnNoticeToast();
+  renderState(latestState);
+  return true;
 }
 
 function sessionDateRange(session) {
@@ -2765,21 +2816,8 @@ function dismissQueueNotice() {
 }
 
 function jumpToQueueNotice(itemId) {
-  const item = speakableItems(latestState?.queue || {}).find((entry) => entry.id === itemId);
-  if (!item) {
-    dismissQueueNotice();
-    return;
-  }
-  selectedItemId = item.id;
-  historyView = {
-    level: "messages",
-    projectKey: projectKeyOf(item),
-    sessionKey: sessionKeyOf(item)
-  };
-  setView("chats");
-  markItemRead(item.id, { render: false });
+  openMessageById(itemId, { dismissReturnNotice: false });
   dismissQueueNotice();
-  renderState(latestState);
 }
 
 function renderQueueNotice() {
@@ -2818,6 +2856,145 @@ function renderQueueNotice() {
   close.addEventListener("click", dismissQueueNotice);
 
   container.replaceChildren(copy, jump, close);
+}
+
+function dismissReturnNoticeToast() {
+  backgroundArrivalIds = new Set();
+  const container = returnNoticeContainer();
+  container.hidden = true;
+  container.replaceChildren();
+}
+
+function pruneBackgroundArrivals(items) {
+  const liveUnreadIds = new Set(items.filter(isUnread).map((item) => item.id));
+  backgroundArrivalIds = new Set([...backgroundArrivalIds].filter((id) => liveUnreadIds.has(id)));
+}
+
+function recordBackgroundArrivals(items) {
+  if (isAppActiveSurface()) return;
+  for (const item of items) {
+    if (item?.id && isUnread(item)) backgroundArrivalIds.add(item.id);
+  }
+}
+
+function latestBackgroundArrivalId(items) {
+  return latestUnreadItemId(items, { unreadIds: backgroundArrivalIds });
+}
+
+function showReturnNoticeIfNeeded() {
+  const items = speakableItems(latestState?.queue || {});
+  pruneBackgroundArrivals(items);
+  const targetId = latestBackgroundArrivalId(items);
+  if (!targetId) return;
+
+  const container = returnNoticeContainer();
+  const count = backgroundArrivalIds.size;
+  const target = items.find((item) => item.id === targetId);
+  container.hidden = false;
+  container.className = "queue-notice return-notice is-high";
+
+  const copy = document.createElement("div");
+  copy.className = "queue-notice-copy";
+  const title = document.createElement("strong");
+  title.textContent = count === 1 ? "You have a new message" : `You have ${count} new messages`;
+  const detail = document.createElement("span");
+  detail.textContent = target
+    ? `${target.sourceApp || "Unknown"} - ${projectLabelOf(target)} - ${sessionLabelOf(target)}`
+    : "Open the latest unread message.";
+  copy.append(title, detail);
+
+  const jump = document.createElement("button");
+  jump.type = "button";
+  jump.className = "queue-notice-action";
+  jump.textContent = "Open latest";
+  jump.addEventListener("click", () => openMessageById(targetId));
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "queue-notice-close";
+  close.setAttribute("aria-label", "Dismiss");
+  close.title = "Dismiss";
+  close.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  close.addEventListener("click", dismissReturnNoticeToast);
+
+  container.replaceChildren(copy, jump, close);
+}
+
+function notificationMeta(entry) {
+  const time = formatTime(entry.createdAt);
+  return `${entry.source} - ${entry.project} - ${entry.session}${time ? ` - ${time}` : ""}`;
+}
+
+function buildNotificationRow(entry) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `notification-item ${entry.unread ? "is-unread" : ""}`;
+  btn.dataset.itemId = entry.id;
+  btn.addEventListener("click", () => openMessageById(entry.id));
+
+  const head = document.createElement("span");
+  head.className = "notification-head";
+  head.append(ownerBadge(entry.source, { compact: true }));
+  const title = document.createElement("strong");
+  title.textContent = entry.session;
+  head.append(title);
+  if (entry.unread) head.append(unreadDot(1));
+
+  const meta = document.createElement("span");
+  meta.className = "notification-meta";
+  meta.textContent = notificationMeta(entry);
+
+  const preview = document.createElement("span");
+  preview.className = "notification-preview";
+  preview.textContent = entry.preview || "No speakable text.";
+
+  const action = document.createElement("span");
+  action.className = "notification-open";
+  action.textContent = "Open";
+
+  btn.append(head, meta, preview, action);
+  return btn;
+}
+
+function renderNotifications() {
+  if (!notificationsList) return;
+  const items = speakableItems(latestState?.queue || {});
+  const entries = buildNotificationEntries(items, { isUnread });
+  const unread = entries.filter((entry) => entry.unread).length;
+  if (notificationsCount) {
+    notificationsCount.textContent =
+      entries.length === 0
+        ? "No messages"
+        : `${entries.length} message${entries.length === 1 ? "" : "s"}${
+            unread ? ` - ${unread} unread` : ""
+          }`;
+  }
+  if (entries.length === 0) {
+    notificationsList.innerHTML = '<p class="history-empty">No messages have arrived yet.</p>';
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  for (const entry of entries) fragment.append(buildNotificationRow(entry));
+  notificationsList.replaceChildren(fragment);
+}
+
+function newItemsSinceLast(items, previousLatestId) {
+  if (!previousLatestId) return [];
+  const index = items.findIndex((item) => item.id === previousLatestId);
+  return index >= 0 ? items.slice(index + 1) : items.slice(-1);
+}
+
+function updateChatsUnreadBadge(items) {
+  if (!navChats) return;
+  navChats.querySelector(".nav-unread")?.remove();
+  const count = unreadCount(items);
+  navChats.classList.toggle("has-unread", count > 0);
+  navChats.setAttribute("aria-label", count > 0 ? `Chats, ${count} unread` : "Chats");
+  if (count === 0) return;
+  const badge = unreadDot(count);
+  badge.classList.add("nav-unread");
+  navChats.append(badge);
 }
 
 function normalizeSearchText(value) {
@@ -3704,22 +3881,35 @@ function renderHighlight(target, currentSec, segments, wordAccurate, scrollMode,
 }
 
 function renderHighlightAt(currentSec, segments, wordAccurate, colored = true) {
-  // The bottom preview always follows progress. Inline and modal highlights get
-  // the colored treatment only when that surface is active.
+  const selectedIsActiveItem = selectedItemId && selectedItemId === playback?.activeItemId;
+  const previewIsActiveItem =
+    previewText?.dataset?.itemId && previewText.dataset.itemId === playback?.activeItemId;
+  const renderPreviewHighlight = () => {
+    if (previewIsActiveItem) {
+      renderHighlight(previewText, currentSec, segments, wordAccurate, "pair", colored);
+    }
+  };
+
+  // Only the item currently being spoken gets progress highlighting. The bottom
+  // preview can advance to a newly arrived message while older audio continues.
   if (colored) {
     const bubbleBody = selectedInlineBubbleBody();
-    if (highlightSurface === "inline" && bubbleBody) {
+    if (selectedIsActiveItem && highlightSurface === "inline" && bubbleBody) {
       renderHighlight(bubbleBody, currentSec, segments, wordAccurate, "center", true);
-      renderHighlight(previewText, currentSec, segments, wordAccurate, "pair", false);
+      if (previewIsActiveItem) {
+        renderHighlight(previewText, currentSec, segments, wordAccurate, "pair", false);
+      }
       return;
     }
-    if (highlightSurface === "modal" && isModalOpen()) {
+    if (selectedIsActiveItem && highlightSurface === "modal" && isModalOpen()) {
       renderHighlight(modalBody, currentSec, segments, wordAccurate, "center", true);
-      renderHighlight(previewText, currentSec, segments, wordAccurate, "pair", false);
+      if (previewIsActiveItem) {
+        renderHighlight(previewText, currentSec, segments, wordAccurate, "pair", false);
+      }
       return;
     }
   }
-  renderHighlight(previewText, currentSec, segments, wordAccurate, "pair", colored);
+  renderPreviewHighlight();
 }
 
 function selectedInlineBubbleBody() {
@@ -3828,6 +4018,8 @@ function renderState({ settings, queue }) {
   const activeItem = nowPlayingItem(items);
   if (latest && latest.id !== lastLatestId) {
     const firstLoad = lastLatestId === null;
+    const newItems = firstLoad ? [] : newItemsSinceLast(items, lastLatestId);
+    if (!firstLoad) recordBackgroundArrivals(newItems);
     if (!firstLoad) maybeNotify(latest, settings);
     if (!firstLoad) {
       const notice = describeQueueArrivalNotice({
@@ -3860,6 +4052,9 @@ function renderState({ settings, queue }) {
   renderNowCard(selected, statusKind);
   renderHistory(items);
   renderQueueNotice();
+  updateChatsUnreadBadge(items);
+  renderNotifications();
+  if (isAppActiveSurface()) showReturnNoticeIfNeeded();
   renderSearch();
   renderTrash();
   updateNowPlayingIndicators();
@@ -3920,9 +4115,7 @@ function showError(error) {
   lastButton.disabled = true;
 }
 
-// Returns the id moved to (truthy) or false. Note renderState's playback-follow
-// can snap selectedItemId back to the playing item while audio is live, so
-// callers that act on the move must re-assert the returned id.
+// Returns the id moved to (truthy) or false.
 function moveSelection(delta) {
   if (!latestState) return false;
   const items = sessionScopedItems(speakableItems(latestState.queue), selectedItemId);
@@ -4037,6 +4230,7 @@ function wireNav(button, view) {
 }
 wireNav(navChats, "chats");
 wireNav(navSearch, "search");
+wireNav(navNotifications, "notifications");
 wireNav(navTrash, "trash");
 wireNav(navSettings, "settings");
 
@@ -4118,8 +4312,6 @@ sessionFindPrev?.addEventListener("click", () => moveSessionFind(-1));
 sessionFindNext?.addEventListener("click", () => moveSessionFind(1));
 function navAndFollow(targetId) {
   if (!targetId || !playbackActive()) return;
-  // Re-assert past the render's playback-follow revert so we play the item the
-  // user navigated to, not the one currently playing.
   selectedItemId = targetId;
   playSelectedOn("preview");
 }
@@ -4192,6 +4384,11 @@ window.addEventListener("click", (event) => {
   if (!event.target.closest(".session-menu")) closeSessionMenu();
 });
 
+window.addEventListener("focus", showReturnNoticeIfNeeded);
+document.addEventListener("visibilitychange", () => {
+  if (isAppActiveSurface()) showReturnNoticeIfNeeded();
+});
+
 el("expand-all")?.addEventListener("click", () => setAllBubblesExpanded(true));
 el("collapse-all")?.addEventListener("click", () => setAllBubblesExpanded(false));
 
@@ -4199,7 +4396,7 @@ el("collapse-all")?.addEventListener("click", () => setAllBubblesExpanded(false)
 function modalMove(delta) {
   const targetId = moveSelection(delta);
   if (!targetId) return;
-  selectedItemId = targetId; // re-assert past the render's playback-follow revert
+  selectedItemId = targetId;
   const item = modalItem();
   if (!item) return;
   markItemRead(item.id);
