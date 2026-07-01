@@ -100,7 +100,7 @@ fn backend_status(url: String) -> BackendStatus {
                         },
                         Err(error) => BackendStatus {
                             reachable: false,
-                            detail: format!("Start the backend with npm run dev:backend. {error}"),
+                            detail: format!("Restart Agent Hotline with npm run restart. {error}"),
                         },
                     }
                 }

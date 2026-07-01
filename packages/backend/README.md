@@ -15,7 +15,7 @@ ah run
 Dev mode:
 
 ```powershell
-npm run dev:backend
+npm run dev
 ```
 
 Default URL:

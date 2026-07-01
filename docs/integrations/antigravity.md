@@ -8,8 +8,7 @@ Start Agent Hotline first:
 
 ```powershell
 npm install
-npm run dev:backend
-npm run dev:desktop
+npm run dev
 ```
 
 Install the Antigravity hook and spoken skill:
@@ -56,7 +55,7 @@ If Agent Hotline is running, the sentence lands in the queue.
 
 ## Troubleshooting
 
-- No audio: make sure the backend and desktop app are running.
+- No audio: restart the full app with `npm run restart`.
 - Nothing queued: say `hotline on` and try again.
 - Different port: set `AGENT_HOTLINE_URL`.
 - Hook diagnostics: set `AGENT_HOTLINE_HOOK_DEBUG=1`.

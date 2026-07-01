@@ -27,9 +27,11 @@
     "packages/*"
   ],
   "scripts": {
-    "start": "npm --prefix packages/backend start",
-    "dev:backend": "npm --prefix packages/backend start",
-    "dev:desktop": "npm --workspace @agent-hotline/desktop run dev",
+    "start": "npm run dev",
+    "dev": "node scripts/dev-lifecycle.mjs",
+    "restart": "node scripts/dev-lifecycle.mjs",
+    "dev:backend": "node scripts/split-dev-command.mjs dev:backend",
+    "dev:desktop": "node scripts/split-dev-command.mjs dev:desktop",
     "install:tts": "npm --workspace @agent-hotline/desktop run install:tts",
     "install-hook": "node scripts/install-hook.js",
     "install-skill": "node scripts/install-skill.js",

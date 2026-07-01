@@ -6,16 +6,10 @@ This package owns the tray menu, panel UI, read mode, playback controls, setting
 
 ## Run
 
-Start the backend first:
+Start or restart the full local app from the repo root:
 
 ```powershell
-npm run dev:backend
-```
-
-Then start the desktop app:
-
-```powershell
-npm run dev:desktop
+npm run dev
 ```
 
 Backend URL:

@@ -8,8 +8,7 @@ Start Agent Hotline first:
 
 ```powershell
 npm install
-npm run dev:backend
-npm run dev:desktop
+npm run dev
 ```
 
 Then install the Codex hook and spoken-output instructions:
@@ -42,7 +41,7 @@ If Agent Hotline is running, the sentence lands in the queue. If not, the hook e
 
 ## Troubleshooting
 
-- No audio: make sure the backend and desktop app are running.
+- No audio: restart the full app with `npm run restart`.
 - Nothing queued: the reply may have been filtered out, or Codex playback may be off.
 - Different port: set `AGENT_HOTLINE_URL`.
 - Hook diagnostics: set `AGENT_HOTLINE_HOOK_DEBUG=1` before starting Codex.

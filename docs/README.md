@@ -14,8 +14,8 @@ Short setup notes for people using or hacking on Agent Hotline.
 ```powershell
 npm run install:tts
 npm run install-hotline -- --harness all --skill all
-npm run dev:backend
-npm run dev:desktop
+npm run dev
+npm run restart
 ```
 
 From npm:

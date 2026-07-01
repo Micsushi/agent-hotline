@@ -123,6 +123,10 @@ function buildPs1({ source, schema, hookCommand = defaultHookCommand() }) {
   const responseKey = schema === "response" ? "response" : "assistant_response";
   return [
     `$ErrorActionPreference = "Stop"`,
+    `$utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false`,
+    `[Console]::InputEncoding = $utf8NoBom`,
+    `[Console]::OutputEncoding = $utf8NoBom`,
+    `$OutputEncoding = $utf8NoBom`,
     ``,
     `try {`,
     `  $inputJson = [Console]::In.ReadToEnd()`,

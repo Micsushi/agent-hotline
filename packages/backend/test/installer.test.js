@@ -2,6 +2,7 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { spawnSync } = require("child_process");
 const test = require("node:test");
 
 const {
@@ -88,6 +89,63 @@ test("buildPs1 forwards user prompt fields for chat display", () => {
   assert.match(ps1, /last_user_message = \$payload\.last_user_message/);
   assert.match(ps1, /lastUserMessage = \$payload\.lastUserMessage/);
 });
+
+test("buildPs1 keeps Unicode punctuation intact through native command pipes", () => {
+  const ps1 = buildPs1({ source: "codex", schema: "response" });
+
+  assert.match(ps1, /\[Console\]::InputEncoding = \$utf8NoBom/);
+  assert.match(ps1, /\[Console\]::OutputEncoding = \$utf8NoBom/);
+  assert.match(ps1, /\$OutputEncoding = \$utf8NoBom/);
+  assert.ok(
+    ps1.indexOf("$OutputEncoding = $utf8NoBom") < ps1.indexOf("[Console]::In.ReadToEnd()"),
+    "pipe encoding must be configured before reading or forwarding hook JSON"
+  );
+});
+
+test(
+  "buildPs1 round-trips common Unicode punctuation through PowerShell",
+  { skip: process.platform !== "win32" },
+  () => {
+    const dir = tempDir();
+    const capturePath = path.join(dir, "capture.js");
+    const outputPath = path.join(dir, "output.json");
+    const ps1Path = path.join(dir, "hook.ps1");
+    const sample = "I’m testing em dash — ellipsis … and “quotes”.";
+
+    fs.writeFileSync(
+      capturePath,
+      [
+        'const fs = require("fs");',
+        "let input = '';",
+        "process.stdin.setEncoding('utf8');",
+        "process.stdin.on('data', chunk => { input += chunk; });",
+        "process.stdin.on('end', () => { fs.writeFileSync(process.argv[2], input, 'utf8'); });",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+    fs.writeFileSync(
+      ps1Path,
+      buildPs1({
+        source: "codex",
+        schema: "response",
+        hookCommand: `node "${capturePath}" "${outputPath}"`
+      }),
+      "utf8"
+    );
+
+    const payload = JSON.stringify({ last_assistant_message: sample });
+    const result = spawnSync(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1Path],
+      { input: payload, encoding: "utf8" }
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const normalized = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+    assert.equal(normalized.response.text, sample);
+  }
+);
 
 test("toPowerShellSingleQuoted escapes embedded single quotes by doubling", () => {
   assert.equal(toPowerShellSingleQuoted("plain"), "'plain'");

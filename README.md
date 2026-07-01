@@ -146,16 +146,16 @@ To start only the backend:
 npx --yes @micsushi/agent-hotline run --no-open
 ```
 
-From a local checkout, run it in the foreground while developing:
+From a local checkout, start or restart the full local app while developing:
 
 ```powershell
-npm run dev:backend
+npm run dev
 ```
 
-Start the desktop app:
+This restarts the backend and desktop together. If anything looks stale or the browser panel says the backend is unavailable, use the same command:
 
 ```powershell
-npm run dev:desktop
+npm run restart
 ```
 
 Backend URL:
