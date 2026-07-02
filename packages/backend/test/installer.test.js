@@ -239,7 +239,7 @@ test("CLI uses durable npx hook command when launched by npm exec", async () => 
   assert.match(ps1, /npx --yes @micsushi\/agent-hotline hook/);
 });
 
-test("installSkills installs Antigravity skill and managed global instructions", () => {
+test("installSkills installs harness skills without global response-format instructions", () => {
   const home = tempDir();
 
   const results = installSkills({ target: "all", home });
@@ -254,8 +254,16 @@ test("installSkills installs Antigravity skill and managed global instructions",
     ),
     true
   );
-  assert.match(readText(path.join(home, ".claude", "CLAUDE.md")), /AGENT_HOTLINE_SPOKEN_START/);
-  assert.match(readText(path.join(home, ".codex", "AGENTS.md")), /AGENT_HOTLINE_SPOKEN_START/);
+  assert.equal(
+    fs.existsSync(path.join(home, ".claude", "skills", "agent-hotline-spoken", "SKILL.md")),
+    true
+  );
+  assert.equal(
+    fs.existsSync(path.join(home, ".codex", "skills", "agent-hotline-spoken", "SKILL.md")),
+    true
+  );
+  assert.equal(fs.existsSync(path.join(home, ".claude", "CLAUDE.md")), false);
+  assert.equal(fs.existsSync(path.join(home, ".codex", "AGENTS.md")), false);
 });
 
 test("managed instruction block makes Spoken primary and Displayed optional", () => {

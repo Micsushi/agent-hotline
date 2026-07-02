@@ -339,17 +339,21 @@ function installOneSkill({
   }
 
   if (target === "codex") {
-    const filePath =
-      scope === "repo" ? path.join(repo, "AGENTS.md") : path.join(home, ".codex", "AGENTS.md");
-    upsertManagedBlock(filePath);
-    return { target, scope, path: filePath, mode: "instructions" };
+    const targetPath =
+      scope === "repo"
+        ? path.join(repo, ".codex", "skills", SKILL_NAME, "SKILL.md")
+        : path.join(home, ".codex", "skills", SKILL_NAME, "SKILL.md");
+    copyFile(sourcePath, targetPath);
+    return { target, scope, path: targetPath, mode: "skill" };
   }
 
   if (target === "claude-code") {
-    const filePath =
-      scope === "repo" ? path.join(repo, "CLAUDE.md") : path.join(home, ".claude", "CLAUDE.md");
-    upsertManagedBlock(filePath);
-    return { target, scope, path: filePath, mode: "instructions" };
+    const targetPath =
+      scope === "repo"
+        ? path.join(repo, ".claude", "skills", SKILL_NAME, "SKILL.md")
+        : path.join(home, ".claude", "skills", SKILL_NAME, "SKILL.md");
+    copyFile(sourcePath, targetPath);
+    return { target, scope, path: targetPath, mode: "skill" };
   }
 
   throw new Error(`Invalid skill target "${target}". Use one of: ${VALID_HARNESSES.join(", ")}.`);

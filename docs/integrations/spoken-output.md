@@ -4,7 +4,7 @@ Agent Hotline reads the `Spoken:` section and ignores `Displayed:`. Use
 `Spoken:` for the real conversational answer. Use `Displayed:` only for material
 that is better read than heard.
 
-Install the formatting instructions:
+Install the spoken-output skill:
 
 ```powershell
 npm run install-skill -- --target all

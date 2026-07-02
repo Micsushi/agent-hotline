@@ -39,7 +39,7 @@ Still missing:
 https://github.com/Micsushi/agent-hotline/releases/latest
 ```
 
-2. Install the hooks and spoken instructions:
+2. Install the hooks and spoken skill:
 
 ```powershell
 npx --yes @micsushi/agent-hotline install --harness all --skill all
@@ -117,7 +117,7 @@ npm run install:tts
 
 ## What Gets Installed
 
-The npm package includes the CLI/backend hook tool, the browser control panel, and the spoken skill/instructions. Users do not download those separately.
+The npm package includes the CLI/backend hook tool, the browser control panel, and the spoken skill. Users do not download those separately.
 
 The GitHub release includes the Windows desktop installer for the native tray/WebView app and a bundled backend. The installer does not yet write Codex, Claude Code, or Antigravity hook files, so run the npm setup command once after installing the desktop app.
 
@@ -224,7 +224,7 @@ Restart the terminal after changing PATH.
 
 ### Agent replies are not spoken
 
-Make sure the hook and spoken instructions are installed, then restart the coding tool:
+Make sure the hook and spoken skill are installed, then restart the coding tool:
 
 ```powershell
 npx --yes @micsushi/agent-hotline install --harness all --skill all

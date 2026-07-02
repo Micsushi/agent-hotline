@@ -86,13 +86,21 @@ function antigravityPayload(text) {
   });
 }
 
+function enabledStateStore() {
+  return {
+    isEnabled: () => true,
+    setEnabled: () => {}
+  };
+}
+
 test("hook command enqueues speakable text through the localhost API", async () => {
   await withServer({}, async ({ baseUrl, dataDir }) => {
     const result = await runHookCommand({
       input: codexPayload(
         "Spoken:\nThe hook command can now queue this short local playback summary."
       ),
-      baseUrl
+      baseUrl,
+      hotlineStateStore: enabledStateStore()
     });
 
     assert.equal(result.action, "enqueued");
@@ -123,7 +131,8 @@ test("hook command filters Claude output before queueing for playback", async ()
           "```"
         ].join("\n")
       ),
-      baseUrl
+      baseUrl,
+      hotlineStateStore: enabledStateStore()
     });
 
     assert.equal(result.action, "enqueued");
@@ -151,7 +160,8 @@ test("hook command skips disabled sources before enqueueing", async () => {
       input: codexPayload(
         "Spoken:\nThis is a triggered response that would otherwise be queued for Codex."
       ),
-      baseUrl
+      baseUrl,
+      hotlineStateStore: enabledStateStore()
     });
 
     assert.equal(result.action, "skipped");
@@ -166,7 +176,8 @@ test("hook command skips replies without a Spoken section (skill not triggered)"
       input: codexPayload(
         "This is a normal reply with no Spoken section, so it must not be queued."
       ),
-      baseUrl
+      baseUrl,
+      hotlineStateStore: enabledStateStore()
     });
 
     assert.equal(result.action, "skipped");
@@ -183,7 +194,8 @@ test("hook command buffers to the spool when backend is not running", async () =
     ),
     baseUrl: "http://127.0.0.1:9",
     timeoutMs: 100,
-    spoolStore
+    spoolStore,
+    hotlineStateStore: enabledStateStore()
   });
 
   assert.equal(result.action, "recoverable_failure");
@@ -238,6 +250,7 @@ test("hook command skips malformed or unspeakable input safely", async () => {
 
   const unspeakable = await runHookCommand({
     input: codexPayload("```js\nconst onlyCode = true;\n```"),
+    hotlineStateStore: enabledStateStore(),
     fetchImpl: async () => {
       throw new Error("fetch should not run for unspeakable input");
     }
@@ -276,7 +289,8 @@ test("hook command enqueues Antigravity spoken text and labels it correctly", as
           "```"
         ].join("\n")
       ),
-      baseUrl
+      baseUrl,
+      hotlineStateStore: enabledStateStore()
     });
 
     assert.equal(result.action, "enqueued");
@@ -306,11 +320,62 @@ test("hook command skips Antigravity when antigravityEnabled is false", async ()
       input: antigravityPayload(
         "Spoken:\nThis Antigravity response should be skipped because the source is disabled."
       ),
-      baseUrl
+      baseUrl,
+      hotlineStateStore: enabledStateStore()
     });
 
     assert.equal(result.action, "skipped");
     assert.equal(result.reason, "source_disabled");
     assert.equal(fs.existsSync(path.join(dataDir, "speech-queue.json")), false);
+  });
+});
+
+test("hook command keeps each session off by default until hotline on", async () => {
+  await withServer({}, async ({ baseUrl, dataDir }) => {
+    const payload = (text, prompt, sessionId = "thread-one") =>
+      JSON.stringify({
+        source: "codex",
+        session_id: sessionId,
+        input_messages: [prompt],
+        response: { text }
+      });
+
+    const before = await runHookCommand({
+      input: payload("Spoken:\nThis should not be read yet.", "plain prompt"),
+      baseUrl,
+      dataDir
+    });
+    assert.equal(before.action, "skipped");
+    assert.equal(before.reason, "hotline_disabled");
+
+    const on = await runHookCommand({
+      input: payload("Spoken:\nAgent Hotline is on for this session.", "read aloud on"),
+      baseUrl,
+      dataDir
+    });
+    assert.equal(on.action, "enqueued");
+
+    const otherSession = await runHookCommand({
+      input: payload("Spoken:\nThis other session should still be off.", "continue", "thread-two"),
+      baseUrl,
+      dataDir
+    });
+    assert.equal(otherSession.action, "skipped");
+    assert.equal(otherSession.reason, "hotline_disabled");
+
+    const after = await runHookCommand({
+      input: payload("Spoken:\nThis should now be read.", "continue"),
+      baseUrl,
+      dataDir
+    });
+    assert.equal(after.action, "enqueued");
+
+    const off = await runHookCommand({
+      input: payload("Spoken:\nAgent Hotline is off for this session.", "stop read-aloud"),
+      baseUrl,
+      dataDir
+    });
+    assert.equal(off.action, "skipped");
+    assert.equal(off.reason, "hotline_disabled");
   });
 });

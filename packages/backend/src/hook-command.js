@@ -1,6 +1,7 @@
 ﻿const fs = require("fs");
 const { parseHookInput, SOURCE_APPS } = require("./hook-input-parser");
 const { filterSpeakableText } = require("./speakable-filter");
+const { createHotlineStateStore } = require("./hotline-state-store");
 const { createSpoolStore } = require("./spool-store");
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -36,6 +37,9 @@ async function runHookCommand(options = {}) {
   const spoolStore =
     options.spoolStore ||
     createSpoolStore({ dataDir: options.dataDir || env.AGENT_HOTLINE_DATA_DIR });
+  const hotlineStateStore =
+    options.hotlineStateStore ||
+    createHotlineStateStore({ dataDir: options.dataDir || env.AGENT_HOTLINE_DATA_DIR });
 
   function bufferOffline(item, reason, message, error) {
     try {
@@ -57,6 +61,18 @@ async function runHookCommand(options = {}) {
 
   if (!isSupportedSource(parsed.sourceApp)) {
     return skipped("unsupported_source", "Hook source must be Codex or Claude.");
+  }
+
+  const sessionKey = hotlineSessionKey(parsed);
+  const command = hotlineCommand(parsed.userMessages);
+  if (command === "off") {
+    hotlineStateStore.setEnabled(sessionKey, false);
+    return skipped("hotline_disabled", "Agent Hotline is now off for this session.");
+  }
+  if (command === "on") {
+    hotlineStateStore.setEnabled(sessionKey, true);
+  } else if (!hotlineStateStore.isEnabled(sessionKey)) {
+    return skipped("hotline_disabled", "Agent Hotline is off for this session.");
   }
 
   const filtered = filterSpeakableText(parsed.assistantText);
@@ -208,6 +224,36 @@ function isSourceEnabled(settings, sourceApp) {
   return false;
 }
 
+function hotlineSessionKey(parsed) {
+  const payload = parsed && parsed.payload;
+  const transcriptPath = payload && (payload.transcript_path || payload.transcriptPath);
+  const id =
+    parsed.threadId ||
+    (typeof transcriptPath === "string" && transcriptPath.trim()) ||
+    parsed.projectPath ||
+    parsed.projectName ||
+    "unknown-session";
+  return `${parsed.sourceApp}:${id}`;
+}
+
+function hotlineCommand(messages) {
+  const text = Array.isArray(messages) ? messages.join("\n") : "";
+  const normalized = text.toLowerCase();
+  if (
+    /\b(hotline|read aloud|read-aloud|spoken mode)\s+(off|stop|disable)\b/.test(normalized) ||
+    /\b(stop|disable)\s+(hotline|read aloud|read-aloud|spoken mode)\b/.test(normalized)
+  ) {
+    return "off";
+  }
+  if (
+    /\b(hotline|read aloud|read-aloud|spoken mode)\s+(on|start|enable)\b/.test(normalized) ||
+    /\b(start|enable)\s+(hotline|read aloud|read-aloud|spoken mode)\b/.test(normalized)
+  ) {
+    return "on";
+  }
+  return "";
+}
+
 function skipped(reason, message) {
   return {
     ok: true,
@@ -312,6 +358,8 @@ if (require.main === module) {
 
 module.exports = {
   getDefaultBaseUrl,
+  hotlineCommand,
+  hotlineSessionKey,
   isSourceEnabled,
   main,
   readStdin,

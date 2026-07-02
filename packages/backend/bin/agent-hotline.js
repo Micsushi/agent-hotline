@@ -146,7 +146,7 @@ async function main(argv = process.argv.slice(2), options = {}) {
       repo: args.repo,
       home: args.home
     });
-    printResults("Installed Agent Hotline spoken skill/instructions:", results);
+    printResults("Installed Agent Hotline spoken skills:", results);
     return 0;
   }
 
@@ -166,7 +166,7 @@ async function main(argv = process.argv.slice(2), options = {}) {
       home: args.home
     });
     printResults("Installed Agent Hotline hooks:", hookResults);
-    printResults("Installed Agent Hotline spoken skill/instructions:", skillResults);
+    printResults("Installed Agent Hotline spoken skills:", skillResults);
     return 0;
   }
 
