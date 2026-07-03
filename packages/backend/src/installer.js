@@ -1,6 +1,13 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const {
+  buildHookScript: renderHookScript,
+  buildPs1: renderPs1,
+  buildSh: renderSh,
+  hookScriptExtension,
+  toPowerShellSingleQuoted
+} = require("./hook-script");
 
 const SKILL_NAME = "agent-hotline-spoken";
 const MANAGED_BLOCK_START = "<!-- AGENT_HOTLINE_SPOKEN_START -->";
@@ -30,17 +37,16 @@ function npxHookCommand() {
   return NPX_HOOK_COMMAND;
 }
 
-// Embed an arbitrary string into the generated .ps1 as a PowerShell single-quoted
-// literal. Single quotes take their contents verbatim -- no backslash or
-// double-quote processing -- so the only escaping needed is doubling embedded
-// single quotes. This is the ONLY supported way to inline a value into the ps1.
-// Never use JSON.stringify() for this: its \" and \\ escapes are JSON syntax, not
-// PowerShell (which escapes with backticks), so a Windows command like
-// `node "C:\path\x.js" hook` becomes `"node \"C:\\path\\x.js\" hook"`, which
-// PowerShell fails to PARSE -- the script dies before its try/catch and never
-// runs. That class of bug is impossible once everything routes through here.
-function toPowerShellSingleQuoted(value) {
-  return `'${String(value).replace(/'/g, "''")}'`;
+function buildPs1(options = {}) {
+  return renderPs1({ ...options, hookCommand: options.hookCommand || defaultHookCommand() });
+}
+
+function buildSh(options = {}) {
+  return renderSh({ ...options, hookCommand: options.hookCommand || defaultHookCommand() });
+}
+
+function buildHookScript(options = {}) {
+  return renderHookScript({ ...options, hookCommand: options.hookCommand || defaultHookCommand() });
 }
 
 function skillSourcePath() {
@@ -62,6 +68,12 @@ function readJsonSafe(filePath) {
 function writeFile(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf8");
+}
+
+function chmodExecutable(filePath, platform = process.platform) {
+  if (platform !== "win32") {
+    fs.chmodSync(filePath, 0o755);
+  }
 }
 
 function copyFile(source, target) {
@@ -119,86 +131,53 @@ function harnessDefinitions(home = defaultHome()) {
   };
 }
 
-function buildPs1({ source, schema, hookCommand = defaultHookCommand() }) {
-  const responseKey = schema === "response" ? "response" : "assistant_response";
-  return [
-    `$ErrorActionPreference = "Stop"`,
-    `$utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false`,
-    `[Console]::InputEncoding = $utf8NoBom`,
-    `[Console]::OutputEncoding = $utf8NoBom`,
-    `$OutputEncoding = $utf8NoBom`,
-    ``,
-    `try {`,
-    `  $inputJson = [Console]::In.ReadToEnd()`,
-    `  if ([string]::IsNullOrWhiteSpace($inputJson)) { exit 0 }`,
-    ``,
-    `  $payload = $inputJson | ConvertFrom-Json`,
-    `  $assistantText = $payload.last_assistant_message`,
-    `  $transcriptPath = $payload.transcript_path`,
-    `  $inputMessages = $payload.'input-messages'`,
-    `  if ($null -eq $inputMessages) { $inputMessages = $payload.input_messages }`,
-    `  if ($null -eq $inputMessages) { $inputMessages = $payload.inputMessages }`,
-    // Codex hands us the reply text inline (last_assistant_message); Claude Code's
-    // Stop hook only points at a transcript file, so the Node parser reads the
-    // last assistant turn from transcript_path. Bail only when we have neither.
-    `  if ([string]::IsNullOrWhiteSpace($assistantText) -and [string]::IsNullOrWhiteSpace($transcriptPath)) { exit 0 }`,
-    ``,
-    `  $normalizedJson = @{`,
-    `    source = "${source}"`,
-    `    hook_event_name = "Stop"`,
-    `    ${responseKey} = @{ text = $assistantText }`,
-    `    "input-messages" = $inputMessages`,
-    `    input_messages = $payload.input_messages`,
-    `    inputMessages = $payload.inputMessages`,
-    `    prompt = $payload.prompt`,
-    `    user_prompt = $payload.user_prompt`,
-    `    userPrompt = $payload.userPrompt`,
-    `    user_message = $payload.user_message`,
-    `    userMessage = $payload.userMessage`,
-    `    last_user_message = $payload.last_user_message`,
-    `    lastUserMessage = $payload.lastUserMessage`,
-    `    input = $payload.input`,
-    `    transcript_path = $transcriptPath`,
-    `    session_id = $payload.session_id`,
-    `    thread_id = $payload.thread_id`,
-    `    thread_name = $payload.thread_name`,
-    `    session_name = $payload.session_name`,
-    `    cwd = $payload.cwd`,
-    `    workspace = $payload.workspace`,
-    `    project_dir = $payload.project_dir`,
-    `  } | ConvertTo-Json -Depth 8`,
-    ``,
-    `  $hookCommand = $env:AGENT_HOTLINE_HOOK_CMD`,
-    `  if ([string]::IsNullOrWhiteSpace($hookCommand)) {`,
-    `    $hookCommand = ${toPowerShellSingleQuoted(hookCommand)}`,
-    `  }`,
-    ``,
-    `  $normalizedJson | cmd.exe /d /s /c $hookCommand`,
-    `} catch {`,
-    `  exit 0`,
-    `}`,
-    ``,
-    `exit 0`,
-    ``
-  ].join("\r\n");
-}
-
-function powershellHookEntry(ps1Path) {
+function powershellHookEntry(scriptPath) {
   return {
     type: "command",
     command: "powershell.exe",
-    args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1Path],
+    args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath],
     timeout: 5
   };
 }
 
-function codexHookEntry(ps1Path) {
+function shellHookEntry(scriptPath) {
   return {
     type: "command",
-    commandWindows: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}"`,
+    command: "/bin/sh",
+    args: [scriptPath],
+    timeout: 5
+  };
+}
+
+function codexHookEntry(scriptPath, platform = process.platform) {
+  const base = {
+    type: "command",
     timeout: 5,
     statusMessage: "Queueing response for Agent Hotline"
   };
+
+  if (platform === "win32") {
+    return {
+      ...base,
+      commandWindows: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`
+    };
+  }
+
+  return {
+    ...base,
+    command: `/bin/sh "${scriptPath.replace(/"/g, '\\"')}"`
+  };
+}
+
+function hookMatches(existing, candidate) {
+  if (candidate.commandWindows) return existing.commandWindows === candidate.commandWindows;
+  if (candidate.command) {
+    return (
+      existing.command === candidate.command &&
+      JSON.stringify(existing.args || []) === JSON.stringify(candidate.args || [])
+    );
+  }
+  return false;
 }
 
 function mergeStopHook(existing, newEntry, flavor) {
@@ -208,13 +187,7 @@ function mergeStopHook(existing, newEntry, flavor) {
 
   const already = base.hooks.Stop.some((group) => {
     const hooks = Array.isArray(group.hooks) ? group.hooks : [];
-    return hooks.some((hook) => {
-      if (flavor === "codex") return hook.commandWindows === newEntry.commandWindows;
-      const target = newEntry.args && newEntry.args[newEntry.args.length - 1];
-      return (
-        hook.command === "powershell.exe" && Array.isArray(hook.args) && hook.args.includes(target)
-      );
-    });
+    return hooks.some((hook) => hookMatches(hook, newEntry));
   });
 
   if (!already) {
@@ -223,7 +196,20 @@ function mergeStopHook(existing, newEntry, flavor) {
   return base;
 }
 
-function installOneHook({ harnessKey, scope = "global", home, repo = process.cwd(), hookCommand }) {
+function buildHookEntry({ harnessKey, scriptPath, platform = process.platform }) {
+  if (harnessKey === "codex") return codexHookEntry(scriptPath, platform);
+  if (platform === "win32") return powershellHookEntry(scriptPath);
+  return shellHookEntry(scriptPath);
+}
+
+function installOneHook({
+  harnessKey,
+  scope = "global",
+  home,
+  repo = process.cwd(),
+  hookCommand,
+  platform = process.platform
+}) {
   const definitions = harnessDefinitions(home);
   const harness = definitions[harnessKey];
   if (!harness) {
@@ -240,13 +226,22 @@ function installOneHook({ harnessKey, scope = "global", home, repo = process.cwd
     ? path.join(repo, harnessKey === "codex" ? ".codex" : ".claude")
     : harness.globalDir;
   const hooksDir = path.join(configDir, harness.hooksDirName);
-  const ps1Path = path.join(hooksDir, "agent-hotline-stop.ps1");
+  const scriptPath = path.join(hooksDir, `agent-hotline-stop.${hookScriptExtension(platform)}`);
   const configName = isRepo ? harness.repoConfigName : harness.hooksConfigName;
   const configPath = path.join(configDir, configName);
 
-  writeFile(ps1Path, buildPs1({ source: harness.source, schema: harness.schema, hookCommand }));
+  writeFile(
+    scriptPath,
+    buildHookScript({
+      platform,
+      source: harness.source,
+      schema: harness.schema,
+      hookCommand
+    })
+  );
+  chmodExecutable(scriptPath, platform);
 
-  const entry = harnessKey === "codex" ? codexHookEntry(ps1Path) : powershellHookEntry(ps1Path);
+  const entry = buildHookEntry({ harnessKey, scriptPath, platform });
   const existing = readJsonSafe(configPath);
   const merged = mergeStopHook(existing, entry, harnessKey === "codex" ? "codex" : "powershell");
   writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`);
@@ -255,7 +250,7 @@ function installOneHook({ harnessKey, scope = "global", home, repo = process.cwd
     harness: harnessKey,
     label: harness.label,
     scope,
-    ps1Path,
+    scriptPath,
     configPath
   };
 }
@@ -266,6 +261,7 @@ function installHooks(options = {}) {
   const repo = options.repo || process.cwd();
   const hookCommand = options.hookCommand || defaultHookCommand();
   const scope = options.scope || "global";
+  const platform = options.platform || process.platform;
 
   validateChoice("harness", harness, VALID_HARNESSES);
   validateChoice("scope", scope, VALID_SCOPES);
@@ -273,10 +269,12 @@ function installHooks(options = {}) {
   if (harness === "all") {
     const keys =
       scope === "repo" ? ["claude-code", "codex"] : ["antigravity", "claude-code", "codex"];
-    return keys.map((key) => installOneHook({ harnessKey: key, scope, home, repo, hookCommand }));
+    return keys.map((key) =>
+      installOneHook({ harnessKey: key, scope, home, repo, hookCommand, platform })
+    );
   }
 
-  return [installOneHook({ harnessKey: harness, scope, home, repo, hookCommand })];
+  return [installOneHook({ harnessKey: harness, scope, home, repo, hookCommand, platform })];
 }
 
 function managedInstructionBlock() {
@@ -401,6 +399,7 @@ function parseArgs(argv) {
 module.exports = {
   SKILL_NAME,
   buildPs1,
+  buildSh,
   defaultHookCommand,
   defaultHome,
   harnessDefinitions,

@@ -17,7 +17,7 @@ async function withMcp(dataDir, callback) {
     command: process.execPath,
     args: [path.resolve("bin/agent-hotline-mcp.js")],
     cwd: path.resolve("."),
-    env: { ...process.env, APPDATA: dataDir },
+    env: { ...process.env, AGENT_HOTLINE_DATA_DIR: path.join(dataDir, "Agent Hotline") },
     stderr: "pipe"
   });
   await client.connect(transport);

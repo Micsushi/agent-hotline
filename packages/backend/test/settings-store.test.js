@@ -181,3 +181,10 @@ test("default Windows runtime dir uses AppData Agent Hotline folder", () => {
     "C:\\Users\\Test\\AppData\\Roaming\\Agent Hotline"
   );
 });
+
+test("default macOS runtime dir uses Application Support Agent Hotline folder", () => {
+  assert.equal(
+    getDefaultDataDir({}, "darwin"),
+    path.join(os.homedir(), "Library", "Application Support", "Agent Hotline")
+  );
+});

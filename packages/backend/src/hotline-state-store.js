@@ -1,6 +1,6 @@
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+const { getDefaultDataDir } = require("./platform");
 
 const STATE_FILE = "hotline-session-state.json";
 
@@ -37,11 +37,7 @@ function createHotlineStateStore(options = {}) {
 }
 
 function defaultDataDir() {
-  if (process.env.AGENT_HOTLINE_DATA_DIR) return process.env.AGENT_HOTLINE_DATA_DIR;
-  if (process.platform === "win32" && process.env.APPDATA) {
-    return path.join(process.env.APPDATA, "Agent Hotline");
-  }
-  return path.join(os.homedir(), ".agent-hotline");
+  return getDefaultDataDir();
 }
 
-module.exports = { createHotlineStateStore };
+module.exports = { createHotlineStateStore, defaultDataDir };

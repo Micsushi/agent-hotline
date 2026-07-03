@@ -1,9 +1,9 @@
 ﻿const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 
 const { resolveProjectRoot } = require("./hook-input-parser");
+const { getDefaultDataDir } = require("./platform");
 
 function pathBasename(value) {
   return (
@@ -17,9 +17,8 @@ function pathBasename(value) {
 const SOURCE_APPS = new Set(["Codex", "Claude", "Antigravity"]);
 const STATUSES = new Set(["pending", "playing", "played", "skipped"]);
 
-function defaultDataDir() {
-  const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
-  return path.join(appData, "Agent Hotline");
+function defaultDataDir(env = process.env, platform = process.platform) {
+  return getDefaultDataDir(env, platform);
 }
 
 function defaultQueueFile() {

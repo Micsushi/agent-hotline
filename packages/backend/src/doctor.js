@@ -17,7 +17,7 @@ function npmGlobalPrefix(options = {}) {
   });
   if (result.error || result.status !== 0) {
     if (platform === "win32" && process.env.APPDATA) {
-      return path.join(process.env.APPDATA, "npm");
+      return path.win32.join(process.env.APPDATA, "npm");
     }
     return "";
   }
@@ -25,8 +25,9 @@ function npmGlobalPrefix(options = {}) {
 }
 
 function pathEntries(value = process.env.PATH || "") {
+  const delimiter = String(value).includes(";") ? ";" : path.delimiter;
   return String(value)
-    .split(path.delimiter)
+    .split(delimiter)
     .map((entry) => entry.trim())
     .filter(Boolean);
 }

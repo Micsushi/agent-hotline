@@ -3,7 +3,11 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const { createSpeechQueueStore, defaultQueueFile } = require("../src/speech-queue-store");
+const {
+  createSpeechQueueStore,
+  defaultDataDir,
+  defaultQueueFile
+} = require("../src/speech-queue-store");
 
 function createTempFile() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-hotline-queue-"));
@@ -33,11 +37,7 @@ function sampleItem(overrides = {}) {
 }
 
 function testDefaultRuntimeFile() {
-  const expected = path.join(
-    process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
-    "Agent Hotline",
-    "speech-queue.json"
-  );
+  const expected = path.join(defaultDataDir(), "speech-queue.json");
   assert.equal(defaultQueueFile(), expected);
 }
 

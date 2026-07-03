@@ -7,6 +7,7 @@ const test = require("node:test");
 
 const {
   buildPs1,
+  buildSh,
   defaultHookCommand,
   installHooks,
   installSkills,
@@ -38,7 +39,8 @@ test("installHooks supports all harnesses in non-interactive mode", () => {
     harness: "all",
     home,
     repo,
-    hookCommand: "agent-hotline hook"
+    hookCommand: "agent-hotline hook",
+    platform: "win32"
   });
 
   assert.deepEqual(
@@ -57,6 +59,34 @@ test("installHooks supports all harnesses in non-interactive mode", () => {
   const ps1 = readText(path.join(home, ".codex", "hooks", "agent-hotline-stop.ps1"));
   assert.match(ps1, /agent-hotline hook/);
   assert.match(ps1, /cmd\.exe \/d \/s \/c/);
+});
+
+test("installHooks writes POSIX shell hooks on macOS", () => {
+  const home = tempDir();
+
+  const results = installHooks({
+    harness: "all",
+    home,
+    hookCommand: "agent-hotline hook",
+    platform: "darwin"
+  });
+
+  assert.deepEqual(
+    results.map((result) => path.basename(result.scriptPath)),
+    ["agent-hotline-stop.sh", "agent-hotline-stop.sh", "agent-hotline-stop.sh"]
+  );
+
+  const antigravity = readJson(path.join(home, ".gemini", "config", "hooks.json"));
+  const claude = readJson(path.join(home, ".claude", "settings.json"));
+  const codex = readJson(path.join(home, ".codex", "hooks.json"));
+  const sh = readText(path.join(home, ".codex", "hooks", "agent-hotline-stop.sh"));
+
+  assert.match(sh, /^#!\/bin\/sh/);
+  assert.match(sh, /agent-hotline hook/);
+  assert.match(sh, /node -e/);
+  assert.equal(antigravity.hooks.Stop[0].hooks[0].command, "/bin/sh");
+  assert.equal(claude.hooks.Stop[0].hooks[0].command, "/bin/sh");
+  assert.match(codex.hooks.Stop[0].hooks[0].command, /^\/bin\/sh "/);
 });
 
 test("buildPs1 embeds the hook command as a parseable PowerShell literal", () => {
@@ -88,6 +118,53 @@ test("buildPs1 forwards user prompt fields for chat display", () => {
   assert.match(ps1, /"input-messages" = \$inputMessages/);
   assert.match(ps1, /last_user_message = \$payload\.last_user_message/);
   assert.match(ps1, /lastUserMessage = \$payload\.lastUserMessage/);
+});
+
+test("buildSh forwards user prompt fields for chat display", () => {
+  const sh = buildSh({ source: "codex", schema: "response", hookCommand: "agent-hotline hook" });
+
+  assert.match(sh, /payload\["input-messages"\]/);
+  assert.match(sh, /last_user_message: payload\.last_user_message/);
+  assert.match(sh, /lastUserMessage: payload\.lastUserMessage/);
+  assert.match(sh, /"response": \{ text: assistantText \}/);
+});
+
+test("buildSh round-trips common Unicode punctuation through Node shell hook", () => {
+  const dir = tempDir();
+  const capturePath = path.join(dir, "capture.js");
+  const outputPath = path.join(dir, "output.json");
+  const shPath = path.join(dir, "hook.sh");
+  const sample = "I’m testing em dash — ellipsis … and “quotes”.";
+
+  fs.writeFileSync(
+    capturePath,
+    [
+      'const fs = require("fs");',
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', chunk => { input += chunk; });",
+      "process.stdin.on('end', () => { fs.writeFileSync(process.argv[2], input, 'utf8'); });",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(
+    shPath,
+    buildSh({
+      source: "codex",
+      schema: "response",
+      hookCommand: `node "${capturePath}" "${outputPath}"`
+    }),
+    "utf8"
+  );
+  fs.chmodSync(shPath, 0o755);
+
+  const payload = JSON.stringify({ last_assistant_message: sample });
+  const result = spawnSync("/bin/sh", [shPath], { input: payload, encoding: "utf8" });
+
+  assert.equal(result.status, 0, result.stderr);
+  const normalized = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+  assert.equal(normalized.response.text, sample);
 });
 
 test("buildPs1 keeps Unicode punctuation intact through native command pipes", () => {
@@ -164,6 +241,16 @@ test("installHooks merges without duplicating existing hook entries", () => {
   assert.equal(codex.hooks.Stop.length, 1);
 });
 
+test("installHooks merges macOS hook entries without duplicating", () => {
+  const home = tempDir();
+
+  installHooks({ harness: "codex", home, hookCommand: "agent-hotline hook", platform: "darwin" });
+  installHooks({ harness: "codex", home, hookCommand: "agent-hotline hook", platform: "darwin" });
+
+  const codex = readJson(path.join(home, ".codex", "hooks.json"));
+  assert.equal(codex.hooks.Stop.length, 1);
+});
+
 test("installHooks supports repo scope for Codex and Claude Code", () => {
   const home = tempDir();
   const repo = tempDir();
@@ -214,8 +301,15 @@ test("CLI can write durable npx hook commands", async () => {
   ]);
 
   assert.equal(code, 0);
-  const ps1 = readText(path.join(home, ".codex", "hooks", "agent-hotline-stop.ps1"));
-  assert.match(ps1, /npx --yes @micsushi\/agent-hotline hook/);
+  const script = readText(
+    path.join(
+      home,
+      ".codex",
+      "hooks",
+      `agent-hotline-stop.${process.platform === "win32" ? "ps1" : "sh"}`
+    )
+  );
+  assert.match(script, /npx --yes @micsushi\/agent-hotline hook/);
 });
 
 test("CLI uses durable npx hook command when launched by npm exec", async () => {
@@ -234,9 +328,16 @@ test("CLI uses durable npx hook command when launched by npm exec", async () => 
     }
   }
 
-  const ps1 = readText(path.join(home, ".codex", "hooks", "agent-hotline-stop.ps1"));
+  const script = readText(
+    path.join(
+      home,
+      ".codex",
+      "hooks",
+      `agent-hotline-stop.${process.platform === "win32" ? "ps1" : "sh"}`
+    )
+  );
   assert.equal(npxHookCommand(), "npx --yes @micsushi/agent-hotline hook");
-  assert.match(ps1, /npx --yes @micsushi\/agent-hotline hook/);
+  assert.match(script, /npx --yes @micsushi\/agent-hotline hook/);
 });
 
 test("installSkills installs harness skills without global response-format instructions", () => {

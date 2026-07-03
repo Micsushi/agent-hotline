@@ -1,8 +1,7 @@
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+const { getDefaultDataDir } = require("./platform");
 
-const APP_NAME = "Agent Hotline";
 const SETTINGS_FILE = "settings.json";
 const READ_BEHAVIORS = new Set(["manual", "auto"]);
 const TTS_ENGINES = new Set(["webview", "kokoro"]);
@@ -37,18 +36,6 @@ const DEFAULT_SETTINGS = Object.freeze({
   startupSplash: true,
   startupJingle: true
 });
-
-function getDefaultDataDir(env = process.env, platform = process.platform) {
-  if (platform === "win32") {
-    return path.join(env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), APP_NAME);
-  }
-
-  if (platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Application Support", APP_NAME);
-  }
-
-  return path.join(env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), APP_NAME);
-}
 
 function getSettingsPath(options = {}) {
   if (options.settingsPath) {

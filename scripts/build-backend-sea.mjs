@@ -6,17 +6,20 @@
 import { execFileSync } from "node:child_process";
 import { writeFileSync, readFileSync, copyFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { inject } from "postject";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
+const { defaultSeaTargetTriple } = require("../packages/backend/src/platform");
 const backend = path.join(root, "packages", "backend");
 const workDir = path.join(backend, "build");
 const binDir = path.join(root, "packages", "desktop", "src-tauri", "binaries");
 
 const isWin = process.platform === "win32";
-const triple = process.env.SEA_TARGET_TRIPLE || "x86_64-pc-windows-msvc";
+const triple = process.env.SEA_TARGET_TRIPLE || defaultSeaTargetTriple();
 const exeSuffix = isWin ? ".exe" : "";
 const outExe = path.join(binDir, `agent-hotline-backend-${triple}${exeSuffix}`);
 
