@@ -16,18 +16,24 @@ You keep using your coding tool like normal. Agent Hotline listens for finished 
 
 ## Status
 
-Usable from npm, the Windows desktop installer, or the macOS desktop build.
+Usable from npm on Windows, macOS, and Linux, plus the Windows desktop installer
+and the macOS desktop build. On Linux the npm/browser panel and hooks work today;
+the desktop tray app builds from source (no prebuilt Linux installer yet).
 
 Still missing:
 
 - Voice input owned by Agent Hotline.
+- Prebuilt Linux desktop installer.
 
 ## Requirements
 
-- Windows 10 or 11, or macOS.
+- Windows 10 or 11, macOS, or Linux.
 - Node.js 22 or newer for the npm/npx commands.
 - No repo clone is needed for normal install.
 - For desktop app development: Rust plus the usual Tauri prerequisites for your OS.
+  On Ubuntu/Debian that is `libwebkit2gtk-4.1-dev build-essential curl wget file
+libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`. Linux also
+  needs a system TTS voice (e.g. `speech-dispatcher`) for the system-voice fallback.
 
 ## Install
 
@@ -160,13 +166,13 @@ npx --yes @micsushi/agent-hotline run --no-open
 
 From a local checkout, you can also start or restart the full local app while developing:
 
-```powershell
+```sh
 npm run dev
 ```
 
 This restarts the backend and desktop together. If anything looks stale or the browser panel says the backend is unavailable, use the same command:
 
-```powershell
+```sh
 npm run restart
 ```
 
@@ -180,13 +186,25 @@ http://127.0.0.1:4777
 
 With the backend running, test the npm-installed hook:
 
+```sh
+# Linux / macOS
+printf '%s' '{"source":"codex","response":{"text":"Spoken:\nAgent Hotline is ready to read this aloud.\n\nDisplayed:\nSmoke test complete."}}' | npx --yes @micsushi/agent-hotline hook
+```
+
 ```powershell
+# Windows PowerShell
 '{"source":"codex","response":{"text":"Spoken:`nAgent Hotline is ready to read this aloud.`n`nDisplayed:`nSmoke test complete."}}' | npx --yes @micsushi/agent-hotline hook
 ```
 
 From a local checkout, test the local hook:
 
+```sh
+# Linux / macOS
+printf '%s' '{"source":"codex","response":{"text":"Spoken:\nAgent Hotline is ready to read this aloud.\n\nDisplayed:\nSmoke test complete."}}' | node packages/backend/bin/agent-hotline.js hook
+```
+
 ```powershell
+# Windows PowerShell
 '{"source":"codex","response":{"text":"Spoken:`nAgent Hotline is ready to read this aloud.`n`nDisplayed:`nSmoke test complete."}}' | node packages/backend/bin/agent-hotline.js hook
 ```
 
@@ -235,7 +253,7 @@ Then say `hotline on` or `read aloud on` in Codex, Claude Code, or Antigravity.
 
 ## Checks
 
-```powershell
+```sh
 npm test
 npm run lint
 npm run format:check

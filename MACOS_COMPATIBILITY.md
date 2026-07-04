@@ -20,28 +20,24 @@ This was audited from Ubuntu, so no native macOS build or runtime smoke was exec
 - Settings storage: `settings-store.js` uses `~/Library/Application Support/Agent Hotline` on `darwin`.
 - Tauri dev command wrappers already choose non-Windows binaries for `tauri` and `vite`.
 
-## macOS Blockers
+## Resolved In Code (verified on Linux, inferred for macOS)
 
-- Hook installer is still PowerShell-oriented and generates `.ps1` hooks.
-- Some runtime stores still use Windows-like or inconsistent paths, as noted in the Linux audit.
-- Backend SEA packaging defaults to `x86_64-pc-windows-msvc`; `postject` has a macOS branch, but the target triple is not selected automatically.
-- README is Windows-first and mostly PowerShell examples.
-- macOS desktop release would need signing/notarization decisions before distribution.
-- Current desktop release CI is Windows-only.
+The prior blockers are handled by the same cross-platform code paths that were
+verified on Linux; they are expected to work on macOS but were not run natively:
 
-## Likely Changes Needed
+- POSIX hook generation: `hook-script.js#buildSh` emits a `.sh` hook on non-Windows,
+  so macOS gets a shell hook, not `.ps1`.
+- Data path: `platform.js#getDefaultDataDir` uses `~/Library/Application Support/Agent Hotline`
+  on `darwin`.
+- SEA target: `defaultSeaTargetTriple` returns `x86_64-apple-darwin` / `aarch64-apple-darwin`
+  by arch, and `build-backend-sea.mjs` sets the Mach-O segment on `darwin`.
+- README now lists macOS support and Tauri macOS prerequisites (Xcode CLT, Rust, Node 22+).
 
-- Add POSIX hook script generation usable on macOS and Linux.
-- Use macOS data paths consistently:
-  - `~/Library/Application Support/Agent Hotline`
-  - optionally `~/Library/Caches/Agent Hotline` for cache data
-- Make `SEA_TARGET_TRIPLE` platform-aware, e.g. `x86_64-apple-darwin` or `aarch64-apple-darwin`.
-- Document Tauri macOS prerequisites:
-  - Xcode Command Line Tools
-  - Rust
-  - Node 22+
-- Add release docs for app signing/notarization, or mark local-only unsigned builds as expected.
-- Add a macOS CI/package job once packaging is intended.
+## Remaining (macOS-specific)
+
+- No native macOS run in this audit (audited from Linux).
+- macOS desktop release still needs a signing/notarization decision before distribution.
+- A macOS CI/package job is not set up yet.
 
 ## Suggested macOS Smoke Path
 
