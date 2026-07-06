@@ -79,9 +79,6 @@ async function runHookCommand(options = {}) {
   if (!filtered.shouldSpeak) {
     return skipped(filtered.reason, "No speakable text after filtering.");
   }
-  if (filtered.source !== "spoken") {
-    return skipped("skill_not_triggered", "No Spoken section; read-aloud skill is not active.");
-  }
 
   const enqueueBody = {
     rawSource: parsed.assistantText,

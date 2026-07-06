@@ -159,6 +159,7 @@ let selectedItemId = null;
 let lastLatestId = null;
 let seekDragging = false;
 let lastKokoroVoice;
+let lastVoice;
 let lastEngine;
 let lastRate;
 let voiceTrackInit = false;
@@ -4094,13 +4095,15 @@ function updateControls(settings, items, selected) {
 
 function maybeRestartForVoiceChange(settings) {
   if (!settings) return;
-  const changed = settings.kokoroVoice !== lastKokoroVoice || settings.engine !== lastEngine;
+  const changed =
+    settings.kokoroVoice !== lastKokoroVoice ||
+    settings.voice !== lastVoice ||
+    settings.engine !== lastEngine;
   lastKokoroVoice = settings.kokoroVoice;
+  lastVoice = settings.voice;
   lastEngine = settings.engine;
   if (!changed) return;
 
-  const usingKokoro = settings.engine === "kokoro" || settings.engine === "kokoro-ts";
-  if (!usingKokoro) return;
   if (!playback?.isSpeaking && !playback?.isPaused) return;
 
   const selected = findSelected(speakableItems(latestState?.queue || {}));
@@ -4113,6 +4116,7 @@ function renderState({ settings, queue }) {
   latestState = { settings, queue };
   if (!voiceTrackInit) {
     lastKokoroVoice = settings.kokoroVoice;
+    lastVoice = settings.voice;
     lastEngine = settings.engine;
     lastRate = settings.rate;
     voiceTrackInit = true;
@@ -4180,6 +4184,7 @@ function renderState({ settings, queue }) {
   updateControls(settings, items, selected);
   updateModal();
   settingsUi?.render(settings);
+  playback?.warmModel(settings);
   seedAutoReadAttempts(queue);
   runAutoRead(settings, queue);
   schedulePregen(settings, items);
@@ -4321,7 +4326,9 @@ settingsUi = initSettingsUi({
       playback.stop("User muted playback.").catch(showError);
     } else {
       const voiceChanged =
-        settings.kokoroVoice !== lastKokoroVoice || settings.engine !== lastEngine;
+        settings.kokoroVoice !== lastKokoroVoice ||
+        settings.voice !== lastVoice ||
+        settings.engine !== lastEngine;
       maybeRestartForVoiceChange(settings);
       // A rate change may cross a native-gen band (needs regen) or stay within
       // one (live WSOLA adjust); changeSpeed decides. Voice/engine changes already

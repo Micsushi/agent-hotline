@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const HEALTH_URL = process.env.AGENT_HOTLINE_URL || "http://127.0.0.1:4777/health";
+const START_TIMEOUT_MS = Number(process.env.AGENT_HOTLINE_DEV_START_TIMEOUT_MS || 180_000);
 
 function runPowerShell(script, { allowFailure = false } = {}) {
   const result = spawnSync(
@@ -65,7 +66,7 @@ $matches | ForEach-Object { "$($_.ProcessId) $($_.Name)" }
 }
 
 async function waitForBackend() {
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + START_TIMEOUT_MS;
   let lastError = "";
 
   while (Date.now() < deadline) {

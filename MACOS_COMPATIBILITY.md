@@ -1,17 +1,22 @@
 # macOS Compatibility Notes
 
-Audit date: 2026-07-03
+Audit date: 2026-07-04
 
 ## Status
 
-Partial, inferred from code and docs. The backend/browser path is likely close on macOS once Node is installed. Desktop/Tauri development is likely feasible. Hook installation and release packaging still look Windows-first.
-
-This was audited from Ubuntu, so no native macOS build or runtime smoke was executed.
+Backend/browser, hook installation, and the web assets are compatible on macOS.
+Desktop/Tauri development checks pass on macOS when Rust is available through
+`cargo` or `rustup run stable cargo`.
 
 ## What Was Checked
 
+- Native macOS backend tests, desktop tests, formatting, linting, web staging,
+  Tauri `cargo clippy`, and Tauri `cargo check`.
+- Native macOS backend SEA build and health check with an official Node 22
+  runtime via `NODE_SEA_RUNTIME`.
+- Native macOS Tauri app/DMG build.
 - Static platform scan for `darwin`, app data paths, browser open commands, Tauri scripts, and packaging scripts.
-- Existing Linux container backend tests from the Linux audit showed most backend behavior is portable, but some Windows path tests fail off Windows.
+- macOS CI and desktop release workflow wiring.
 
 ## What Should Work On macOS
 
@@ -20,10 +25,7 @@ This was audited from Ubuntu, so no native macOS build or runtime smoke was exec
 - Settings storage: `settings-store.js` uses `~/Library/Application Support/Agent Hotline` on `darwin`.
 - Tauri dev command wrappers already choose non-Windows binaries for `tauri` and `vite`.
 
-## Resolved In Code (verified on Linux, inferred for macOS)
-
-The prior blockers are handled by the same cross-platform code paths that were
-verified on Linux; they are expected to work on macOS but were not run natively:
+## Resolved In Code
 
 - POSIX hook generation: `hook-script.js#buildSh` emits a `.sh` hook on non-Windows,
   so macOS gets a shell hook, not `.ps1`.
@@ -32,19 +34,28 @@ verified on Linux; they are expected to work on macOS but were not run natively:
 - SEA target: `defaultSeaTargetTriple` returns `x86_64-apple-darwin` / `aarch64-apple-darwin`
   by arch, and `build-backend-sea.mjs` sets the Mach-O segment on `darwin`.
 - README now lists macOS support and Tauri macOS prerequisites (Xcode CLT, Rust, Node 22+).
+- Root Rust scripts use `scripts/cargo.mjs`, which preserves normal `cargo`
+  behavior and falls back to `rustup run stable cargo` when Homebrew rustup has
+  no Cargo shim on PATH.
+- `.github/workflows/ci.yml` runs the full `npm run check` gate on both
+  `windows-latest` and `macos-latest`.
+- `.github/workflows/desktop-release.yml` builds Windows NSIS and macOS DMG
+  artifacts without sharing platform-specific installer config.
+- macOS SEA output is ad-hoc signed after postject injection so the generated
+  backend binary can launch locally and inside the app bundle.
 
 ## Remaining (macOS-specific)
 
-- No native macOS run in this audit (audited from Linux).
 - macOS desktop release still needs a signing/notarization decision before distribution.
-- A macOS CI/package job is not set up yet.
+- Local SEA packaging needs a Node runtime with a postject-compatible SEA fuse.
+  GitHub Actions `setup-node` provides one; if a local Node build fails, set
+  `NODE_SEA_RUNTIME` to an official Node runtime.
 
 ## Suggested macOS Smoke Path
 
 ```bash
 npm ci
-npm --prefix packages/backend test
-npm run stage-web
+npm run check
 node packages/backend/bin/agent-hotline.js run --browser
 ```
 
@@ -52,4 +63,11 @@ Desktop smoke, after Rust and Tauri prerequisites:
 
 ```bash
 npm run dev
+```
+
+Packaging smoke, using an official Node runtime for SEA:
+
+```bash
+NODE_SEA_RUNTIME=/path/to/official/node npm run build:backend-sea
+npm --workspace @agent-hotline/desktop run tauri -- build --config src-tauri/tauri.installer.macos.conf.json
 ```

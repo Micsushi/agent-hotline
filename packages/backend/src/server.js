@@ -11,6 +11,8 @@ const {
 const { createSpeechQueueStore, defaultDataDir } = require("./speech-queue-store");
 const { createSpoolStore } = require("./spool-store");
 const { createAudioCacheStore } = require("./audio-cache-store");
+const { createNativeTts } = require("./native-tts");
+const { createNativeKokoroTts } = require("./native-kokoro-tts");
 
 const PORT = Number(process.env.AGENT_HOTLINE_PORT || process.env.VOICE_QUESTION_LOOP_PORT || 4777);
 const HOST = "127.0.0.1";
@@ -315,7 +317,9 @@ function validateSettingsPatch(patch) {
     "notifyOnNewReply",
     "notificationOpens",
     "highlightSpokenText",
-    "audioCacheLimitMb"
+    "audioCacheLimitMb",
+    "startupSplash",
+    "startupJingle"
   ]);
   const allowedSkipRules = new Set([
     "codeBlocks",
@@ -336,7 +340,7 @@ function validateSettingsPatch(patch) {
   }
   if ("mute" in patch && typeof patch.mute !== "boolean") errors.push("mute must be boolean");
   if ("engine" in patch && !TTS_ENGINES.includes(patch.engine)) {
-    errors.push("engine must be webview or kokoro");
+    errors.push(`engine must be ${TTS_ENGINES.join(", ")}`);
   }
   if ("voice" in patch && typeof patch.voice !== "string") errors.push("voice must be string");
   if ("audioOutputDeviceId" in patch && typeof patch.audioOutputDeviceId !== "string") {
@@ -379,6 +383,12 @@ function validateSettingsPatch(patch) {
       patch.audioCacheLimitMb > AUDIO_CACHE_LIMIT_MAX_MB)
   ) {
     errors.push(`audioCacheLimitMb must be a number from 10 to ${AUDIO_CACHE_LIMIT_MAX_MB}`);
+  }
+  if ("startupSplash" in patch && typeof patch.startupSplash !== "boolean") {
+    errors.push("startupSplash must be boolean");
+  }
+  if ("startupJingle" in patch && typeof patch.startupJingle !== "boolean") {
+    errors.push("startupJingle must be boolean");
   }
   if ("skipRules" in patch) {
     if (!patch.skipRules || typeof patch.skipRules !== "object" || Array.isArray(patch.skipRules)) {
@@ -650,7 +660,8 @@ function createServer(options = {}) {
     options.settingsStore ||
     createSettingsStore({
       dataDir,
-      settingsPath: options.settingsPath
+      settingsPath: options.settingsPath,
+      platform: options.platform
     });
   const queueStore =
     options.queueStore ||
@@ -680,6 +691,8 @@ function createServer(options = {}) {
 
   const spoolStore =
     options.spoolStore || createSpoolStore({ dataDir, filePath: options.spoolPath });
+  const nativeTts = options.nativeTts || createNativeTts({ platform: options.platform });
+  const nativeKokoroTts = options.nativeKokoroTts || createNativeKokoroTts(options.nativeKokoro);
   try {
     spoolStore.drain((item) => queueStore.enqueue(item));
   } catch {}
@@ -721,6 +734,26 @@ function createServer(options = {}) {
 
       if (req.method === "GET" && pathname === "/api/settings") {
         sendJson(res, 200, { settings: settingsStore.load() });
+        return;
+      }
+
+      if (req.method === "GET" && pathname === "/api/native-voices") {
+        try {
+          const voices =
+            typeof nativeTts.listMacosVoices === "function" ? await nativeTts.listMacosVoices() : [];
+          sendJson(res, 200, {
+            platform: options.platform || process.platform,
+            voices,
+            recommended: voices[0]?.name || ""
+          });
+        } catch (error) {
+          sendJson(res, 200, {
+            platform: options.platform || process.platform,
+            voices: [],
+            recommended: "",
+            error: String(error?.message || error)
+          });
+        }
         return;
       }
 
@@ -826,6 +859,79 @@ function createServer(options = {}) {
           throw createHttpError(404, "not_found", "Queue item cannot be replayed");
         }
         sendJson(res, 201, { item, queue: queueState(queueStore) });
+        return;
+      }
+
+      const nativeAudioMatch = pathname.match(/^\/api\/queue\/([^/]+)\/native-audio$/);
+      if (req.method === "POST" && nativeAudioMatch) {
+        const id = decodeURIComponent(nativeAudioMatch[1]);
+        const body = await readJsonBody(req);
+        requirePlainObject(body);
+        const engine = body.engine || "macos";
+        if (engine !== "macos") {
+          throw createHttpError(400, "invalid_request", "engine must be macos");
+        }
+        const item = visibleQueueItems(queueStore).find((candidate) => candidate.id === id);
+        if (!item) {
+          throw createHttpError(404, "not_found", "Queue item not found");
+        }
+        const text = typeof body.text === "string" ? body.text : item.speakableText;
+        requireString(text, "text");
+        try {
+          const generated = await nativeTts.generateMacos({
+            text,
+            voice: typeof body.voice === "string" ? body.voice : "",
+            rate: body.rate
+          });
+          const generatedVoice =
+            typeof body.voice === "string" && body.voice.trim() ? body.voice.trim() : "default";
+          const cacheVoice =
+            typeof body.cacheVoice === "string" && body.cacheVoice.trim()
+              ? body.cacheVoice.trim()
+              : generatedVoice;
+          const entry = audioCacheStore.put(id, "macos", cacheVoice, generated);
+          sendJson(res, 201, { stored: Boolean(entry), entry: entry || null });
+        } catch (error) {
+          if (error.code === "unsupported_platform") {
+            throw createHttpError(501, "unsupported_platform", error.message);
+          }
+          if (error.code === "invalid_request") {
+            throw createHttpError(400, "invalid_request", error.message);
+          }
+          throw error;
+        }
+        return;
+      }
+
+      const nativeKokoroAudioMatch = pathname.match(/^\/api\/queue\/([^/]+)\/kokoro-native-audio$/);
+      if (req.method === "POST" && nativeKokoroAudioMatch) {
+        const id = decodeURIComponent(nativeKokoroAudioMatch[1]);
+        const body = await readJsonBody(req);
+        requirePlainObject(body);
+        const item = visibleQueueItems(queueStore).find((candidate) => candidate.id === id);
+        if (!item) {
+          throw createHttpError(404, "not_found", "Queue item not found");
+        }
+        const text = typeof body.text === "string" ? body.text : item.speakableText;
+        requireString(text, "text");
+        try {
+          const generated = await nativeKokoroTts.generate({
+            text,
+            voice: typeof body.voice === "string" ? body.voice : "",
+            speed: body.speed
+          });
+          const cacheVoice =
+            typeof body.cacheVoice === "string" && body.cacheVoice.trim()
+              ? body.cacheVoice.trim()
+              : generated.voice || "default";
+          const entry = audioCacheStore.put(id, "kokoro-native", cacheVoice, generated);
+          sendJson(res, 201, { stored: Boolean(entry), entry: entry || null });
+        } catch (error) {
+          if (error.code === "invalid_request") {
+            throw createHttpError(400, "invalid_request", error.message);
+          }
+          throw error;
+        }
         return;
       }
 

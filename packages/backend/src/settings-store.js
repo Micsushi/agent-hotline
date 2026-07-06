@@ -4,12 +4,12 @@ const { getDefaultDataDir } = require("./platform");
 
 const SETTINGS_FILE = "settings.json";
 const READ_BEHAVIORS = new Set(["manual", "auto"]);
-const TTS_ENGINES = new Set(["webview", "kokoro"]);
+const TTS_ENGINES = new Set(["webview", "kokoro", "kokoro-native", "macos"]);
 const NOTIFICATION_OPENS = new Set(["full", "mini"]);
 const AUDIO_CACHE_LIMIT_MAX_MB = 100000;
 const DEFAULT_RATE = 0.9;
 
-const DEFAULT_SETTINGS = Object.freeze({
+const BASE_DEFAULT_SETTINGS = Object.freeze({
   readBehavior: "manual",
   mute: false,
   engine: "kokoro",
@@ -31,11 +31,26 @@ const DEFAULT_SETTINGS = Object.freeze({
   antigravityEnabled: true,
   notifyOnNewReply: false,
   notificationOpens: "full",
-  highlightSpokenText: false,
+  highlightSpokenText: true,
   audioCacheLimitMb: 1024,
   startupSplash: true,
   startupJingle: true
 });
+
+function defaultEngineForPlatform(platform = process.platform) {
+  if (platform === "darwin") return "kokoro-native";
+  return "kokoro";
+}
+
+function getDefaultSettings(options = {}) {
+  return {
+    ...BASE_DEFAULT_SETTINGS,
+    engine: defaultEngineForPlatform(options.platform),
+    skipRules: { ...BASE_DEFAULT_SETTINGS.skipRules }
+  };
+}
+
+const DEFAULT_SETTINGS = Object.freeze(getDefaultSettings());
 
 function getSettingsPath(options = {}) {
   if (options.settingsPath) {
@@ -74,9 +89,14 @@ function normalizeRate(value, fallback) {
   return rate === 0.92 ? DEFAULT_RATE : rate;
 }
 
-function normalizeSettings(input) {
+function normalizeEngine(value, fallback) {
+  if (value === "kokoro-ts") return "kokoro";
+  return TTS_ENGINES.has(value) ? value : fallback;
+}
+
+function normalizeSettings(input, options = {}) {
   const source = isPlainObject(input) ? input : {};
-  const defaults = DEFAULT_SETTINGS;
+  const defaults = getDefaultSettings(options);
   const sourceSkipRules = isPlainObject(source.skipRules) ? source.skipRules : {};
 
   return {
@@ -84,7 +104,7 @@ function normalizeSettings(input) {
       ? source.readBehavior
       : defaults.readBehavior,
     mute: booleanOrDefault(source.mute, defaults.mute),
-    engine: TTS_ENGINES.has(source.engine) ? source.engine : defaults.engine,
+    engine: normalizeEngine(source.engine, defaults.engine),
     voice: stringOrDefault(source.voice, defaults.voice),
     audioOutputDeviceId: stringOrDefault(source.audioOutputDeviceId, defaults.audioOutputDeviceId),
     kokoroVoice: stringOrDefault(source.kokoroVoice, defaults.kokoroVoice),
@@ -136,11 +156,11 @@ function writeJson(file, value) {
 }
 
 function loadSettings(options = {}) {
-  return normalizeSettings(readJson(getSettingsPath(options)));
+  return normalizeSettings(readJson(getSettingsPath(options)), options);
 }
 
 function saveSettings(settings, options = {}) {
-  const nextSettings = normalizeSettings(settings);
+  const nextSettings = normalizeSettings(settings, options);
   writeJson(getSettingsPath(options), nextSettings);
   return nextSettings;
 }
@@ -148,14 +168,17 @@ function saveSettings(settings, options = {}) {
 function updateSettings(patch, options = {}) {
   const current = loadSettings(options);
   const source = isPlainObject(patch) ? patch : {};
-  const nextSettings = normalizeSettings({
-    ...current,
-    ...source,
-    skipRules: {
-      ...current.skipRules,
-      ...(isPlainObject(source.skipRules) ? source.skipRules : {})
-    }
-  });
+  const nextSettings = normalizeSettings(
+    {
+      ...current,
+      ...source,
+      skipRules: {
+        ...current.skipRules,
+        ...(isPlainObject(source.skipRules) ? source.skipRules : {})
+      }
+    },
+    options
+  );
 
   return saveSettings(nextSettings, options);
 }
@@ -181,7 +204,9 @@ module.exports = {
   READ_BEHAVIORS: Array.from(READ_BEHAVIORS),
   TTS_ENGINES: Array.from(TTS_ENGINES),
   createSettingsStore,
+  defaultEngineForPlatform,
   getDefaultDataDir,
+  getDefaultSettings,
   getSettingsPath,
   loadSettings,
   normalizeSettings,

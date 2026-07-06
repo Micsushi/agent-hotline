@@ -7,7 +7,9 @@ const test = require("node:test");
 const {
   DEFAULT_SETTINGS,
   createSettingsStore,
+  defaultEngineForPlatform,
   getDefaultDataDir,
+  getDefaultSettings,
   loadSettings,
   saveSettings,
   updateSettings
@@ -20,8 +22,18 @@ function tempDir() {
 test("settings load with defaults when no file exists", () => {
   const dataDir = tempDir();
 
-  assert.deepEqual(loadSettings({ dataDir }), DEFAULT_SETTINGS);
+  assert.deepEqual(
+    loadSettings({ dataDir, platform: "win32" }),
+    getDefaultSettings({ platform: "win32" })
+  );
   assert.equal(fs.existsSync(path.join(dataDir, "settings.json")), false);
+});
+
+test("settings choose platform-specific default speech engines", () => {
+  assert.equal(defaultEngineForPlatform("darwin"), "kokoro-native");
+  assert.equal(defaultEngineForPlatform("win32"), "kokoro");
+  assert.equal(loadSettings({ dataDir: tempDir(), platform: "darwin" }).engine, "kokoro-native");
+  assert.equal(loadSettings({ dataDir: tempDir(), platform: "win32" }).engine, "kokoro");
 });
 
 test("settings persist after edit and reload", () => {
@@ -46,7 +58,7 @@ test("settings persist after edit and reload", () => {
   assert.deepEqual(restartedStore.load(), {
     readBehavior: "auto",
     mute: true,
-    engine: "kokoro",
+    engine: DEFAULT_SETTINGS.engine,
     voice: "Test Voice",
     audioOutputDeviceId: "",
     kokoroVoice: "af_heart",
@@ -65,7 +77,7 @@ test("settings persist after edit and reload", () => {
     antigravityEnabled: true,
     notifyOnNewReply: false,
     notificationOpens: "full",
-    highlightSpokenText: false,
+    highlightSpokenText: true,
     audioCacheLimitMb: 1024,
     startupSplash: true,
     startupJingle: true
@@ -141,7 +153,10 @@ test("invalid settings file falls back safely", () => {
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(path.join(dataDir, "settings.json"), "{ not json", "utf8");
 
-  assert.deepEqual(loadSettings({ dataDir }), DEFAULT_SETTINGS);
+  assert.deepEqual(
+    loadSettings({ dataDir, platform: "win32" }),
+    getDefaultSettings({ platform: "win32" })
+  );
 });
 
 test("invalid settings fields fall back safely", () => {
@@ -166,8 +181,8 @@ test("invalid settings fields fall back safely", () => {
     "utf8"
   );
 
-  assert.deepEqual(loadSettings({ dataDir }), {
-    ...DEFAULT_SETTINGS,
+  assert.deepEqual(loadSettings({ dataDir, platform: "win32" }), {
+    ...getDefaultSettings({ platform: "win32" }),
     skipRules: {
       ...DEFAULT_SETTINGS.skipRules,
       diffs: false

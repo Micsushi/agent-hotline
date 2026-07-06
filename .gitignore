@@ -27,6 +27,8 @@ packages/backend/data/hook-debug/
 
 # Local TTS dependency assets
 packages/desktop/public/headtts/
+packages/desktop/public/kokoro-voices/
+packages/desktop/public/models/
 
 # Local environment and logs
 .env

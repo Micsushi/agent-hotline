@@ -110,9 +110,9 @@ function formatDoctorReport(report) {
   lines.push("  npx --yes @micsushi/agent-hotline install --harness all --skill all");
   lines.push("  npx --yes @micsushi/agent-hotline run");
 
-  if (report.platform === "win32") {
+  if (report.platform === "win32" || report.platform === "darwin") {
     lines.push("");
-    lines.push("Windows desktop installer:");
+    lines.push(`${report.platform === "darwin" ? "macOS" : "Windows"} desktop installer:`);
     lines.push("  https://github.com/Micsushi/agent-hotline/releases/latest");
   }
 

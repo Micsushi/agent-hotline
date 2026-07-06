@@ -164,6 +164,19 @@ function testSpokenSectionDoesNotRequireDisplayedSection() {
   );
 }
 
+function testShortSpokenSectionDoesNotFallThroughToDisplayed() {
+  const input = ["Spoken:", "Yes.", "", "Displayed:", "const detail = true;"].join("\n");
+
+  const result = filterSpeakableText(input);
+
+  assert.equal(result.shouldSpeak, true);
+  assert.equal(result.reason, "spoken_section");
+  assert.equal(result.source, "spoken");
+  assert.equal(result.text, "Yes.");
+  assert.equal(result.text.includes("Displayed"), false);
+  assert.equal(result.text.includes("const detail"), false);
+}
+
 function testMarkdownHeadingsAndMarkupAreStripped() {
   const msg = [
     "**Spoken:**",
@@ -197,7 +210,8 @@ const tests = [
   testLongBulletListIsSkipped,
   testSpeakableTextGetsConversationStyle,
   testStyleSpokenTextHandlesFormalPhrasing,
-  testSpokenSectionDoesNotRequireDisplayedSection
+  testSpokenSectionDoesNotRequireDisplayedSection,
+  testShortSpokenSectionDoesNotFallThroughToDisplayed
 ];
 
 for (const test of tests) {

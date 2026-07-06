@@ -1175,33 +1175,37 @@ body.is-col-resizing {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 14px;
-  overflow: visible;
+  gap: 10px;
+  overflow: hidden;
   height: var(--col-head-height);
-  padding: 0 var(--column-gutter);
+  padding: 0 10px 0 var(--column-gutter);
 }
 .convo-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 7px;
   flex: 0 1 auto;
   margin-left: auto;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .session-find {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-width: 132px;
-  max-width: 260px;
+  flex: 0 1 142px;
+  min-width: 112px;
+  max-width: 180px;
   padding: 3px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: color-mix(in srgb, var(--sidebar-1) 82%, transparent);
 }
 .session-find input {
-  min-width: 58px;
-  width: 128px;
+  min-width: 38px;
+  width: 66px;
   height: 26px;
   border: 0;
   outline: 0;
@@ -1241,9 +1245,10 @@ body.is-col-resizing {
   font-weight: var(--weight-strong);
   text-transform: none;
   letter-spacing: 0;
-  padding: 6px 12px;
+  padding: 6px 10px;
   border-radius: 6px;
   cursor: pointer;
+  white-space: nowrap;
 }
 .text-button:hover {
   background: color-mix(in srgb, var(--owner-chip-text, var(--accent-hover)) 22%, var(--surface));
@@ -1273,7 +1278,8 @@ body.is-col-resizing {
   gap: 8px;
   min-width: 0;
   overflow: hidden;
-  flex: 1 1 auto;
+  flex: 1 1 180px;
+  max-width: min(320px, 42%);
 }
 .convo-head-left #current-session-title {
   display: inline-flex;

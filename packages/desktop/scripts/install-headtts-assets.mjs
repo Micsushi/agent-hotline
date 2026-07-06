@@ -38,11 +38,23 @@ const ALL_VOICES = [
 
 const VOICE_BASE_URL =
   "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices";
+const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+const KOKORO_MODEL_BASE_URL = `https://huggingface.co/${KOKORO_MODEL_ID}/resolve/main`;
+const KOKORO_MODEL_FILES = [
+  "config.json",
+  "tokenizer.json",
+  "tokenizer_config.json",
+  "onnx/model.onnx",
+  "onnx/model_quantized.onnx"
+];
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const outputRoot = resolve(root, "public/headtts");
 const voicesRoot = join(outputRoot, "voices");
+const kokoroModelsRoot = resolve(root, "public/models", KOKORO_MODEL_ID);
+const kokoroVoicesRoot = resolve(root, "public/kokoro-voices");
 const headttsRoot = dirname(require.resolve("@met4citizen/headtts/package.json"));
+const kokoroRoot = resolve(dirname(require.resolve("kokoro-js")), "..");
 
 function optionValue(name) {
   const match = process.argv.find((arg) => arg === name || arg.startsWith(`${name}=`));
@@ -108,6 +120,41 @@ async function downloadVoice(voice) {
   await writeFile(filePath, bytes);
 }
 
+async function downloadFile(url, filePath, label) {
+  if (await exists(filePath)) {
+    console.log(`${label} already present.`);
+    return;
+  }
+
+  await mkdir(dirname(filePath), { recursive: true });
+  console.log(`Downloading ${label}...`);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  await writeFile(filePath, bytes);
+}
+
+async function installKokoroAssets() {
+  if (process.env.AGENT_HOTLINE_SKIP_KOKORO_INSTALL === "1") {
+    console.log("Skipping Kokoro asset install.");
+    return;
+  }
+
+  for (const file of KOKORO_MODEL_FILES) {
+    await downloadFile(
+      `${KOKORO_MODEL_BASE_URL}/${file}`,
+      join(kokoroModelsRoot, file),
+      `Kokoro model asset: ${file}`
+    );
+  }
+
+  await mkdir(kokoroVoicesRoot, { recursive: true });
+  await copyDir(join(kokoroRoot, "voices"), kokoroVoicesRoot);
+}
+
 if (process.env.AGENT_HOTLINE_SKIP_HEADTTS_INSTALL === "1") {
   console.log("Skipping HeadTTS asset install.");
   process.exit(0);
@@ -132,5 +179,6 @@ await writeFile(
 for (const voice of selectedVoices()) {
   await downloadVoice(voice);
 }
+await installKokoroAssets();
 
 console.log("HeadTTS assets are ready.");

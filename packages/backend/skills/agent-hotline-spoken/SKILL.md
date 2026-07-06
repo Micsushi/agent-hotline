@@ -8,9 +8,17 @@ description: >
 
 # Agent Hotline Spoken Skill
 
-When the read-aloud skill is active, every response must include a `Spoken:`
-section. Add `Displayed:` only when there is visual or dense supporting material
-that should stay on screen instead of being read aloud.
+When the read-aloud skill is active, final user-facing assistant replies must
+include a `Spoken:` section. Add `Displayed:` only when there is visual or dense
+supporting material that should stay on screen instead of being read aloud.
+
+Do not apply this format to hidden reasoning, tool calls, tool output, or
+internal progress. Short progress updates may stay plain when the final answer
+will carry the read-aloud format.
+
+For visible interim progress updates, use the user's normal terse caveman-style
+agent communication: short, direct, and no filler. Do not add a `Spoken:`
+section just to narrate tool use.
 
 ```text
 Spoken:
@@ -76,7 +84,8 @@ displayed dump. A listener should never need to read multiple screens of
 - `Spoken:` sits alone on its own line.
 - `==========` sits alone on its own line when `Displayed` is present.
 - `Displayed:` sits alone on its own line when used.
-- While read-aloud mode is active, every response must include `Spoken:`.
+- While read-aloud mode is active, final user-facing assistant replies must
+  include `Spoken:`.
 
 Agent Hotline reads only the `Spoken:` section. The `Displayed:` section stays
 visible in the chat and is never spoken.

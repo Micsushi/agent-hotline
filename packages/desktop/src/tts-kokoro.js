@@ -1,8 +1,15 @@
-﻿const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+﻿import { env as transformersEnv } from "@huggingface/transformers";
+
+const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 export const DEFAULT_KOKORO_VOICE = "af_heart";
 export const KOKORO_CHUNK_GAP_SEC = 0.08;
 
 const MAX_CHARS_PER_CHUNK = 300;
+const KOKORO_LOCAL_MODEL_PATH = "/models/";
+const KOKORO_VOICE_CACHE = "kokoro-voices";
+const KOKORO_VOICE_BASE_URL =
+  "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices";
+const KOKORO_LOCAL_VOICE_BASE = "/kokoro-voices";
 
 function chunkText(text, maxChars) {
   const sentences = text.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) || [text];
@@ -52,10 +59,41 @@ function concatSamples(buffers, gapSamples) {
 let loadPromise = null;
 let loadedDevice = null;
 let cachedVoices = null;
+const voiceCachePromises = new Map();
+
+function configureLocalModelLoading() {
+  // Full desktop builds ship Kokoro under /models. If those files are absent
+  // (for the lightweight npm/browser bundle), Transformers falls back to its
+  // normal remote download + browser cache path.
+  transformersEnv.allowLocalModels = true;
+  transformersEnv.localModelPath = KOKORO_LOCAL_MODEL_PATH;
+}
+
+async function seedLocalVoiceCache(voice) {
+  const name = String(voice || DEFAULT_KOKORO_VOICE).trim() || DEFAULT_KOKORO_VOICE;
+  if (voiceCachePromises.has(name)) return voiceCachePromises.get(name);
+
+  const promise = (async () => {
+    if (typeof caches === "undefined" || typeof fetch !== "function") return;
+    try {
+      const local = await fetch(`${KOKORO_LOCAL_VOICE_BASE}/${name}.bin`, { cache: "force-cache" });
+      if (!local.ok) return;
+      const cache = await caches.open(KOKORO_VOICE_CACHE);
+      await cache.put(`${KOKORO_VOICE_BASE_URL}/${name}.bin`, local.clone());
+    } catch {
+      // The light npm/browser bundle does not include local voice files. Let
+      // kokoro-js fetch and cache the voice from Hugging Face in that build.
+    }
+  })();
+
+  voiceCachePromises.set(name, promise);
+  return promise;
+}
 
 async function loadModel(preferredDevice) {
+  configureLocalModelLoading();
   const { KokoroTTS } = await import("kokoro-js");
-  const order = preferredDevice === "wasm" ? ["wasm"] : ["webgpu", "wasm"];
+  const order = preferredDevice === "webgpu" ? ["webgpu", "wasm"] : ["wasm"];
 
   let lastError = null;
   for (const device of order) {
@@ -100,6 +138,7 @@ export function isKokoroReady() {
 export async function generateKokoroChunk(text, voice, speed, preferredDevice) {
   const tts = await warmKokoro(preferredDevice);
   const useVoice = cachedVoices?.includes(voice) ? voice : DEFAULT_KOKORO_VOICE;
+  await seedLocalVoiceCache(useVoice);
   const useSpeed = Number.isFinite(speed) ? speed : 1;
   const result = await tts.generate(text, { voice: useVoice, speed: useSpeed });
   return { samples: result.audio, sampleRate: result.sampling_rate };

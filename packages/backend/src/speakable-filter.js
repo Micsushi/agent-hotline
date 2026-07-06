@@ -18,11 +18,11 @@ function filterSpeakableText(input) {
   }
 
   const spoken = extractSpokenSection(input);
-  if (spoken) {
+  if (spoken !== null) {
     const text = styleSpokenText(normalizeSpeakableText(removeUnsafeBlocks(spoken)), {
       maxSentences: 0
     });
-    if (isSpeakable(text)) {
+    if (text) {
       return {
         shouldSpeak: true,
         text,
@@ -30,6 +30,7 @@ function filterSpeakableText(input) {
         source: "spoken"
       };
     }
+    return skipResult();
   }
 
   const text = styleSpokenText(normalizeSpeakableText(removeUnsafeBlocks(input)));
@@ -57,7 +58,7 @@ function skipResult() {
 function extractSpokenSection(input) {
   const match = SPOKEN_HEADING.exec(input);
   if (!match) {
-    return "";
+    return null;
   }
 
   const start = match.index + match[0].length;

@@ -281,8 +281,10 @@ function managedInstructionBlock() {
   return [
     MANAGED_BLOCK_START,
     'Agent Hotline read-aloud: when the user says "hotline on", "read aloud on",',
-    '"start read-aloud", or "spoken mode", every response must include Spoken.',
+    '"start read-aloud", or "spoken mode", final user-facing assistant replies must include Spoken.',
     "Displayed is optional and should be used only for visual or dense supporting detail.",
+    "Do not apply this format to hidden reasoning, tool calls, tool output, or internal progress.",
+    "For visible interim progress updates, use terse caveman-style agent communication: short, direct, and no filler.",
     "",
     "Spoken:",
     "The primary answer for text-to-speech. It must stand on its own for a listener.",

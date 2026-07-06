@@ -140,7 +140,9 @@ test("settings can be read, updated, muted, and unmuted without provider credent
         rate: 1.2,
         volume: 0.7,
         skipRules: { tables: false },
-        codexEnabled: false
+        codexEnabled: false,
+        startupSplash: false,
+        startupJingle: false
       })
     });
     assert.equal(updated.response.status, 200);
@@ -150,6 +152,8 @@ test("settings can be read, updated, muted, and unmuted without provider credent
     assert.equal(updated.body.settings.skipRules.tables, false);
     assert.equal(updated.body.settings.skipRules.codeBlocks, true);
     assert.equal(updated.body.settings.codexEnabled, false);
+    assert.equal(updated.body.settings.startupSplash, false);
+    assert.equal(updated.body.settings.startupJingle, false);
 
     const muted = await jsonFetch(baseUrl, "/api/mute", { method: "POST" });
     assert.equal(muted.response.status, 200);
@@ -163,6 +167,36 @@ test("settings can be read, updated, muted, and unmuted without provider credent
     assert.equal(persisted.readBehavior, "auto");
     assert.equal(persisted.mute, false);
   });
+});
+
+test("native voice endpoint returns ranked macOS voices", async () => {
+  const dataDir = tempDir();
+  const server = createServer({
+    dataDir,
+    platform: "darwin",
+    nativeTts: {
+      listMacosVoices: async () => [
+        { name: "Ava Premium", lang: "en_US", sample: "Hello!", score: 185 },
+        { name: "Samantha", lang: "en_US", sample: "Hello!", score: 105 }
+      ]
+    }
+  });
+  const port = await listen(server);
+  const baseUrl = `http://${HOST}:${port}`;
+
+  try {
+    const { response, body } = await jsonFetch(baseUrl, "/api/native-voices");
+
+    assert.equal(response.status, 200);
+    assert.equal(body.platform, "darwin");
+    assert.equal(body.recommended, "Ava Premium");
+    assert.deepEqual(
+      body.voices.map((voice) => voice.name),
+      ["Ava Premium", "Samantha"]
+    );
+  } finally {
+    await close(server);
+  }
 });
 
 test("queue endpoints enqueue, expose state, mark played/skipped, and replay latest", async () => {

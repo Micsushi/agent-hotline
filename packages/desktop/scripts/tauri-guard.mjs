@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const args = process.argv.slice(2);
@@ -10,7 +11,26 @@ if (!command || command === "dev") {
 }
 
 const bin = process.platform === "win32" ? "tauri.cmd" : "tauri";
+const env = { ...process.env };
+const cargoCheck = spawnSync("cargo", ["--version"], {
+  encoding: "utf8",
+  windowsHide: true
+});
+
+if (cargoCheck.error && cargoCheck.error.code === "ENOENT") {
+  const cargoPath = spawnSync("rustup", ["which", "cargo"], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+  if (!cargoPath.error && cargoPath.status === 0 && cargoPath.stdout.trim()) {
+    const pathKey = process.platform === "win32" ? "Path" : "PATH";
+    env[pathKey] =
+      `${dirname(cargoPath.stdout.trim())}${process.platform === "win32" ? ";" : ":"}${env[pathKey] || ""}`;
+  }
+}
+
 const result = spawnSync(bin, args, {
+  env,
   stdio: "inherit",
   shell: process.platform === "win32"
 });

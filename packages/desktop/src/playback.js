@@ -2,7 +2,9 @@ import {
   generateKokoroAudio,
   generateKokoroChunk,
   getKokoroChunks,
-  KOKORO_CHUNK_GAP_SEC
+  isKokoroReady,
+  KOKORO_CHUNK_GAP_SEC,
+  warmKokoro
 } from "./tts-kokoro.js";
 import { generateKokoroTimestampedAudio } from "./tts-kokoro-timestamped.js";
 import { cacheGeneratedAudio, getAudio, getCachedAudio, withGenLock } from "./audio-cache.js";
@@ -12,8 +14,10 @@ const RATE_MAX = 4;
 const DEFAULT_RATE = 0.9;
 
 const KOKORO_SAFE_SPEED = 1.5;
+const DEFAULT_KOKORO_FIRST_CHUNK_TIMEOUT_MS = 30_000;
 
-const STRETCH_LEADIN_SEC = 0.2;
+const STRETCH_LEADIN_SEC = 0.35;
+const STRETCH_LEADIN_MAX_SEC = 0.65;
 
 // High-rate audio quality. Above LIVE_INSTANT_MAX the WSOLA pitch-compensation
 // ratio (1 / playbackRate inside the SoundTouch worklet) gets large enough to
@@ -23,7 +27,7 @@ const STRETCH_LEADIN_SEC = 0.2;
 // quantized into a few bands so the cache holds few variants and the live
 // slider only triggers a regeneration when it crosses a band boundary.
 const LIVE_INSTANT_MAX = 2; // <= this: generate at 1x, WSOLA does all of it (instant slider)
-const NATIVE_SPEED_CAP = 2; // never ask Kokoro to natively speak faster than this
+const NATIVE_SPEED_CAP = KOKORO_SAFE_SPEED; // avoid Kokoro high-speed duration artifacts
 const GEN_SPEED_STEP = 0.25; // quantize native gen speed to these increments
 
 // Split a target playback rate into a native Kokoro generation speed and a
@@ -42,6 +46,12 @@ function planSpeed(rate, canStretch) {
   const ideal = Math.min(NATIVE_SPEED_CAP, Math.sqrt(target));
   const genSpeed = Math.max(1, Math.round(ideal / GEN_SPEED_STEP) * GEN_SPEED_STEP);
   return { genSpeed, stretchRate: target / genSpeed };
+}
+
+function stretchLeadInSec(rate) {
+  const residual = clampNumber(Number(rate), 1, RATE_MIN, RATE_MAX);
+  if (residual <= 1.001) return 0;
+  return Math.min(STRETCH_LEADIN_MAX_SEC, STRETCH_LEADIN_SEC + Math.max(0, residual - 1) * 0.15);
 }
 
 const SPEECH_STRETCH_PARAMS = {
@@ -70,6 +80,19 @@ function wait(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+async function withTimeout(promise, ms, message) {
+  if (!Number.isFinite(ms) || ms <= 0) return promise;
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 function clampNumber(value, fallback, min, max) {
@@ -114,19 +137,39 @@ async function loadVoices(synth) {
 
 function scoreVoice(voice) {
   const haystack = `${voice.name || ""} ${voice.voiceURI || ""} ${voice.lang || ""}`.toLowerCase();
+  if (/\b(online|cloud|remote|network|google)\b/.test(haystack)) return -10_000;
+
   let score = 0;
 
-  if (haystack.includes("natural")) score += 80;
-  if (haystack.includes("online")) score += 70;
-  if (haystack.includes("neural")) score += 70;
-  if (haystack.includes("aria")) score += 50;
-  if (haystack.includes("jenny")) score += 45;
-  if (haystack.includes("guy")) score += 35;
-  if (haystack.includes("zira")) score += 25;
-  if (haystack.includes("david")) score += 15;
+  if (haystack.includes("en-us") || haystack.includes("en_us")) score += 40;
+  if (haystack.includes("english (us)")) score += 35;
+  if (haystack.includes("english")) score += 20;
+
+  if (haystack.includes("alex")) score += 120;
+  if (haystack.includes("samantha") && haystack.includes("enhanced")) score += 115;
+  else if (haystack.includes("samantha")) score += 105;
+  if (haystack.includes("ava") && haystack.includes("enhanced")) score += 100;
+  else if (haystack.includes("ava")) score += 90;
+  if (haystack.includes("tom") && haystack.includes("enhanced")) score += 85;
+  else if (haystack.includes("tom")) score += 75;
+  if (haystack.includes("zoe") && haystack.includes("premium")) score += 70;
+  else if (haystack.includes("zoe")) score += 65;
+
+  if (haystack.includes("natural")) score += 15;
+  if (haystack.includes("enhanced")) score += 10;
+  if (haystack.includes("premium")) score += 5;
   if (haystack.includes("english")) score += 10;
-  if (haystack.includes("en-us")) score += 10;
-  if (haystack.includes("desktop")) score -= 20;
+  if (haystack.includes("desktop")) score += 5;
+
+  if (haystack.includes("siri")) score -= 500;
+  if (haystack.includes("flo")) score -= 50;
+  if (haystack.includes("shelley")) score -= 50;
+  if (haystack.includes("reed")) score -= 50;
+  if (haystack.includes("rocko")) score -= 50;
+  if (haystack.includes("eddy")) score -= 50;
+  if (haystack.includes("grandma")) score -= 50;
+  if (haystack.includes("grandpa")) score -= 50;
+  if (haystack.includes("sandy")) score -= 50;
 
   return score;
 }
@@ -137,13 +180,53 @@ function selectVoice(voices, preferredName) {
     return voices.find((voice) => voice.name === name || voice.voiceURI === name) || null;
   }
 
-  return [...voices].sort((left, right) => scoreVoice(right) - scoreVoice(left))[0] || null;
+  const ranked = [...voices]
+    .map((voice) => ({ voice, score: scoreVoice(voice) }))
+    .filter((entry) => entry.score > -10_000)
+    .sort((left, right) => right.score - left.score);
+  return ranked[0]?.voice || null;
 }
 
 function normalizeSpeakableText(item) {
   return String(item?.speakableText || "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function nowSeconds() {
+  return Date.now() / 1000;
+}
+
+function estimateSpeechDurationSec(text, rate) {
+  const wordCount = String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+  const wordsPerMinute = 175 * clampNumber(Number(rate), DEFAULT_RATE, 0.1, 10);
+  return Math.max(1, (wordCount / wordsPerMinute) * 60);
+}
+
+function estimateSpeechSegments(text, totalSec) {
+  const normalized = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return [];
+
+  const sentences = normalized.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) || [normalized];
+  const parts = sentences.map((sentence) => sentence.trim()).filter(Boolean);
+  if (parts.length === 0) return [];
+
+  const totalChars = parts.reduce((sum, part) => sum + part.length, 0) || normalized.length;
+  let cursor = 0;
+  return parts.map((part, index) => {
+    const startSec = cursor;
+    const duration =
+      index === parts.length - 1
+        ? Math.max(0, totalSec - cursor)
+        : Math.max(0.1, totalSec * (part.length / totalChars));
+    cursor = Math.min(totalSec, cursor + duration);
+    return { text: part, startSec, endSec: cursor };
+  });
 }
 
 function getSkipReason(item) {
@@ -155,6 +238,12 @@ function getSkipReason(item) {
   return "";
 }
 
+function audioEngineLabel(engine) {
+  if (engine === "macos") return "macOS native";
+  if (engine === "kokoro-native") return "Kokoro Mac native";
+  return "Kokoro";
+}
+
 export function createPlaybackController({
   backendUrl,
   onUpdate,
@@ -162,7 +251,10 @@ export function createPlaybackController({
   onItemFinished,
   kokoroGenerateAudio = generateKokoroAudio,
   kokoroGenerateChunk = generateKokoroChunk,
-  kokoroGetChunks = getKokoroChunks
+  kokoroGetChunks = getKokoroChunks,
+  kokoroWarm = warmKokoro,
+  kokoroFirstChunkTimeoutMs = DEFAULT_KOKORO_FIRST_CHUNK_TIMEOUT_MS,
+  stretchNodeClass = null
 }) {
   let activeUtterance = null;
   let audioContext = null;
@@ -170,11 +262,12 @@ export function createPlaybackController({
   let activeStretch = null;
   let activeGain = null;
   let activeGenSpeed = 1;
+  let activeEngine = "";
   let activeItem = null;
   let playbackState = "idle";
   let playbackToken = 0;
   let stretchRegistration = null;
-  let StretchNodeClass = null;
+  let StretchNodeClass = stretchNodeClass;
 
   let activeBuffer = null;
   let activeLeadInSec = 0;
@@ -216,6 +309,7 @@ export function createPlaybackController({
   }
 
   async function ensureStretch(context) {
+    if (StretchNodeClass) return true;
     if (typeof context.audioWorklet === "undefined") return false;
     if (!stretchRegistration) {
       stretchRegistration = (async () => {
@@ -300,6 +394,7 @@ export function createPlaybackController({
     }
     activeGain = null;
     activeGenSpeed = 1;
+    activeEngine = "";
     activeBuffer = null;
     activeSegments = [];
     activeWordAccurate = false;
@@ -311,8 +406,16 @@ export function createPlaybackController({
   }
 
   function getCurrentSpeechSec() {
+    if (activeUtterance && activeSpeechDuration > 0) {
+      if (playbackState === "paused") {
+        return Math.min(activeSpeechDuration, Math.max(0, basePosSec));
+      }
+      const elapsed = nowSeconds() - baseCtxTime;
+      return Math.min(activeSpeechDuration, Math.max(0, basePosSec + elapsed));
+    }
+
     if ((!activeBuffer && !activeStream) || !audioContext) return 0;
-    const rate = activeUseStretch ? activeStretchRate : 1;
+    const rate = activeStretchRate || 1;
     const elapsed = (audioContext.currentTime - baseCtxTime) * rate;
     return Math.min(activeSpeechDuration, Math.max(0, basePosSec + elapsed));
   }
@@ -333,7 +436,7 @@ export function createPlaybackController({
       stretch.connect(activeGain);
       activeStretch = stretch;
     } else {
-      source.playbackRate.value = 1;
+      source.playbackRate.value = activeStretchRate || 1;
       source.connect(activeGain);
     }
 
@@ -376,7 +479,9 @@ export function createPlaybackController({
     if (resume && context.state === "suspended") await context.resume();
 
     const useStretch = Boolean(plan.useStretch && StretchNodeClass);
-    const leadInSamples = useStretch ? Math.round(generated.sampleRate * STRETCH_LEADIN_SEC) : 0;
+    const leadInSamples = useStretch
+      ? Math.round(generated.sampleRate * stretchLeadInSec(plan.stretchRate))
+      : 0;
     const buffer = context.createBuffer(
       1,
       leadInSamples + generated.samples.length,
@@ -469,7 +574,15 @@ export function createPlaybackController({
   async function playStreamChunk(stream, index) {
     let chunkResult;
     try {
-      chunkResult = await stream.chunkPromises[index];
+      const chunkPromise = stream.chunkPromises[index];
+      chunkResult =
+        index === 0
+          ? await withTimeout(
+              chunkPromise,
+              kokoroFirstChunkTimeoutMs,
+              "Kokoro did not produce the first audio chunk in time."
+            )
+          : await chunkPromise;
     } catch (error) {
       if (playbackToken !== stream.token || stream.cancelled) return;
       activeStream = null;
@@ -614,8 +727,18 @@ export function createPlaybackController({
       return;
     }
 
+    if (settings.engine === "kokoro-native") {
+      await speakWithNativeKokoro(item, settings);
+      return;
+    }
+
     if (settings.engine === "kokoro" || settings.engine === "kokoro-ts") {
       await speakWithKokoro(item, settings);
+      return;
+    }
+
+    if (settings.engine === "macos") {
+      await speakWithMacos(item, settings);
       return;
     }
 
@@ -645,11 +768,18 @@ export function createPlaybackController({
 
     activeUtterance = utterance;
     activeItem = playingItem;
+    activeSpeechDuration = estimateSpeechDurationSec(utterance.text, utterance.rate);
+    activeSegments = estimateSpeechSegments(utterance.text, activeSpeechDuration);
+    activeWordAccurate = false;
+    basePosSec = 0;
+    baseCtxTime = nowSeconds();
     setPlaybackState("speaking");
     notify(`Reading speakable text from ${playingItem.sourceApp}.`);
 
     utterance.onend = async () => {
       if (playbackToken !== token) return;
+      basePosSec = activeSpeechDuration;
+      baseCtxTime = nowSeconds();
       activeUtterance = null;
       activeItem = null;
       setPlaybackState("idle");
@@ -700,6 +830,182 @@ export function createPlaybackController({
     await speakItem(item, { ...settings, engine: "webview" });
   }
 
+  async function requestNativeAudio(playingItem, voice, cacheVoice, rate = DEFAULT_RATE) {
+    await postJson(`${backendUrl}/api/queue/${encodeURIComponent(playingItem.id)}/native-audio`, {
+      engine: "macos",
+      text: normalizeSpeakableText(playingItem),
+      voice: voice === "default" ? "" : voice,
+      cacheVoice,
+      rate
+    });
+  }
+
+  async function requestNativeKokoroAudio(playingItem, settings, voice, cacheVoice, speed) {
+    await postJson(
+      `${backendUrl}/api/queue/${encodeURIComponent(playingItem.id)}/kokoro-native-audio`,
+      {
+        text: normalizeSpeakableText(playingItem),
+        voice,
+        cacheVoice,
+        speed
+      }
+    );
+  }
+
+  async function speakWithMacos(item, settings) {
+    const token = playbackToken + 1;
+    playbackToken = token;
+
+    const synth = getSpeechSynthesis();
+    if (synth) synth.cancel();
+    releaseActiveAudio();
+
+    const context = getAudioContext();
+    if (!context) {
+      const reason = "This WebView does not expose Web Audio, so macOS native audio cannot play.";
+      await fallbackToBrowserSpeech(item, settings, reason);
+      return;
+    }
+    await applyOutputDevice(settings);
+
+    const playingItem = await markPlaying(item);
+    activeItem = playingItem;
+    activeEngine = "macos";
+    if (playbackToken === token) setPlaybackState("loading");
+
+    const rate = clampNumber(Number(settings.rate), DEFAULT_RATE, RATE_MIN, RATE_MAX);
+    const canStretch = await ensureStretch(context);
+    if (playbackToken !== token) return;
+
+    const voice = String(settings.voice || "").trim() || "default";
+    const genRate = canStretch ? DEFAULT_RATE : rate;
+    const cacheVoice = `${voice}@base-${Number(genRate).toFixed(2)}`;
+    const target = { itemId: playingItem.id, engine: "macos", voice: cacheVoice };
+    let generated = null;
+    try {
+      notify("Preparing macOS native speech...");
+      generated = await getCachedAudio(backendUrl, target).catch(() => null);
+      if (!generated) {
+        notify("Generating macOS native speech...");
+        await requestNativeAudio(playingItem, voice, cacheVoice, genRate);
+        generated = await getCachedAudio(backendUrl, target);
+      }
+      if (!generated) throw new Error("macOS native speech was not saved.");
+    } catch (error) {
+      if (playbackToken !== token) return;
+      activeItem = null;
+      releaseActiveAudio();
+      setPlaybackState("idle");
+      const reason = `macOS native speech failed: ${error.message}`;
+      await fallbackToBrowserSpeech(playingItem, settings, reason);
+      return;
+    }
+
+    if (playbackToken !== token) return;
+
+    try {
+      const useStretch = canStretch && Math.abs(rate - 1) > 0.001;
+      await installGeneratedBuffer(generated, settings, {
+        genSpeed: genRate / DEFAULT_RATE,
+        stretchRate: rate,
+        useStretch
+      });
+      activeEngine = "macos";
+      setPlaybackState("speaking");
+      notify(`Reading from ${playingItem.sourceApp} with macOS native voice.`);
+    } catch (error) {
+      if (playbackToken !== token) return;
+      releaseActiveAudio();
+      activeItem = null;
+      setPlaybackState("idle");
+      const reason = `macOS native audio playback failed: ${error.message}`;
+      await fallbackToBrowserSpeech(playingItem, settings, reason);
+    }
+  }
+
+  async function speakWithNativeKokoro(item, settings) {
+    const token = playbackToken + 1;
+    playbackToken = token;
+
+    const synth = getSpeechSynthesis();
+    if (synth) synth.cancel();
+    releaseActiveAudio();
+
+    const context = getAudioContext();
+    if (!context) {
+      const reason = "This WebView does not expose Web Audio, so native Kokoro cannot play.";
+      await fallbackToBrowserSpeech(item, settings, reason);
+      return;
+    }
+    await applyOutputDevice(settings);
+
+    const playingItem = await markPlaying(item);
+    activeItem = playingItem;
+    activeEngine = "kokoro-native";
+    if (playbackToken === token) setPlaybackState("loading");
+
+    const rate = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
+    const canStretch = await ensureStretch(context);
+    if (playbackToken !== token) return;
+
+    const { genSpeed, stretchRate } = planSpeed(rate, canStretch);
+    const voice = String(settings.kokoroVoice || "").trim() || "af_heart";
+    const cacheVoice = `${voice}@speed-${Number(genSpeed).toFixed(2)}`;
+    const target = { itemId: playingItem.id, engine: "kokoro-native", voice: cacheVoice };
+    let generated = null;
+
+    try {
+      notify(
+        `Preparing Kokoro Mac native speech${genSpeed > 1 ? ` at ${genSpeed.toFixed(2)}x` : ""}...`
+      );
+      generated = await getCachedAudio(backendUrl, target).catch(() => null);
+      if (!generated) {
+        notify("Generating Kokoro Mac native speech...");
+        await requestNativeKokoroAudio(playingItem, settings, voice, cacheVoice, genSpeed);
+        generated = await getCachedAudio(backendUrl, target);
+      }
+      if (!generated) throw new Error("Kokoro Mac native speech was not saved.");
+    } catch (error) {
+      if (playbackToken !== token) return;
+      activeItem = null;
+      releaseActiveAudio();
+      setPlaybackState("idle");
+      const reason = `Kokoro Mac native speech failed: ${error.message}`;
+      await fallbackToBrowserSpeech(playingItem, settings, reason);
+      return;
+    }
+
+    if (playbackToken !== token) return;
+
+    try {
+      const useStretch = canStretch && Math.abs(stretchRate - 1) > 0.001;
+      await installGeneratedBuffer(generated, settings, { genSpeed, stretchRate, useStretch });
+      activeEngine = "kokoro-native";
+      setPlaybackState("speaking");
+      notify(`Reading from ${playingItem.sourceApp} with Kokoro Mac native.`);
+    } catch (error) {
+      if (playbackToken !== token) return;
+      releaseActiveAudio();
+      activeItem = null;
+      setPlaybackState("idle");
+      const reason = `Kokoro Mac native playback failed: ${error.message}`;
+      await fallbackToBrowserSpeech(playingItem, settings, reason);
+    }
+  }
+
+  async function getNativeKokoroGenerated(playingItem, settings, target) {
+    const voice = String(settings.kokoroVoice || "").trim() || "af_heart";
+    const cacheVoice = `${voice}@speed-${Number(target.genSpeed).toFixed(2)}`;
+    const cacheTarget = { itemId: playingItem.id, engine: "kokoro-native", voice: cacheVoice };
+    let generated = await getCachedAudio(backendUrl, cacheTarget).catch(() => null);
+    if (!generated) {
+      await requestNativeKokoroAudio(playingItem, settings, voice, cacheVoice, target.genSpeed);
+      generated = await getCachedAudio(backendUrl, cacheTarget);
+    }
+    if (!generated) throw new Error("Kokoro Mac native speech was not saved.");
+    return generated;
+  }
+
   async function speakWithKokoro(item, settings) {
     const token = playbackToken + 1;
     playbackToken = token;
@@ -718,6 +1024,7 @@ export function createPlaybackController({
 
     const playingItem = await markPlaying(item);
     activeItem = playingItem;
+    activeEngine = "kokoro";
     if (playbackToken === token) setPlaybackState("loading");
     const rate = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
 
@@ -762,7 +1069,7 @@ export function createPlaybackController({
     try {
       if (useStreaming) {
         if (context.state === "suspended") await context.resume();
-        const leadInSec = useStretch && StretchNodeClass ? STRETCH_LEADIN_SEC : 0;
+        const leadInSec = useStretch && StretchNodeClass ? stretchLeadInSec(stretchRate) : 0;
         const gain = context.createGain();
         gain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
         gain.connect(context.destination);
@@ -791,7 +1098,11 @@ export function createPlaybackController({
         activeSpeechDuration = 0;
         activeSegments = [];
         activeWordAccurate = false;
-        notify("Generating first Kokoro chunk...");
+        notify(
+          isKokoroReady()
+            ? "Generating first Kokoro chunk..."
+            : "Loading Kokoro model before generating the first chunk..."
+        );
         await playStreamChunk(stream, 0);
         return;
       }
@@ -827,6 +1138,14 @@ export function createPlaybackController({
     }
   }
 
+  function warmModel(settings) {
+    if (!settings) return;
+    if (settings.engine !== "kokoro") return;
+    kokoroWarm().catch((error) => {
+      console.debug("Kokoro model warmup failed; playback will retry on demand.", error);
+    });
+  }
+
   function applyLiveSettings(settings) {
     if (!settings) return;
     applyOutputDevice(settings);
@@ -846,14 +1165,14 @@ export function createPlaybackController({
         teardownSource();
         connectStreamSource(activeStream, chunk, chunkOffset);
       }
-    } else if (activeStretch && activeSource && Number.isFinite(Number(settings.rate))) {
+    } else if (activeSource && Number.isFinite(Number(settings.rate))) {
       const target = clampNumber(Number(settings.rate), 1, RATE_MIN, RATE_MAX);
       const residual = clampNumber(target / (activeGenSpeed || 1), 1, RATE_MIN, RATE_MAX);
       basePosSec = getCurrentSpeechSec();
       baseCtxTime = audioContext ? audioContext.currentTime : 0;
       activeStretchRate = residual;
       activeSource.playbackRate.value = residual;
-      activeStretch.playbackRate.value = residual;
+      if (activeStretch) activeStretch.playbackRate.value = residual;
     }
     if (activeGain && Number.isFinite(Number(settings.volume))) {
       activeGain.gain.value = clampNumber(Number(settings.volume), 1, 0, 1);
@@ -866,6 +1185,72 @@ export function createPlaybackController({
   // the current position and play/pause state. Call on slider release, not drag.
   async function changeSpeed(rate, settings = {}) {
     if (!activeBuffer && !activeStream) return;
+    if (activeEngine === "macos") {
+      if (activeUseStretch && activeStretch) {
+        applyLiveSettings({ rate, volume: settings.volume });
+      } else {
+        notify("Live speed changes need pitch-preserving audio support for macOS native voice.");
+      }
+      return;
+    }
+    if (activeEngine === "kokoro-native") {
+      const target = clampNumber(Number(rate), 1, RATE_MIN, RATE_MAX);
+      const canStretch = Boolean(StretchNodeClass);
+      const plan = planSpeed(target, canStretch);
+
+      if (Math.abs(plan.genSpeed - activeGenSpeed) < 0.001) {
+        if (activeUseStretch && activeStretch) {
+          applyLiveSettings({ rate: target, volume: settings.volume });
+        } else if (Math.abs(target - activeGenSpeed) > 0.001) {
+          notify("Live speed changes need pitch-preserving audio support; keeping native speed.");
+        }
+        return;
+      }
+
+      const context = getAudioContext();
+      if (!context || !activeItem) return;
+
+      const token = playbackToken + 1;
+      playbackToken = token;
+      const wasPaused = playbackState === "paused";
+      const fraction = activeSpeechDuration > 0 ? getCurrentSpeechSec() / activeSpeechDuration : 0;
+      setPlaybackState("loading");
+
+      let generated = null;
+      try {
+        generated = await getNativeKokoroGenerated(activeItem, settings, plan);
+      } catch (error) {
+        if (playbackToken !== token) return;
+        notify(`Could not change Kokoro Mac native speed: ${error.message}`);
+        setPlaybackState(wasPaused ? "paused" : "speaking");
+        return;
+      }
+      if (playbackToken !== token) return;
+
+      const useStretch = canStretch && Math.abs(plan.stretchRate - 1) > 0.001;
+      releaseActiveAudio();
+      try {
+        await installGeneratedBuffer(
+          generated,
+          settings,
+          { genSpeed: plan.genSpeed, stretchRate: plan.stretchRate, useStretch },
+          { offsetFraction: fraction, resume: !wasPaused }
+        );
+        activeEngine = "kokoro-native";
+        if (wasPaused) {
+          await context.suspend();
+          setPlaybackState("paused");
+        } else {
+          setPlaybackState("speaking");
+        }
+      } catch (error) {
+        releaseActiveAudio();
+        activeItem = null;
+        setPlaybackState("idle");
+        notify(`Kokoro Mac native speed change failed: ${error.message}`);
+      }
+      return;
+    }
     const target = clampNumber(Number(rate), 1, RATE_MIN, RATE_MAX);
     const canStretch = Boolean(StretchNodeClass);
     const plan = planSpeed(target, canStretch);
@@ -936,7 +1321,7 @@ export function createPlaybackController({
   }
 
   function getPlaybackPosition() {
-    if (!activeBuffer && !activeStream) return null;
+    if (!activeBuffer && !activeStream && !activeUtterance) return null;
     const currentSec = getCurrentSpeechSec();
     const totalSec = activeSpeechDuration;
     let segmentIndex = activeSegments.findIndex(
@@ -1045,7 +1430,7 @@ export function createPlaybackController({
     if (hasActiveAudio() && playbackState === "speaking") {
       audioContext?.suspend();
       setPlaybackState("paused");
-      notify("Paused Kokoro playback.");
+      notify(`Paused ${audioEngineLabel(activeEngine)} playback.`);
       return;
     }
 
@@ -1055,6 +1440,8 @@ export function createPlaybackController({
       return;
     }
 
+    basePosSec = getCurrentSpeechSec();
+    baseCtxTime = nowSeconds();
     synth.pause();
     setPlaybackState("paused");
     notify("Paused browser speech playback.");
@@ -1064,7 +1451,7 @@ export function createPlaybackController({
     if (hasActiveAudio() && playbackState === "paused") {
       audioContext?.resume();
       setPlaybackState("speaking");
-      notify("Resumed Kokoro playback.");
+      notify(`Resumed ${audioEngineLabel(activeEngine)} playback.`);
       return;
     }
 
@@ -1074,6 +1461,7 @@ export function createPlaybackController({
       return;
     }
 
+    baseCtxTime = nowSeconds();
     synth.resume();
     setPlaybackState("speaking");
     notify("Resumed browser speech playback.");
@@ -1101,7 +1489,7 @@ export function createPlaybackController({
     if (item) {
       await markSkipped(item, reason);
     }
-    notify("Stopped browser speech playback.");
+    notify("Stopped read-aloud playback.");
   }
 
   async function replayLatest(settings = {}) {
@@ -1151,6 +1539,7 @@ export function createPlaybackController({
     playItem,
     readNextPending,
     prewarm,
+    warmModel,
     get isSpeaking() {
       return playbackState === "speaking";
     },

@@ -34,6 +34,7 @@ Still missing:
   On Ubuntu/Debian that is `libwebkit2gtk-4.1-dev build-essential curl wget file
 libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`. Linux also
   needs a system TTS voice (e.g. `speech-dispatcher`) for the system-voice fallback.
+  The repo's check scripts can use either `cargo` on PATH or `rustup run stable cargo`.
 
 ## Install
 

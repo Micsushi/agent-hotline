@@ -170,19 +170,25 @@ test("hook command skips disabled sources before enqueueing", async () => {
   });
 });
 
-test("hook command skips replies without a Spoken section (skill not triggered)", async () => {
+test("hook command queues filtered prose when an enabled session has no Spoken section", async () => {
   await withServer({}, async ({ baseUrl, dataDir }) => {
     const result = await runHookCommand({
       input: codexPayload(
-        "This is a normal reply with no Spoken section, so it must not be queued."
+        "This is a normal reply with no Spoken section, and it should still appear."
       ),
       baseUrl,
       hotlineStateStore: enabledStateStore()
     });
 
-    assert.equal(result.action, "skipped");
-    assert.equal(result.reason, "skill_not_triggered");
-    assert.equal(fs.existsSync(path.join(dataDir, "speech-queue.json")), false);
+    assert.equal(result.action, "enqueued");
+    assert.equal(result.reason, "speakable_text");
+
+    const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, "speech-queue.json"), "utf8"));
+    assert.equal(persisted.items.length, 1);
+    assert.equal(
+      persisted.items[0].speakableText,
+      "This is a normal reply with no Spoken section, and it should still appear."
+    );
   });
 });
 

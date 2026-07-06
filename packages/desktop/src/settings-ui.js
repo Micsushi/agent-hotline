@@ -1,9 +1,10 @@
 import { getKokoroVoices } from "./tts-kokoro.js";
 
 const READ_BEHAVIORS = new Set(["manual", "auto"]);
-const TTS_ENGINES = new Set(["webview", "kokoro"]);
+const TTS_ENGINES = new Set(["webview", "kokoro", "kokoro-native", "macos"]);
 
-const KOKORO_ENGINES = new Set(["kokoro"]);
+const KOKORO_ENGINES = new Set(["kokoro", "kokoro-native"]);
+const SYSTEM_VOICE_ENGINES = new Set(["webview", "macos"]);
 const SKIP_RULES = ["codeBlocks", "diffs", "logs", "tables", "json", "longBulletLists"];
 
 const KOKORO_VOICES = [
@@ -22,11 +23,50 @@ const KOKORO_VOICES = [
 ];
 
 const DEFAULT_RATE = 0.9;
+const LOCAL_VOICE_ALLOWLIST = [
+  "alex",
+  "samantha enhanced",
+  "samantha",
+  "ava enhanced",
+  "ava",
+  "tom enhanced",
+  "tom",
+  "zoe premium",
+  "zoe"
+];
+const LOCAL_VOICE_BLOCKLIST = [
+  "online",
+  "cloud",
+  "remote",
+  "network",
+  "google",
+  "siri",
+  "bad news",
+  "bahh",
+  "bells",
+  "boing",
+  "bubbles",
+  "cellos",
+  "jester",
+  "organ",
+  "superstar",
+  "trinoids",
+  "whisper",
+  "zarvox",
+  "flo",
+  "shelley",
+  "reed",
+  "rocko",
+  "eddy",
+  "grandma",
+  "grandpa",
+  "sandy"
+];
 
 const DEFAULT_SETTINGS = {
   readBehavior: "manual",
   mute: false,
-  engine: "kokoro",
+  engine: "kokoro-native",
   voice: "",
   audioOutputDeviceId: "",
   kokoroVoice: "af_heart",
@@ -44,7 +84,7 @@ const DEFAULT_SETTINGS = {
   claudeEnabled: true,
   notifyOnNewReply: false,
   notificationOpens: "full",
-  highlightSpokenText: false,
+  highlightSpokenText: true,
   startupSplash: true,
   startupJingle: true
 };
@@ -63,6 +103,30 @@ function clampNumber(value, fallback, min, max) {
 function normalizeRate(value, fallback = DEFAULT_RATE) {
   const rate = clampNumber(value, fallback, 0.1, 10);
   return rate === 0.92 ? DEFAULT_RATE : rate;
+}
+
+function voiceHaystack(voice) {
+  if (typeof voice === "string") return voice.toLowerCase();
+  return `${voice?.name || ""} ${voice?.voiceURI || ""} ${voice?.lang || ""}`.toLowerCase();
+}
+
+function isRecommendedLocalVoice(voice) {
+  const haystack = voiceHaystack(voice);
+  if (!haystack.trim()) return false;
+  if (LOCAL_VOICE_BLOCKLIST.some((blocked) => haystack.includes(blocked))) return false;
+  return LOCAL_VOICE_ALLOWLIST.some((allowed) => haystack.includes(allowed));
+}
+
+function rankedRecommendedVoices(voices) {
+  return voices
+    .filter(isRecommendedLocalVoice)
+    .sort((left, right) => {
+      const leftHaystack = voiceHaystack(left);
+      const rightHaystack = voiceHaystack(right);
+      const leftRank = LOCAL_VOICE_ALLOWLIST.findIndex((name) => leftHaystack.includes(name));
+      const rightRank = LOCAL_VOICE_ALLOWLIST.findIndex((name) => rightHaystack.includes(name));
+      return leftRank - rightRank;
+    });
 }
 
 function normalizeSettings(settings) {
@@ -139,19 +203,34 @@ async function parseError(response) {
   }
 }
 
-function setSelectOptions(select, settings) {
-  const voices = getSpeechVoices();
+function setSelectOptions(select, settings, macosVoices = []) {
   const currentVoice = settings.voice || "";
-  const options = [{ value: "", label: "System default" }];
+  const usingMacos = settings.engine === "macos";
+  const allVoices = usingMacos ? macosVoices : getSpeechVoices();
+  const voices = rankedRecommendedVoices(allVoices);
+  const recommended = usingMacos && voices.length > 0 ? voices[0].name : "";
+  const options = [
+    {
+      value: "",
+      label: usingMacos && recommended ? `Best installed voice (${recommended})` : "System default"
+    }
+  ];
 
   for (const voice of voices) {
+    const name = typeof voice === "string" ? voice : voice.name;
+    if (!name) continue;
+    const lang = typeof voice === "string" ? "" : voice.lang;
     options.push({
-      value: voice.name,
-      label: voice.lang ? `${voice.name} (${voice.lang})` : voice.name
+      value: name,
+      label: lang ? `${name} (${lang})` : name
     });
   }
 
-  if (currentVoice && !options.some((option) => option.value === currentVoice)) {
+  if (
+    currentVoice &&
+    !options.some((option) => option.value === currentVoice) &&
+    isRecommendedLocalVoice(currentVoice)
+  ) {
     options.push({ value: currentVoice, label: `${currentVoice} (saved)` });
   }
 
@@ -164,7 +243,7 @@ function setSelectOptions(select, settings) {
     })
   );
   select.value = currentVoice;
-  select.disabled = !("speechSynthesis" in window);
+  select.disabled = usingMacos ? false : !("speechSynthesis" in window);
 }
 
 function setKokoroVoiceOptions(select, settings) {
@@ -251,6 +330,7 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
   const skipRuleInputs = Array.from(document.querySelectorAll("[data-skip-rule]"));
 
   let currentSettings = normalizeSettings();
+  let macosVoices = [];
   let isRendering = false;
   let draggingRate = false;
   let draggingVolume = false;
@@ -296,12 +376,25 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
     if (startupSplash) startupSplash.checked = currentSettings.startupSplash;
     if (startupJingle) startupJingle.checked = currentSettings.startupJingle;
     engine.value = currentSettings.engine;
-    setSelectOptions(voice, currentSettings);
+    setSelectOptions(voice, currentSettings, macosVoices);
     setAudioOutputOptions(outputDevice, currentSettings);
     setKokoroVoiceOptions(kokoroVoice, currentSettings);
 
     const usingKokoro = KOKORO_ENGINES.has(currentSettings.engine);
-    voice.closest(".settings-row").hidden = usingKokoro;
+    const usingSystemVoice = SYSTEM_VOICE_ENGINES.has(currentSettings.engine);
+    voice.closest(".settings-row").hidden = !usingSystemVoice;
+    const voiceCopy = voice.closest(".settings-row")?.querySelector(".settings-copy");
+    const voiceTitle = voiceCopy?.querySelector("strong");
+    const voiceHint = voiceCopy?.querySelector("span");
+    if (voiceTitle) {
+      voiceTitle.textContent = currentSettings.engine === "macos" ? "Mac voice" : "System voice";
+    }
+    if (voiceHint) {
+      voiceHint.textContent =
+        currentSettings.engine === "macos"
+          ? "Blank uses the best installed Mac voice."
+          : "Used when the engine is set to System voice.";
+    }
     kokoroVoiceRow.hidden = !usingKokoro;
 
     if (!draggingRate) {
@@ -428,9 +521,18 @@ export function initSettingsUi({ backendUrl, onSettingsChanged, onLivePreview })
 
   if ("speechSynthesis" in window) {
     window.speechSynthesis.addEventListener("voiceschanged", () =>
-      setSelectOptions(voice, currentSettings)
+      setSelectOptions(voice, currentSettings, macosVoices)
     );
   }
+
+  fetch(`${backendUrl}/api/native-voices`)
+    .then((response) => (response.ok ? response.json() : null))
+    .then((body) => {
+      if (!body || !Array.isArray(body.voices)) return;
+      macosVoices = body.voices;
+      setSelectOptions(voice, currentSettings, macosVoices);
+    })
+    .catch(() => {});
 
   showMessage("loading", "Loading");
 

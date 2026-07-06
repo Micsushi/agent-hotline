@@ -370,7 +370,9 @@ test("installSkills installs harness skills without global response-format instr
 test("managed instruction block makes Spoken primary and Displayed optional", () => {
   const text = managedInstructionBlock();
 
-  assert.match(text, /every response must include Spoken/);
+  assert.match(text, /final user-facing assistant replies must include Spoken/);
+  assert.match(text, /Do not apply this format to hidden reasoning, tool calls, tool output/);
+  assert.match(text, /terse caveman-style agent communication/);
   assert.match(text, /Displayed is optional/);
   assert.match(text, /smallest useful spoken answer/);
   assert.match(text, /must stand on its own for a listener/);

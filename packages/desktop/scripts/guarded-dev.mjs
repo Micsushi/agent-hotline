@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { dirname } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
 
 if (process.env.AGENT_HOTLINE_LIFECYCLE !== "1") {
   console.error(
@@ -7,8 +8,26 @@ if (process.env.AGENT_HOTLINE_LIFECYCLE !== "1") {
   process.exit(1);
 }
 
+const env = { ...process.env };
+const cargoCheck = spawnSync("cargo", ["--version"], {
+  encoding: "utf8",
+  windowsHide: true
+});
+
+if (cargoCheck.error && cargoCheck.error.code === "ENOENT") {
+  const cargoPath = spawnSync("rustup", ["which", "cargo"], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+  if (!cargoPath.error && cargoPath.status === 0 && cargoPath.stdout.trim()) {
+    const pathKey = process.platform === "win32" ? "Path" : "PATH";
+    env[pathKey] =
+      `${dirname(cargoPath.stdout.trim())}${process.platform === "win32" ? ";" : ":"}${env[pathKey] || ""}`;
+  }
+}
+
 const child = spawn(process.platform === "win32" ? "tauri.cmd" : "tauri", ["dev"], {
-  env: process.env,
+  env,
   stdio: "inherit",
   shell: process.platform === "win32",
   windowsHide: true

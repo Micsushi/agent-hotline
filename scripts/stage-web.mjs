@@ -34,6 +34,8 @@ const HEAVY_FILE = /^kokoro-|\.wasm$/;
 function included(src) {
   const rel = path.relative(dist, src);
   if (rel === "headtts" || rel.startsWith(`headtts${path.sep}`)) return false;
+  if (rel === "models" || rel.startsWith(`models${path.sep}`)) return false;
+  if (rel === "kokoro-voices" || rel.startsWith(`kokoro-voices${path.sep}`)) return false;
   return !HEAVY_FILE.test(path.basename(src));
 }
 

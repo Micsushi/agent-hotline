@@ -104,6 +104,109 @@ test("audio can be uploaded, fetched as manifest + wav, and reported as cached",
   });
 });
 
+test("native macOS audio generation stores a cached wav entry", async () => {
+  const dataDir = tempDir();
+  let request = null;
+  const server = createServer({
+    dataDir,
+    platform: "darwin",
+    nativeTts: {
+      generateMacos: async (input) => {
+        request = input;
+        return {
+          wavBuffer: Buffer.from(FAKE_WAV, "base64"),
+          sampleRate: 24000,
+          durationSec: 1.5,
+          segments: [{ text: input.text, startSec: 0, endSec: 1.5 }],
+          wordAccurate: false
+        };
+      }
+    }
+  });
+  const port = await listen(server);
+  const baseUrl = `http://${HOST}:${port}`;
+  try {
+    await enqueue(baseUrl, {
+      id: "native-1",
+      rawSource: "raw",
+      speakableText: "Hello from native macOS speech.",
+      sourceApp: "Codex"
+    });
+
+    const response = await fetch(`${baseUrl}/api/queue/native-1/native-audio`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ engine: "macos", voice: "", rate: 0.9 })
+    });
+
+    assert.equal(response.status, 201);
+    assert.equal((await response.json()).stored, true);
+    assert.equal(request.text, "Hello from native macOS speech.");
+    assert.equal(request.rate, 0.9);
+
+    const manifest = await (
+      await fetch(`${baseUrl}/api/queue/native-1/audio?engine=macos&voice=default`)
+    ).json();
+    assert.equal(manifest.cached, true);
+    assert.equal(manifest.sampleRate, 24000);
+  } finally {
+    await close(server);
+  }
+});
+
+test("native Kokoro audio generation stores a cached wav entry", async () => {
+  const dataDir = tempDir();
+  let request = null;
+  const server = createServer({
+    dataDir,
+    nativeKokoroTts: {
+      generate: async (input) => {
+        request = input;
+        return {
+          wavBuffer: Buffer.from(FAKE_WAV, "base64"),
+          sampleRate: 24000,
+          durationSec: 1.5,
+          segments: [{ text: input.text, startSec: 0, endSec: 1.5 }],
+          wordAccurate: false,
+          voice: input.voice || "af_heart"
+        };
+      }
+    }
+  });
+  const port = await listen(server);
+  const baseUrl = `http://${HOST}:${port}`;
+  try {
+    await enqueue(baseUrl, {
+      id: "kokoro-native-1",
+      rawSource: "raw",
+      speakableText: "Hello from native Kokoro speech.",
+      sourceApp: "Codex"
+    });
+
+    const response = await fetch(`${baseUrl}/api/queue/kokoro-native-1/kokoro-native-audio`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voice: "af_heart", cacheVoice: "af_heart@speed-1.00", speed: 1 })
+    });
+
+    assert.equal(response.status, 201);
+    assert.equal((await response.json()).stored, true);
+    assert.equal(request.text, "Hello from native Kokoro speech.");
+    assert.equal(request.voice, "af_heart");
+    assert.equal(request.speed, 1);
+
+    const manifest = await (
+      await fetch(
+        `${baseUrl}/api/queue/kokoro-native-1/audio?engine=kokoro-native&voice=af_heart%40speed-1.00`
+      )
+    ).json();
+    assert.equal(manifest.cached, true);
+    assert.equal(manifest.sampleRate, 24000);
+  } finally {
+    await close(server);
+  }
+});
+
 test("audio.wav returns 404 when nothing is cached", async () => {
   await withServer(async ({ baseUrl }) => {
     const resp = await fetch(`${baseUrl}/api/queue/none/audio.wav?engine=kokoro&voice=af_heart`);

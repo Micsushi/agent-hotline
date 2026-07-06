@@ -67,6 +67,18 @@ test("doctor report includes first-run commands", () => {
   assert.match(text, /releases\/latest/);
 });
 
+test("doctor report includes macOS desktop installer link", () => {
+  const report = createDoctorReport({
+    platform: "darwin",
+    prefix: "/opt/homebrew",
+    pathValue: "/opt/homebrew/bin"
+  });
+  const text = formatDoctorReport(report);
+
+  assert.match(text, /macOS desktop installer:/);
+  assert.match(text, /releases\/latest/);
+});
+
 test("CLI exposes doctor command", async () => {
   const code = await cliMain(["doctor"]);
   assert.equal(code, 0);
