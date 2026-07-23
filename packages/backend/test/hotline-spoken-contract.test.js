@@ -1,4 +1,6 @@
 const assert = require("assert/strict");
+const fs = require("fs");
+const path = require("path");
 
 const { filterSpeakableText } = require("../src/speakable-filter");
 
@@ -89,5 +91,13 @@ assertChunkedBroadAnswer({
     "There are three useful chunks here: the instruction contract, the backend parser behavior, and the live installed copies. I'd handle the instruction contract first, because it controls future installs and most of the bad output shape. After that, I can walk through parser behavior next.",
   forbiddenDisplayed: ["Full parser audit", "Live installed files audit", "Multi-screen evidence"]
 });
+
+const skillText = fs.readFileSync(
+  path.join(__dirname, "..", "skills", "agent-hotline-spoken", "SKILL.md"),
+  "utf8"
+);
+assert.match(skillText, /Every new thread starts with read-aloud off\./);
+assert.match(skillText, /Never activate automatically/);
+assert.match(skillText, /explicit enable phrase in the\s+current thread/);
 
 console.log("hotline-spoken-contract: 3 samples passed");

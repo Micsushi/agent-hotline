@@ -118,15 +118,13 @@ function isRecommendedLocalVoice(voice) {
 }
 
 function rankedRecommendedVoices(voices) {
-  return voices
-    .filter(isRecommendedLocalVoice)
-    .sort((left, right) => {
-      const leftHaystack = voiceHaystack(left);
-      const rightHaystack = voiceHaystack(right);
-      const leftRank = LOCAL_VOICE_ALLOWLIST.findIndex((name) => leftHaystack.includes(name));
-      const rightRank = LOCAL_VOICE_ALLOWLIST.findIndex((name) => rightHaystack.includes(name));
-      return leftRank - rightRank;
-    });
+  return voices.filter(isRecommendedLocalVoice).sort((left, right) => {
+    const leftHaystack = voiceHaystack(left);
+    const rightHaystack = voiceHaystack(right);
+    const leftRank = LOCAL_VOICE_ALLOWLIST.findIndex((name) => leftHaystack.includes(name));
+    const rightRank = LOCAL_VOICE_ALLOWLIST.findIndex((name) => rightHaystack.includes(name));
+    return leftRank - rightRank;
+  });
 }
 
 function normalizeSettings(settings) {

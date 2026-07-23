@@ -118,6 +118,7 @@ test("buildPs1 forwards user prompt fields for chat display", () => {
   assert.match(ps1, /"input-messages" = \$inputMessages/);
   assert.match(ps1, /last_user_message = \$payload\.last_user_message/);
   assert.match(ps1, /lastUserMessage = \$payload\.lastUserMessage/);
+  assert.match(ps1, /\$threadId = \$payload\.'thread-id'/);
 });
 
 test("buildSh forwards user prompt fields for chat display", () => {
@@ -126,46 +127,51 @@ test("buildSh forwards user prompt fields for chat display", () => {
   assert.match(sh, /payload\["input-messages"\]/);
   assert.match(sh, /last_user_message: payload\.last_user_message/);
   assert.match(sh, /lastUserMessage: payload\.lastUserMessage/);
+  assert.match(sh, /thread_id: .*payload\["thread-id"\]/);
   assert.match(sh, /"response": \{ text: assistantText \}/);
 });
 
-test("buildSh round-trips common Unicode punctuation through Node shell hook", () => {
-  const dir = tempDir();
-  const capturePath = path.join(dir, "capture.js");
-  const outputPath = path.join(dir, "output.json");
-  const shPath = path.join(dir, "hook.sh");
-  const sample = "I’m testing em dash — ellipsis … and “quotes”.";
+test(
+  "buildSh round-trips common Unicode punctuation through Node shell hook",
+  { skip: !fs.existsSync("/bin/sh") },
+  () => {
+    const dir = tempDir();
+    const capturePath = path.join(dir, "capture.js");
+    const outputPath = path.join(dir, "output.json");
+    const shPath = path.join(dir, "hook.sh");
+    const sample = "I’m testing em dash — ellipsis … and “quotes”.";
 
-  fs.writeFileSync(
-    capturePath,
-    [
-      'const fs = require("fs");',
-      "let input = '';",
-      "process.stdin.setEncoding('utf8');",
-      "process.stdin.on('data', chunk => { input += chunk; });",
-      "process.stdin.on('end', () => { fs.writeFileSync(process.argv[2], input, 'utf8'); });",
-      ""
-    ].join("\n"),
-    "utf8"
-  );
-  fs.writeFileSync(
-    shPath,
-    buildSh({
-      source: "codex",
-      schema: "response",
-      hookCommand: `node "${capturePath}" "${outputPath}"`
-    }),
-    "utf8"
-  );
-  fs.chmodSync(shPath, 0o755);
+    fs.writeFileSync(
+      capturePath,
+      [
+        'const fs = require("fs");',
+        "let input = '';",
+        "process.stdin.setEncoding('utf8');",
+        "process.stdin.on('data', chunk => { input += chunk; });",
+        "process.stdin.on('end', () => { fs.writeFileSync(process.argv[2], input, 'utf8'); });",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+    fs.writeFileSync(
+      shPath,
+      buildSh({
+        source: "codex",
+        schema: "response",
+        hookCommand: `node "${capturePath}" "${outputPath}"`
+      }),
+      "utf8"
+    );
+    fs.chmodSync(shPath, 0o755);
 
-  const payload = JSON.stringify({ last_assistant_message: sample });
-  const result = spawnSync("/bin/sh", [shPath], { input: payload, encoding: "utf8" });
+    const payload = JSON.stringify({ last_assistant_message: sample });
+    const result = spawnSync("/bin/sh", [shPath], { input: payload, encoding: "utf8" });
 
-  assert.equal(result.status, 0, result.stderr);
-  const normalized = JSON.parse(fs.readFileSync(outputPath, "utf8"));
-  assert.equal(normalized.response.text, sample);
-});
+    assert.equal(result.status, 0, result.stderr);
+    const normalized = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+    assert.equal(normalized.response.text, sample);
+  }
+);
 
 test("buildPs1 keeps Unicode punctuation intact through native command pipes", () => {
   const ps1 = buildPs1({ source: "codex", schema: "response" });

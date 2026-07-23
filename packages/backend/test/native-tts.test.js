@@ -36,7 +36,10 @@ test("macOS native generation resolves blank voice to the best installed voice",
         const wavPath = args.at(-1);
         fs.writeFileSync(
           wavPath,
-          Buffer.from("RIFF$\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\xc0]\0\0\x80\xbb\0\0\x02\0\x10\0data\0\0\0\0", "binary")
+          Buffer.from(
+            "RIFF$\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\xc0]\0\0\x80\xbb\0\0\x02\0\x10\0data\0\0\0\0",
+            "binary"
+          )
         );
         return { stdout: "" };
       }

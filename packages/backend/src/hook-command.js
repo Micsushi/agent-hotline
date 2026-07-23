@@ -64,6 +64,12 @@ async function runHookCommand(options = {}) {
   }
 
   const sessionKey = hotlineSessionKey(parsed);
+  if (!sessionKey) {
+    return skipped(
+      "missing_session_id",
+      "Agent Hotline stays off because this hook payload has no stable thread identifier."
+    );
+  }
   const command = hotlineCommand(parsed.userMessages);
   if (command === "off") {
     hotlineStateStore.setEnabled(sessionKey, false);
@@ -224,13 +230,8 @@ function isSourceEnabled(settings, sourceApp) {
 function hotlineSessionKey(parsed) {
   const payload = parsed && parsed.payload;
   const transcriptPath = payload && (payload.transcript_path || payload.transcriptPath);
-  const id =
-    parsed.threadId ||
-    (typeof transcriptPath === "string" && transcriptPath.trim()) ||
-    parsed.projectPath ||
-    parsed.projectName ||
-    "unknown-session";
-  return `${parsed.sourceApp}:${id}`;
+  const id = parsed.threadId || (typeof transcriptPath === "string" && transcriptPath.trim());
+  return id ? `${parsed.sourceApp}:${id}` : "";
 }
 
 function hotlineCommand(messages) {

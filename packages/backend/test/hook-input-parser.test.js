@@ -142,6 +142,21 @@ function testThreadIdAndLabelExtracted() {
   assert.equal(result.threadLabel, "agent-hotline  -  abcdef12");
 }
 
+function testCodexHyphenatedThreadIdExtracted() {
+  const result = parseHookInput(
+    JSON.stringify({
+      source: "codex",
+      "thread-id": "abcdef12-3456-7890",
+      cwd: "C:\\Users\\me\\Documents\\Github\\agent-hotline",
+      response: { text: "Done." }
+    })
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.threadId, "abcdef12-3456-7890");
+  assert.equal(result.threadLabel, "agent-hotline  -  abcdef12");
+}
+
 function testAntigravitySourceDetectedBySourceField() {
   const result = parseHookInput(
     JSON.stringify({
@@ -374,6 +389,7 @@ const tests = [
   testMissingTranscriptYieldsNoUserMessages,
   testClaudeFixturesParseAssistantText,
   testThreadIdAndLabelExtracted,
+  testCodexHyphenatedThreadIdExtracted,
   testBomPrefixedJsonStillParses,
   testMalformedJsonSkipsSafely,
   testUnknownSchemaSkipsWithStructuredReason,

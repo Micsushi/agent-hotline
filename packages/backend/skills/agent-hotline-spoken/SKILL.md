@@ -1,12 +1,17 @@
 ﻿---
 name: agent-hotline-spoken
 description: >
-  Formats agent responses for Agent Hotline read-aloud TTS. Triggered when the
-  user says "hotline on", "read aloud on", "start read-aloud", or "spoken mode"
-  in this session. Stays active until "hotline off" or "stop read-aloud".
+  Opt-in Agent Hotline read-aloud formatting. Never activate automatically.
+  Activate only when the user says "hotline on", "read aloud on",
+  "start read-aloud", or "spoken mode" in the current thread.
 ---
 
 # Agent Hotline Spoken Skill
+
+Every new thread starts with read-aloud off. Never activate automatically from
+hook presence, backend state, installed-skill discovery, another thread, or a
+previous conversation. Activation requires an explicit enable phrase in the
+current thread and remains scoped to that thread only.
 
 When the read-aloud skill is active, final user-facing assistant replies must
 include a `Spoken:` section. Add `Displayed:` only when there is visual or dense

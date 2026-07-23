@@ -41,6 +41,7 @@ async function withServer(options, callback) {
 function codexPayload(text) {
   return JSON.stringify({
     source: "codex",
+    thread_id: "test-codex-thread",
     event: "agent_response_completed",
     response: {
       role: "assistant",
@@ -57,6 +58,7 @@ function codexPayload(text) {
 function claudePayload(text) {
   return JSON.stringify({
     source: "claude",
+    session_id: "test-claude-session",
     hook_event_name: "Stop",
     assistant_response: {
       role: "assistant",
@@ -73,6 +75,7 @@ function claudePayload(text) {
 function antigravityPayload(text) {
   return JSON.stringify({
     source: "antigravity",
+    session_id: "test-antigravity-session",
     hook_event_name: "Stop",
     assistant_response: {
       role: "assistant",
@@ -384,4 +387,29 @@ test("hook command keeps each session off by default until hotline on", async ()
     assert.equal(off.action, "skipped");
     assert.equal(off.reason, "hotline_disabled");
   });
+});
+
+test("hook command fails closed when no stable thread or transcript id exists", async () => {
+  const result = await runHookCommand({
+    input: JSON.stringify({
+      source: "antigravity",
+      cwd: "C:\\repo",
+      user_prompt: "hotline on",
+      assistant_response: { text: "Spoken:\nThis must not become project-wide." }
+    }),
+    fetchImpl: async () => {
+      throw new Error("fetch must not run without a stable thread id");
+    },
+    hotlineStateStore: {
+      isEnabled: () => {
+        throw new Error("state must not be read without a stable thread id");
+      },
+      setEnabled: () => {
+        throw new Error("state must not be written without a stable thread id");
+      }
+    }
+  });
+
+  assert.equal(result.action, "skipped");
+  assert.equal(result.reason, "missing_session_id");
 });

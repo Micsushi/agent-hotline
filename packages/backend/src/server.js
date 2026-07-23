@@ -740,7 +740,9 @@ function createServer(options = {}) {
       if (req.method === "GET" && pathname === "/api/native-voices") {
         try {
           const voices =
-            typeof nativeTts.listMacosVoices === "function" ? await nativeTts.listMacosVoices() : [];
+            typeof nativeTts.listMacosVoices === "function"
+              ? await nativeTts.listMacosVoices()
+              : [];
           sendJson(res, 200, {
             platform: options.platform || process.platform,
             voices,

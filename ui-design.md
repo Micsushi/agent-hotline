@@ -58,6 +58,7 @@ The `:root` block is the single source of truth in CSS; no raw hex outside it ex
 ## Header Alignment Rule
 
 All top-level panel headers must share the same height to form a continuous horizontal band:
+
 - `.nav-brand` (leftmost, 200px nav rail)
 - `.column-head` (Projects and Sessions columns)
 - `.col-messages .column-head` (Messages/conversation pane)
@@ -75,10 +76,12 @@ Implementation: `--col-head-height: 46px`. Every header: `height: var(--col-head
 ## Component Notes
 
 ### Selected project row (`.tree-item.has-project-color.is-selected`)
+
 - Border + bg tint: from `--project-color` (55% / 10% mix).
 - Title text: also `--project-color` so text matches the box highlight. Falls back to `--accent-hover` when no project color.
 
 ### Column headers (`.column-head`)
+
 - Height: `var(--col-head-height)` = 46px
 - Padding: `0 16px`
 - Font: 11px / 700 / uppercase / 0.05em tracking
@@ -86,21 +89,26 @@ Implementation: `--col-head-height: 46px`. Every header: `height: var(--col-head
 - Border-bottom: `1px solid var(--border)`
 
 ### Nav brand (`.nav-brand`)
+
 - Height: `var(--col-head-height)` = 46px -- must match column-head exactly
 - Padding: `0 16px`
 
 ### Playback bar (`.now-bar`)
+
 - Background: `var(--sidebar-2)` not surface
 - Grid: 3-column, center = controls card
 
 ### Owner-tinted message surfaces
+
 Assistant bubbles, the now-bar preview, and the modal carry an inline `--owner-color` (from `ownerSolidColor(sourceApp)` in project-colors.js): Codex blue, Claude orange, Antigravity purple (rainbow→`#c084fc`), else grey. CSS uses it (falling back to `--accent`) for: assistant bubble fill (`--bubble-bg` = 28% owner over surface, tail inherits; reads deeper/muted vs the full-strength play+highlight), bubble play button fill, karaoke `.spoken-done` highlight, and the selected/unread bubble drop-shadow ring. So each message reads in its harness's colour.
 
 ### Bubble play button
+
 - Background: `var(--owner-color, var(--accent))`, hover `filter: brightness(1.15)`
 - Color: `var(--on-accent)` (#FFFFFF)
 
 ### Active nav item
+
 - Background: `var(--accent-soft)` (cobalt tint)
 - Border: `rgba(62,120,178,0.35)` (cerulean focus-ring)
 - Color: `var(--accent-hover)`

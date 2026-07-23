@@ -80,7 +80,8 @@ function extractThread(payload, sourceApp, deps = {}) {
       payload.conversation_id,
       payload.conversationId,
       payload.thread_id,
-      payload.threadId
+      payload.threadId,
+      payload["thread-id"]
     ) || undefined;
 
   const cwd = resolveCwd(payload, deps);
