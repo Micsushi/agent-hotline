@@ -40,7 +40,7 @@ hotline off
   source = "antigravity"
   hook_event_name = "Stop"
   assistant_response = @{
-    text = "Spoken:`nAgent Hotline is ready to read Antigravity aloud.`n`nDisplayed:`nSmoke test complete."
+    text = "Spoken:`nAgent Hotline is ready to read Antigravity aloud.`n`n==========`n`nDisplayed:`nSmoke test complete."
   }
 } | ConvertTo-Json -Depth 8 | node packages/backend/bin/agent-hotline.js hook
 ```

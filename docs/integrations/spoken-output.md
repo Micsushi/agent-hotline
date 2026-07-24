@@ -1,8 +1,8 @@
 # Spoken Output
 
 Agent Hotline reads the `Spoken:` section and ignores `Displayed:`. Use
-`Spoken:` for the real conversational answer. Use `Displayed:` only for material
-that is better read than heard.
+`Spoken:` for the real conversational answer. `Displayed:` is required when
+exact technical material must remain visible; otherwise omit it.
 
 Install the spoken-output skill:
 
@@ -25,7 +25,7 @@ The smallest useful spoken answer for this conversational chunk.
 ==========
 
 Displayed:
-Optional code, paths, commands, diffs, logs, tables, diagrams, or dense details.
+Exact code, paths, commands, diffs, logs, tables, diagrams, or dense details.
 ```
 
 `Spoken:` must stand on its own for someone listening without looking at the
@@ -35,14 +35,22 @@ approach" unless the spoken text also explains what they mean.
 
 Do not overfill `Spoken:` with evidence, implementation minutiae, code, paths,
 commands, diffs, logs, or tables. Put those in `Displayed:` when they are useful.
-Do not duplicate the spoken answer in `Displayed:`.
+When `Displayed:` is present, `Spoken:` must tell the listener what exact
+material is shown and why they may need to look at it. Do not duplicate the
+spoken answer in `Displayed:`.
 
 For broad answers, keep the whole reply to one conversational chunk. Answer the
 most useful slice, briefly name what can be continued next, and let the user ask
 for the next slice. Do not create a multi-screen `Displayed:` section that the
 `Spoken:` section cannot cover.
 
-`Displayed:` can be omitted when there is no visual or dense supporting material.
+Do not chunk or defer urgent, time-sensitive, or safety-critical steps. If the
+user explicitly asks for a complete answer, complete response, or all details in
+one reply, provide them now. Put complete exact material in `Displayed:` and
+summarize the immediate action in `Spoken:`.
+
+`Displayed:` can be omitted when no exact technical or dense visual material is
+needed.
 
 ## Examples
 
@@ -61,14 +69,14 @@ Spoken:
 I would update the installer-generated instruction block first, because that is
 what future Codex and Claude installs reuse. The source skill and docs should
 match it, and the test should prevent the old fixed sentence limit from coming
-back.
+back. The exact assertions are shown in Displayed.
 
 ==========
 
 Displayed:
 ```js
 assert.doesNotMatch(text, /2 to 6 short sentences/);
-assert.match(text, /Displayed is optional/);
+assert.match(text, /Displayed is required/);
 ```
 ````
 
@@ -82,6 +90,19 @@ first, because it controls future installs and most of the bad output shape.
 After that, I can walk through parser behavior next.
 ```
 
+Urgent answer that must not be deferred:
+
+```text
+Spoken:
+Stop the rollout now and restore the last known-good release. The exact rollback
+command and verification checks are shown in Displayed; run them in order.
+
+==========
+
+Displayed:
+<exact rollback command and every required verification check>
+```
+
 ## Verify
 
 1. Start Agent Hotline.
@@ -90,3 +111,4 @@ After that, I can walk through parser behavior next.
 4. Confirm Agent Hotline reads only the `Spoken:` text.
 5. Confirm simple answers do not need `Displayed:`, while code and dense details stay visible only.
 6. Ask a broad question and confirm the answer is chunked instead of dumping multiple screens into `Displayed:`.
+7. Ask for urgent recovery or a complete answer and confirm no required steps are deferred.

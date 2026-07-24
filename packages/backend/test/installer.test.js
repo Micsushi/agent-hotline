@@ -373,18 +373,22 @@ test("installSkills installs harness skills without global response-format instr
   assert.equal(fs.existsSync(path.join(home, ".codex", "AGENTS.md")), false);
 });
 
-test("managed instruction block makes Spoken primary and Displayed optional", () => {
+test("managed instruction block makes Spoken primary and Displayed conditional", () => {
   const text = managedInstructionBlock();
 
   assert.match(text, /final user-facing assistant replies must include Spoken/);
   assert.match(text, /Do not apply this format to hidden reasoning, tool calls, tool output/);
   assert.match(text, /terse caveman-style agent communication/);
-  assert.match(text, /Displayed is optional/);
+  assert.match(text, /Displayed is required/);
   assert.match(text, /smallest useful spoken answer/);
   assert.match(text, /must stand on its own for a listener/);
   assert.match(text, /Do not restate the spoken answer in full/);
   assert.match(text, /one conversational chunk/);
   assert.match(text, /multi-screen Displayed dump/);
+  assert.match(text, /urgent|time-sensitive|safety-critical/i);
+  assert.match(text, /complete answer|complete response|all details/i);
+  assert.match(text, /Displayed[^.\n]*(required|must)/i);
+  assert.match(text, /tell the listener[^.\n]*Displayed/i);
   assert.doesNotMatch(text, /2 to 6 short sentences/);
   assert.doesNotMatch(text, /full normal answer/);
 });

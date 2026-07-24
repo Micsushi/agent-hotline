@@ -28,7 +28,7 @@ For a different backend URL, set `AGENT_HOTLINE_URL` before starting Codex.
 ## Test
 
 ```powershell
-'{"source":"codex","response":{"text":"Spoken:`nAgent Hotline is ready to read Codex aloud.`n`nDisplayed:`nSmoke test complete."}}' | node packages/backend/bin/agent-hotline.js hook
+'{"source":"codex","response":{"text":"Spoken:`nAgent Hotline is ready to read Codex aloud.`n`n==========`n`nDisplayed:`nSmoke test complete."}}' | node packages/backend/bin/agent-hotline.js hook
 ```
 
 If Agent Hotline is running, the sentence lands in the queue. If not, the hook exits quietly.

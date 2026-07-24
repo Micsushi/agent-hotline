@@ -14,8 +14,8 @@ previous conversation. Activation requires an explicit enable phrase in the
 current thread and remains scoped to that thread only.
 
 When the read-aloud skill is active, final user-facing assistant replies must
-include a `Spoken:` section. Add `Displayed:` only when there is visual or dense
-supporting material that should stay on screen instead of being read aloud.
+include a `Spoken:` section. `Displayed:` is required when exact technical
+material must remain visible; otherwise omit it.
 
 Do not apply this format to hidden reasoning, tool calls, tool output, or
 internal progress. Short progress updates may stay plain when the final answer
@@ -32,13 +32,13 @@ Spoken:
 ==========
 
 Displayed:
-<optional visual-only support>
+<exact technical or dense visual support, when needed>
 ```
 
 ## Spoken Section
 
-`Spoken` is the primary answer. It must stand on its own for someone listening
-without looking at the screen.
+`Spoken` is the primary answer. It must stand on its own for the conclusion,
+status, recommendation, risks, and next action.
 
 Write the smallest useful spoken answer, not the shortest possible answer.
 
@@ -49,6 +49,8 @@ Include:
 - the key reason when it changes the decision
 - important caveats or risks
 - the next step, if there is one
+- when it is present, tell the listener what exact material is in `Displayed`
+  and why they may need to look at it
 
 Avoid:
 
@@ -61,9 +63,10 @@ Avoid:
 
 ## Displayed Section
 
-`Displayed` is optional. Use it only for material that is better read than heard:
-code, commands, file paths, diffs, logs, tables, diagrams, exact class or method
-references, or dense supporting detail.
+`Displayed` is required when the answer needs exact code, commands, file paths,
+diffs, logs, tables, diagrams, class or method references, error text, or other
+material that must not be paraphrased. Do not drop required technical material
+just to keep the response spoken-only.
 
 Do not restate the spoken answer in full. The listener reads `Spoken` first, so
 `Displayed` should add visual detail rather than duplicate the answer.
@@ -83,6 +86,11 @@ When the full answer would become long:
 For broad topics, prefer a short spoken map of the next chunks over a long
 displayed dump. A listener should never need to read multiple screens of
 `Displayed` to understand what `Spoken` was talking about.
+
+Do not chunk or defer urgent, time-sensitive, or safety-critical steps. If the
+user explicitly asks for a complete answer, complete response, or all details in
+one reply, provide them now. Keep `Spoken` focused on the immediate action and
+tell the listener that the complete exact detail is in `Displayed`.
 
 ## Required Format
 
