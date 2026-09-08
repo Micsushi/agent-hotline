@@ -195,3 +195,24 @@ test("malformed persisted keys cannot escape the cache directory", () => {
   assert.equal(store.clearAll(), 0);
   assert.equal(fs.existsSync(outsidePath), true, "clearAll stays inside the cache directory");
 });
+
+test("unindexed WAV files are swept on reload while indexed and unrelated files remain", () => {
+  const dir = tempDir();
+  const store = createAudioCacheStore({ dataDir: dir });
+  store.put("kept", "kokoro", "v", { wavBuffer: wav(100) });
+
+  const cacheDir = path.join(dir, "audio-cache");
+  const orphanPath = path.join(cacheDir, "orphan.wav");
+  const notePath = path.join(cacheDir, "notes.txt");
+  const directoryPath = path.join(cacheDir, "folder.wav");
+  fs.writeFileSync(orphanPath, wav(50, 2));
+  fs.writeFileSync(notePath, "leave this file");
+  fs.mkdirSync(directoryPath);
+
+  const reopened = createAudioCacheStore({ dataDir: dir });
+
+  assert.equal(fs.existsSync(orphanPath), false, "unindexed WAV is removed");
+  assert.equal(reopened.has("kept", "kokoro", "v"), true, "indexed WAV remains");
+  assert.equal(fs.existsSync(notePath), true, "non-WAV file remains");
+  assert.equal(fs.existsSync(directoryPath), true, "WAV-named directory remains");
+});

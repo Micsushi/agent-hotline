@@ -74,7 +74,29 @@ function createAudioCacheStore(options = {}) {
       entries[key] = normalizedEntry;
       totalBytes += fileStats.size;
     }
+    sweepOrphanWavs(new Set(Object.keys(entries)));
     return { totalBytes, entries };
+  }
+
+  function sweepOrphanWavs(indexedKeys) {
+    let directoryEntries;
+    try {
+      directoryEntries = fs.readdirSync(cacheDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const directoryEntry of directoryEntries) {
+      if (path.extname(directoryEntry.name).toLowerCase() !== ".wav") continue;
+      if (!directoryEntry.isFile() && !directoryEntry.isSymbolicLink()) continue;
+
+      const key = directoryEntry.name.slice(0, -path.extname(directoryEntry.name).length);
+      if (indexedKeys.has(key)) continue;
+
+      try {
+        fs.rmSync(path.join(cacheDir, directoryEntry.name), { force: true });
+      } catch {}
+    }
   }
 
   function persist() {
