@@ -48,6 +48,13 @@ function createAudioCacheStore(options = {}) {
 
   let index = loadAndReconcile();
 
+  function fileIdentity(fileStats) {
+    if (fileStats && fileStats.dev && fileStats.ino) {
+      return `${fileStats.dev}:${fileStats.ino}`;
+    }
+    return null;
+  }
+
   function wavPath(key) {
     if (!isSafeKey(key)) return null;
     return path.join(cacheDir, `${key}.wav`);
@@ -56,6 +63,7 @@ function createAudioCacheStore(options = {}) {
   function loadAndReconcile() {
     const loaded = safeReadJson(indexPath);
     const entries = {};
+    const indexedFileIdentities = new Set();
     let totalBytes = 0;
     for (const [key, entry] of Object.entries(loaded.entries || {})) {
       if (!entry || typeof entry !== "object") continue;
@@ -72,13 +80,15 @@ function createAudioCacheStore(options = {}) {
       // must not inflate or hide the cache's actual storage usage.
       const normalizedEntry = { ...entry, key, bytes: fileStats.size };
       entries[key] = normalizedEntry;
+      const identity = fileIdentity(fileStats);
+      if (identity) indexedFileIdentities.add(identity);
       totalBytes += fileStats.size;
     }
-    sweepOrphanWavs(new Set(Object.keys(entries)));
+    sweepOrphanWavs(new Set(Object.keys(entries)), indexedFileIdentities);
     return { totalBytes, entries };
   }
 
-  function sweepOrphanWavs(indexedKeys) {
+  function sweepOrphanWavs(indexedKeys, indexedFileIdentities) {
     let directoryEntries;
     try {
       directoryEntries = fs.readdirSync(cacheDir, { withFileTypes: true });
@@ -92,6 +102,13 @@ function createAudioCacheStore(options = {}) {
 
       const key = directoryEntry.name.slice(0, -path.extname(directoryEntry.name).length);
       if (indexedKeys.has(key)) continue;
+
+      if (directoryEntry.isFile()) {
+        try {
+          const identity = fileIdentity(fs.lstatSync(path.join(cacheDir, directoryEntry.name)));
+          if (identity && indexedFileIdentities.has(identity)) continue;
+        } catch {}
+      }
 
       try {
         fs.rmSync(path.join(cacheDir, directoryEntry.name), { force: true });

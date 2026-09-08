@@ -216,3 +216,25 @@ test("unindexed WAV files are swept on reload while indexed and unrelated files 
   assert.equal(fs.existsSync(notePath), true, "non-WAV file remains");
   assert.equal(fs.existsSync(directoryPath), true, "WAV-named directory remains");
 });
+
+test("indexed WAV survives a case-only physical rename when the filesystem aliases it", () => {
+  const dir = tempDir();
+  const store = createAudioCacheStore({ dataDir: dir });
+  store.put("kept", "kokoro", "v", { wavBuffer: wav(100) });
+
+  const cacheDir = path.join(dir, "audio-cache");
+  const canonicalPath = path.join(cacheDir, "kept__kokoro__v.wav");
+  const renamedPath = path.join(cacheDir, "KEPT__KOKORO__V.WAV");
+  fs.renameSync(canonicalPath, renamedPath);
+  const aliasResolves = fs.existsSync(canonicalPath);
+
+  const reopened = createAudioCacheStore({ dataDir: dir });
+
+  if (aliasResolves) {
+    assert.equal(reopened.has("kept", "kokoro", "v"), true, "indexed alias remains cached");
+    assert.equal(fs.existsSync(renamedPath), true, "physical aliased file remains");
+  } else {
+    assert.equal(reopened.has("kept", "kokoro", "v"), false, "distinct case is an orphan");
+    assert.equal(fs.existsSync(renamedPath), false, "distinct orphan is swept");
+  }
+});
