@@ -26,12 +26,82 @@ function emptyIndex() {
   return { totalBytes: 0, entries: {} };
 }
 
+function recoveryIndex(protectedKeys = []) {
+  const index = { totalBytes: 0, entries: {}, orphanSweepDisabled: true };
+  if (protectedKeys.length > 0) index.orphanSweepProtectedKeys = protectedKeys;
+  return index;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function safeReadJson(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    if (parsed && typeof parsed === "object" && parsed.entries) return parsed;
-  } catch {}
-  return emptyIndex();
+    if (!isPlainObject(parsed) || !isPlainObject(parsed.entries)) {
+      return { index: recoveryIndex(), canSweep: false };
+    }
+    if (parsed.orphanSweepDisabled === true) return { index: parsed, canSweep: false };
+    return { index: parsed, canSweep: true };
+  } catch (error) {
+    // A missing index is a known-empty cache. Other read or parse failures
+    // leave existing WAV files untouched because ownership is unknown.
+    return {
+      index: error && error.code === "ENOENT" ? emptyIndex() : recoveryIndex(),
+      canSweep: error && error.code === "ENOENT"
+    };
+  }
+}
+
+function finiteNumber(value, minimum = -Infinity) {
+  return typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : null;
+}
+
+function normalizeTimestamp(value) {
+  if (typeof value !== "string") return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
+function normalizeProtectedKeys(value) {
+  if (!Array.isArray(value)) return new Set();
+  return new Set(value.filter(isSafeKey).map((key) => key.toLowerCase()));
+}
+
+function normalizeSegments(value) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((segment) => {
+    if (!isPlainObject(segment) || typeof segment.text !== "string") return [];
+    const startSec = finiteNumber(segment.startSec, 0);
+    const endSec = finiteNumber(segment.endSec, 0);
+    if (startSec === null || endSec === null || endSec < startSec) return [];
+    return [{ text: segment.text, startSec, endSec }];
+  });
+}
+
+function normalizePersistedEntry(key, entry, fileStats) {
+  if (!isSafeKey(key) || !isPlainObject(entry)) return null;
+
+  const itemId = typeof entry.itemId === "string" && entry.itemId.trim() ? entry.itemId : null;
+  const engine = typeof entry.engine === "string" && entry.engine.trim() ? entry.engine : null;
+  const voice = typeof entry.voice === "string" && entry.voice.trim() ? entry.voice : null;
+  if (!itemId || !engine || !voice || keyFor(itemId, engine, voice) !== key) return null;
+
+  return {
+    key,
+    itemId,
+    engine,
+    voice,
+    bytes: fileStats.size,
+    sampleRate:
+      Number.isInteger(entry.sampleRate) && entry.sampleRate > 0 ? entry.sampleRate : null,
+    durationSec: finiteNumber(entry.durationSec, 0),
+    wordAccurate: entry.wordAccurate === true,
+    segments: normalizeSegments(entry.segments),
+    createdAt: normalizeTimestamp(entry.createdAt),
+    lastAccessedAt: normalizeTimestamp(entry.lastAccessedAt)
+  };
 }
 
 function createAudioCacheStore(options = {}) {
@@ -61,12 +131,13 @@ function createAudioCacheStore(options = {}) {
   }
 
   function loadAndReconcile() {
-    const loaded = safeReadJson(indexPath);
+    const { index: loaded, canSweep } = safeReadJson(indexPath);
     const entries = {};
     const indexedFileAliases = new Set();
+    const protectedWavKeys = normalizeProtectedKeys(loaded.orphanSweepProtectedKeys);
     let totalBytes = 0;
+
     for (const [key, entry] of Object.entries(loaded.entries || {})) {
-      if (!entry || typeof entry !== "object") continue;
       const filePath = wavPath(key);
       if (!filePath) continue;
       let fileStats;
@@ -76,19 +147,29 @@ function createAudioCacheStore(options = {}) {
         continue;
       }
       if (!fileStats.isFile() || fileStats.isSymbolicLink()) continue;
-      // The file is the source of truth. Persisted metadata is untrusted and
-      // must not inflate or hide the cache's actual storage usage.
-      const normalizedEntry = { ...entry, key, bytes: fileStats.size };
+      const normalizedEntry = normalizePersistedEntry(key, entry, fileStats);
+      if (!normalizedEntry) {
+        if (isSafeKey(key)) protectedWavKeys.add(key.toLowerCase());
+        continue;
+      }
       entries[key] = normalizedEntry;
       const identity = fileIdentity(fileStats);
       if (identity) indexedFileAliases.add(`${key.toLowerCase()}\0${identity}`);
       totalBytes += fileStats.size;
     }
-    sweepOrphanWavs(new Set(Object.keys(entries)), indexedFileAliases);
-    return { totalBytes, entries };
+    if (canSweep) {
+      sweepOrphanWavs(new Set(Object.keys(entries)), indexedFileAliases, protectedWavKeys);
+    }
+
+    const reconciled = { totalBytes, entries };
+    if (!canSweep) reconciled.orphanSweepDisabled = true;
+    if (protectedWavKeys.size > 0) {
+      reconciled.orphanSweepProtectedKeys = [...protectedWavKeys].sort();
+    }
+    return reconciled;
   }
 
-  function sweepOrphanWavs(indexedKeys, indexedFileAliases) {
+  function sweepOrphanWavs(indexedKeys, indexedFileAliases, protectedWavKeys) {
     let directoryEntries;
     try {
       directoryEntries = fs.readdirSync(cacheDir, { withFileTypes: true });
@@ -102,6 +183,7 @@ function createAudioCacheStore(options = {}) {
 
       const key = directoryEntry.name.slice(0, -path.extname(directoryEntry.name).length);
       if (indexedKeys.has(key)) continue;
+      if (protectedWavKeys.has(key.toLowerCase())) continue;
 
       if (directoryEntry.isFile()) {
         try {
@@ -135,9 +217,7 @@ function createAudioCacheStore(options = {}) {
     const ordered = Object.entries(index.entries)
       .filter(([key]) => key !== keepKey)
       .map(([key, entry]) => ({ key, entry }))
-      .sort((a, b) =>
-        String(a.entry.lastAccessedAt).localeCompare(String(b.entry.lastAccessedAt))
-      );
+      .sort((a, b) => String(a.entry.lastAccessedAt).localeCompare(String(b.entry.lastAccessedAt)));
 
     let i = 0;
     while (index.totalBytes > cap && i < ordered.length) {
@@ -264,10 +344,17 @@ function createAudioCacheStore(options = {}) {
 
   function clearAll() {
     const count = Object.keys(index.entries).length;
+    const preserveUnownedWavs = index.orphanSweepDisabled === true;
+    const protectedKeys = Array.isArray(index.orphanSweepProtectedKeys)
+      ? index.orphanSweepProtectedKeys
+      : [];
     for (const key of Object.keys(index.entries)) {
       removeKey(key, { persist: false });
     }
-    index = emptyIndex();
+    index = preserveUnownedWavs ? recoveryIndex(protectedKeys) : emptyIndex();
+    if (!preserveUnownedWavs && protectedKeys.length > 0) {
+      index.orphanSweepProtectedKeys = protectedKeys;
+    }
     persist();
     return count;
   }

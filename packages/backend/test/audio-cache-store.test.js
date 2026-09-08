@@ -255,3 +255,182 @@ test("an unindexed hard link is swept even when it shares an indexed file identi
   assert.equal(fs.existsSync(indexedPath), true, "indexed file remains on disk");
   assert.equal(fs.existsSync(hardLinkPath), false, "unindexed hard link is swept");
 });
+
+test("a malformed index document preserves WAV files for later recovery", () => {
+  const dir = tempDir();
+  const store = createAudioCacheStore({ dataDir: dir });
+  store.put("kept", "kokoro", "v", { wavBuffer: wav(100) });
+
+  const cacheDir = path.join(dir, "audio-cache");
+  const keptPath = path.join(cacheDir, "kept__kokoro__v.wav");
+  const orphanPath = path.join(cacheDir, "orphan.wav");
+  fs.writeFileSync(orphanPath, wav(50, 2));
+  fs.writeFileSync(path.join(cacheDir, "index.json"), '{"entries":');
+
+  const reopened = createAudioCacheStore({ dataDir: dir });
+
+  assert.equal(fs.statSync(keptPath).size, 100, "indexed audio is preserved");
+  assert.equal(
+    fs.statSync(orphanPath).size,
+    50,
+    "orphan audio is preserved when ownership is unknown"
+  );
+  assert.equal(reopened.list().entries.length, 0, "malformed metadata is not exposed");
+  assert.equal(reopened.list().totalBytes, 0, "unreadable metadata is not trusted for accounting");
+
+  reopened.enforceLimit();
+  const persisted = createAudioCacheStore({ dataDir: dir });
+  assert.equal(
+    fs.existsSync(keptPath),
+    true,
+    "later persistence does not make unknown audio sweepable"
+  );
+  assert.equal(
+    fs.existsSync(orphanPath),
+    true,
+    "later persistence keeps unknown audio recoverable"
+  );
+
+  persisted.put("new", "kokoro", "v", { wavBuffer: wav(25, 3) });
+  const afterPut = createAudioCacheStore({ dataDir: dir });
+  assert.equal(
+    afterPut.has("new", "kokoro", "v"),
+    true,
+    "new valid entries survive recovery persistence"
+  );
+  assert.equal(
+    afterPut.list().totalBytes,
+    25,
+    "new valid bytes are loaded while sweep stays disabled"
+  );
+  assert.equal(fs.existsSync(keptPath), true, "old audio remains recoverable after a new put");
+  assert.equal(fs.existsSync(orphanPath), true, "old orphan remains recoverable after a new put");
+});
+
+test("malformed entries shapes preserve WAV files without enabling a destructive sweep", () => {
+  for (const malformedEntries of [[], null, "bad"]) {
+    const dir = tempDir();
+    const store = createAudioCacheStore({ dataDir: dir });
+    store.put("kept", "kokoro", "v", { wavBuffer: wav(100) });
+
+    const cacheDir = path.join(dir, "audio-cache");
+    const keptPath = path.join(cacheDir, "kept__kokoro__v.wav");
+    const orphanPath = path.join(cacheDir, "orphan.wav");
+    fs.writeFileSync(orphanPath, wav(50, 2));
+    fs.writeFileSync(
+      path.join(cacheDir, "index.json"),
+      JSON.stringify({ totalBytes: Number.MAX_SAFE_INTEGER, entries: malformedEntries })
+    );
+
+    const reopened = createAudioCacheStore({ dataDir: dir });
+
+    assert.equal(
+      fs.existsSync(keptPath),
+      true,
+      `kept audio survives entries=${String(malformedEntries)}`
+    );
+    assert.equal(
+      fs.existsSync(orphanPath),
+      true,
+      `orphan audio survives entries=${String(malformedEntries)}`
+    );
+    assert.equal(reopened.list().entries.length, 0);
+  }
+});
+
+test("persisted metadata is whitelisted and invalid ownership stays recoverable", () => {
+  const dir = tempDir();
+  const cacheDir = path.join(dir, "audio-cache");
+  const validKey = keyFor("valid", "kokoro", "voice");
+  const mismatchedKey = keyFor("other", "kokoro", "voice");
+  const validPath = path.join(cacheDir, `${validKey}.wav`);
+  const mismatchedPath = path.join(cacheDir, `${mismatchedKey}.wav`);
+  const orphanPath = path.join(cacheDir, "orphan.wav");
+
+  fs.mkdirSync(cacheDir, { recursive: true });
+  fs.writeFileSync(validPath, wav(12));
+  fs.writeFileSync(mismatchedPath, wav(13));
+  fs.writeFileSync(orphanPath, wav(14));
+  fs.writeFileSync(
+    path.join(cacheDir, "index.json"),
+    JSON.stringify({
+      totalBytes: Number.MAX_SAFE_INTEGER,
+      entries: {
+        [validKey]: {
+          key: "forged-key",
+          itemId: "valid",
+          engine: "kokoro",
+          voice: "voice",
+          bytes: -999,
+          sampleRate: "bad",
+          durationSec: -1,
+          wordAccurate: "true",
+          segments: [
+            null,
+            { text: 7, startSec: "bad", endSec: -2 },
+            { text: "kept", startSec: 1, endSec: 2 },
+            { text: "backwards", startSec: 3, endSec: 2 }
+          ],
+          createdAt: "bad timestamp",
+          lastAccessedAt: "not finite",
+          untrustedExtra: "drop this"
+        },
+        [mismatchedKey]: {
+          key: mismatchedKey,
+          itemId: "different-owner",
+          engine: "kokoro",
+          voice: "voice",
+          sampleRate: 24000,
+          durationSec: 1,
+          segments: []
+        }
+      }
+    })
+  );
+
+  const reopened = createAudioCacheStore({ dataDir: dir });
+  const listing = reopened.list();
+
+  assert.deepEqual(listing.entries, [
+    {
+      key: validKey,
+      itemId: "valid",
+      engine: "kokoro",
+      voice: "voice",
+      bytes: 12,
+      sampleRate: null,
+      durationSec: null,
+      wordAccurate: false,
+      segments: [{ text: "kept", startSec: 1, endSec: 2 }],
+      createdAt: null,
+      lastAccessedAt: null
+    }
+  ]);
+  assert.equal(listing.totalBytes, 12, "actual file bytes remain authoritative");
+  assert.deepEqual(reopened.getManifest("valid", "kokoro", "voice"), {
+    sampleRate: null,
+    durationSec: null,
+    segments: [{ text: "kept", startSec: 1, endSec: 2 }],
+    wordAccurate: false
+  });
+  assert.equal(fs.existsSync(mismatchedPath), true, "mismatched ownership remains recoverable");
+  reopened.enforceLimit();
+  const persisted = createAudioCacheStore({ dataDir: dir });
+  assert.equal(
+    persisted.has("valid", "kokoro", "voice"),
+    true,
+    "valid entries remain visible after protection persistence"
+  );
+  assert.equal(
+    fs.existsSync(mismatchedPath),
+    true,
+    "mismatched ownership survives a second restart"
+  );
+  assert.equal(persisted.removeOne("different-owner", "kokoro", "voice"), 0);
+  assert.equal(
+    fs.existsSync(mismatchedPath),
+    true,
+    "untrusted ownership is not deletable by another id"
+  );
+  assert.equal(fs.existsSync(orphanPath), false, "known orphan is still swept");
+});
