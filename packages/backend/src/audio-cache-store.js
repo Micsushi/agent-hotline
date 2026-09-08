@@ -6,6 +6,7 @@ const { getDefaultDataDir } = require("./settings-store");
 const DEFAULT_MAX_BYTES = 1024 * 1024 * 1024;
 const CACHE_DIR_NAME = "audio-cache";
 const INDEX_FILE = "index.json";
+const SAFE_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 function sanitize(value) {
   return String(value || "")
@@ -15,6 +16,10 @@ function sanitize(value) {
 
 function keyFor(itemId, engine, voice) {
   return `${sanitize(itemId)}__${sanitize(engine)}__${sanitize(voice)}`;
+}
+
+function isSafeKey(key) {
+  return typeof key === "string" && key.length > 0 && SAFE_KEY_PATTERN.test(key);
 }
 
 function emptyIndex() {
@@ -44,6 +49,7 @@ function createAudioCacheStore(options = {}) {
   let index = loadAndReconcile();
 
   function wavPath(key) {
+    if (!isSafeKey(key)) return null;
     return path.join(cacheDir, `${key}.wav`);
   }
 
@@ -53,9 +59,20 @@ function createAudioCacheStore(options = {}) {
     let totalBytes = 0;
     for (const [key, entry] of Object.entries(loaded.entries || {})) {
       if (!entry || typeof entry !== "object") continue;
-      if (!fs.existsSync(path.join(cacheDir, `${key}.wav`))) continue;
-      entries[key] = entry;
-      totalBytes += Number(entry.bytes) || 0;
+      const filePath = wavPath(key);
+      if (!filePath) continue;
+      let fileStats;
+      try {
+        fileStats = fs.lstatSync(filePath);
+      } catch {
+        continue;
+      }
+      if (!fileStats.isFile() || fileStats.isSymbolicLink()) continue;
+      // The file is the source of truth. Persisted metadata is untrusted and
+      // must not inflate or hide the cache's actual storage usage.
+      const normalizedEntry = { ...entry, key, bytes: fileStats.size };
+      entries[key] = normalizedEntry;
+      totalBytes += fileStats.size;
     }
     return { totalBytes, entries };
   }
@@ -76,9 +93,12 @@ function createAudioCacheStore(options = {}) {
 
   function evictToFit(keepKey) {
     const cap = currentMax();
-    const ordered = Object.values(index.entries)
-      .filter((entry) => entry.key !== keepKey)
-      .sort((a, b) => String(a.lastAccessedAt).localeCompare(String(b.lastAccessedAt)));
+    const ordered = Object.entries(index.entries)
+      .filter(([key]) => key !== keepKey)
+      .map(([key, entry]) => ({ key, entry }))
+      .sort((a, b) =>
+        String(a.entry.lastAccessedAt).localeCompare(String(b.entry.lastAccessedAt))
+      );
 
     let i = 0;
     while (index.totalBytes > cap && i < ordered.length) {
@@ -97,7 +117,8 @@ function createAudioCacheStore(options = {}) {
     const entry = index.entries[key];
     if (!entry) return false;
     try {
-      fs.rmSync(wavPath(key), { force: true });
+      const filePath = wavPath(key);
+      if (filePath) fs.rmSync(filePath, { force: true });
     } catch {}
     delete index.entries[key];
     recomputeTotal();
@@ -186,9 +207,9 @@ function createAudioCacheStore(options = {}) {
   }
 
   function removeWhere(predicate) {
-    const keys = Object.values(index.entries)
-      .filter(predicate)
-      .map((entry) => entry.key);
+    const keys = Object.entries(index.entries)
+      .filter(([, entry]) => predicate(entry))
+      .map(([key]) => key);
     let removed = 0;
     for (const key of keys) {
       if (removeKey(key, { persist: false })) removed += 1;

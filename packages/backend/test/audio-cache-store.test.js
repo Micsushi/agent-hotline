@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const test = require("node:test");
 
-const { createAudioCacheStore } = require("../src/audio-cache-store");
+const { createAudioCacheStore, keyFor } = require("../src/audio-cache-store");
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "agent-hotline-audio-"));
@@ -143,4 +143,55 @@ test("entries with a missing audio file are dropped on reload", () => {
   const reopened = createAudioCacheStore({ dataDir: dir });
   assert.equal(reopened.has("a", "kokoro", "v"), false);
   assert.equal(reopened.list().totalBytes, 0);
+});
+
+test("malformed persisted keys cannot escape the cache directory", () => {
+  const dir = tempDir();
+  const cacheDir = path.join(dir, "audio-cache");
+  const outsidePath = path.join(dir, "outside.wav");
+  const safeKey = keyFor("item-1", "kokoro", "voice");
+  const safePath = path.join(cacheDir, `${safeKey}.wav`);
+
+  fs.mkdirSync(cacheDir, { recursive: true });
+  fs.writeFileSync(outsidePath, Buffer.from("keep this file"));
+  fs.writeFileSync(safePath, Buffer.from("valid"));
+  fs.writeFileSync(
+    path.join(cacheDir, "index.json"),
+    JSON.stringify({
+      totalBytes: Number.MAX_SAFE_INTEGER,
+      entries: {
+        "../outside": {
+          key: "../outside",
+          itemId: "outside-item",
+          engine: "kokoro",
+          voice: "voice",
+          bytes: Number.MAX_SAFE_INTEGER,
+          lastAccessedAt: "2026-01-01T00:00:00.000Z"
+        },
+        [safeKey]: {
+          key: "../outside",
+          itemId: "item-1",
+          engine: "kokoro",
+          voice: "voice",
+          bytes: -999,
+          lastAccessedAt: "2026-01-01T00:00:01.000Z"
+        }
+      }
+    })
+  );
+
+  const store = createAudioCacheStore({ dataDir: dir });
+  const listing = store.list();
+  assert.equal(listing.totalBytes, 5, "cache usage comes from the file, not index metadata");
+  assert.deepEqual(
+    listing.entries.map((entry) => ({ key: entry.key, bytes: entry.bytes })),
+    [{ key: safeKey, bytes: 5 }]
+  );
+
+  assert.equal(store.removeOne("item-1"), 1, "removal uses the persisted map key");
+  assert.equal(fs.existsSync(safePath), false);
+  assert.equal(fs.existsSync(outsidePath), true, "removeOne stays inside the cache directory");
+
+  assert.equal(store.clearAll(), 0);
+  assert.equal(fs.existsSync(outsidePath), true, "clearAll stays inside the cache directory");
 });
