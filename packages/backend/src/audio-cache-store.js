@@ -63,7 +63,7 @@ function createAudioCacheStore(options = {}) {
   function loadAndReconcile() {
     const loaded = safeReadJson(indexPath);
     const entries = {};
-    const indexedFileIdentities = new Set();
+    const indexedFileAliases = new Set();
     let totalBytes = 0;
     for (const [key, entry] of Object.entries(loaded.entries || {})) {
       if (!entry || typeof entry !== "object") continue;
@@ -81,14 +81,14 @@ function createAudioCacheStore(options = {}) {
       const normalizedEntry = { ...entry, key, bytes: fileStats.size };
       entries[key] = normalizedEntry;
       const identity = fileIdentity(fileStats);
-      if (identity) indexedFileIdentities.add(identity);
+      if (identity) indexedFileAliases.add(`${key.toLowerCase()}\0${identity}`);
       totalBytes += fileStats.size;
     }
-    sweepOrphanWavs(new Set(Object.keys(entries)), indexedFileIdentities);
+    sweepOrphanWavs(new Set(Object.keys(entries)), indexedFileAliases);
     return { totalBytes, entries };
   }
 
-  function sweepOrphanWavs(indexedKeys, indexedFileIdentities) {
+  function sweepOrphanWavs(indexedKeys, indexedFileAliases) {
     let directoryEntries;
     try {
       directoryEntries = fs.readdirSync(cacheDir, { withFileTypes: true });
@@ -106,7 +106,7 @@ function createAudioCacheStore(options = {}) {
       if (directoryEntry.isFile()) {
         try {
           const identity = fileIdentity(fs.lstatSync(path.join(cacheDir, directoryEntry.name)));
-          if (identity && indexedFileIdentities.has(identity)) continue;
+          if (identity && indexedFileAliases.has(`${key.toLowerCase()}\0${identity}`)) continue;
         } catch {}
       }
 

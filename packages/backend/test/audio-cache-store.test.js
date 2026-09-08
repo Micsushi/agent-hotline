@@ -238,3 +238,20 @@ test("indexed WAV survives a case-only physical rename when the filesystem alias
     assert.equal(fs.existsSync(renamedPath), false, "distinct orphan is swept");
   }
 });
+
+test("an unindexed hard link is swept even when it shares an indexed file identity", () => {
+  const dir = tempDir();
+  const store = createAudioCacheStore({ dataDir: dir });
+  store.put("kept", "kokoro", "v", { wavBuffer: wav(100) });
+
+  const cacheDir = path.join(dir, "audio-cache");
+  const indexedPath = path.join(cacheDir, "kept__kokoro__v.wav");
+  const hardLinkPath = path.join(cacheDir, "other__kokoro__v.wav");
+  fs.linkSync(indexedPath, hardLinkPath);
+
+  const reopened = createAudioCacheStore({ dataDir: dir });
+
+  assert.equal(reopened.has("kept", "kokoro", "v"), true, "indexed file remains cached");
+  assert.equal(fs.existsSync(indexedPath), true, "indexed file remains on disk");
+  assert.equal(fs.existsSync(hardLinkPath), false, "unindexed hard link is swept");
+});
